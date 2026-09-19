@@ -15,12 +15,18 @@ if ([int]$have -eq 0) {
   Run iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com | Out-Null
 }
 
+# The subject GitHub puts in its token. New repos use an *immutable* subject tied to the numeric repo id
+# (repo:owner@ownerId/name@repoId) - read the real prefix from GitHub instead of guessing it.
+$tpl = gh api "repos/$Repo/actions/oidc/customization/sub" | ConvertFrom-Json
+$SubPrefix = if ($tpl.use_default -and $tpl.sub_claim_prefix) { $tpl.sub_claim_prefix } else { "repo:$Repo" }
+Write-Host "OIDC subject: ${SubPrefix}:ref:refs/heads/main"
+
 # trust: ONLY workflows running on refs/heads/main of this one repo
 $trust = @{Version='2012-10-17';Statement=@(@{
   Effect='Allow'; Principal=@{Federated=$Oidc}; Action='sts:AssumeRoleWithWebIdentity'
   Condition=@{StringEquals=@{
     'token.actions.githubusercontent.com:aud'='sts.amazonaws.com'
-    'token.actions.githubusercontent.com:sub'="repo:${Repo}:ref:refs/heads/main" }}})} | ConvertTo-Json -Depth 8 -Compress
+    'token.actions.githubusercontent.com:sub'="${SubPrefix}:ref:refs/heads/main" }}})} | ConvertTo-Json -Depth 8 -Compress
 $tf = Join-Path $env:TEMP 'evento-ci-trust.json'; $trust | Set-Content $tf -Encoding ascii
 $exists = try { & aws iam get-role --role-name $Role *> $null; $LASTEXITCODE -eq 0 } catch { $false }
 if ($exists) { Run iam update-assume-role-policy --role-name $Role --policy-document "file://$tf" }
