@@ -11,3 +11,6 @@ __pycache__/
 aws/passcode.txt
 aws/*.zip
 aws/__pycache__/
+
+# Japanese card art (Bandai) - local only
+card_images_jp/

@@ -98,7 +98,7 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         # Pages and data must always be re-checked so edits show up on refresh;
         # card images never change, so let the browser keep them.
-        if not self.path.split('?')[0].lower().endswith('.jpg'):
+        if not self.path.split('?')[0].lower().endswith(('.jpg', '.png')):
             self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 

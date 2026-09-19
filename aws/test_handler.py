@@ -86,6 +86,8 @@ ck = [r['cookies'][0].split(';')[0]]
 page = h(ev('GET', '/', cookies=ck), None)
 check('logged-in / serves the app', page['statusCode'] == 200 and 'JP Event Binder' in page['body'])
 cards = json.loads(h(ev('GET', '/cards.json', cookies=ck), None)['body'])
+check('login page has a favicon', 'rel="icon"' in h(ev('GET', '/'), None)['body'])
+check('the app page has a favicon', 'rel="icon"' in page['body'])
 check('cards.json has 404 cards', len(cards) == 404)
 check('cards have the fields the UI needs', all({'slot', 'name', 'num', 'rar', 'set', 'foil'} <= set(c) for c in cards))
 

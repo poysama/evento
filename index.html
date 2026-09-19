@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Event Binder</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2313202E'/%3E%3Crect x='6.5' y='6' width='14' height='20' rx='2.2' fill='%235B6B7D' transform='rotate(-9 13.5 16)'/%3E%3Crect x='11.5' y='5.5' width='14' height='20' rx='2.2' fill='%23F9FBFD' transform='rotate(5 18.5 15.5)'/%3E%3Ccircle cx='18.8' cy='16' r='5' fill='%231E7F5C'/%3E%3Cpath d='M16.3 16.2l2 2 3.6-4.2' fill='none' stroke='%23fff' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#E6ECF2;--sheet:#F9FBFD;--ink:#13202E;--mute:#5B6B7D;--line:#B7C3D0;
 --own:#1E7F5C;--ownbg:#DDF1E7;--amber:#8A5A16;--amberbg:#F6E7C8;--foil:#B8860B;--focus:#2F6FDE;--warn:#B3261E;--scrim:rgba(10,18,28,.55);
@@ -172,7 +173,7 @@ dialog::backdrop{background:var(--scrim)}
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="artbtn" hidden>Art: JP</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -220,6 +221,18 @@ dialog::backdrop{background:var(--scrim)}
   function phList(n) { var a = []; if (has(n, 'en')) a.push('EN'); if (has(n, 'kr')) a.push('KR'); return a; }
   function pageOf(i) { return Math.floor(i / PER) + 1; }
 
+  /* ---------- card art: Japanese card when we have it, English art as the fallback ---------- */
+  var jpArt = {}, artMode = 'jp';
+  try { if (localStorage.getItem('binderArt') === 'en') artMode = 'en'; } catch (e) {}
+  function showingJP(n) { return artMode === 'jp' && !!jpArt[n]; }
+  function artSrc(n) { return showingJP(n) ? 'card_images_jp/' + n + '.png' : 'card_images/' + n + '.jpg'; }
+  function artImg(img, n) {
+    img.onerror = function () {
+      if (this.src.indexOf('card_images_jp/') >= 0) { jpArt[n] = false; this.src = 'card_images/' + n + '.jpg'; } else this.remove();
+    };
+    img.src = artSrc(n);
+  }
+
   /* ---------- status text (one place, used by tile + panel) ---------- */
   function jpText(c, long) {
     if (has(c.num, 'jp')) return long ? 'JP card complete' : 'JP ✓ Complete';
@@ -237,7 +250,7 @@ dialog::backdrop{background:var(--scrim)}
     card.dataset.n = c.num;
     var art = el('button', 'art'); art.type = 'button'; art.setAttribute('aria-pressed', d);
     art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to mark JP card ' + (d ? 'not owned' : 'owned') + '.');
-    var img = el('img'); img.alt = ''; img.decoding = 'async'; img.src = 'card_images/' + c.num + '.jpg'; img.onerror = function () { this.remove(); };
+    var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num);
     art.appendChild(img); art.appendChild(el('span', 'ok'));
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
     art.addEventListener('click', function () { toggle(c.num, 'jp'); });
@@ -270,7 +283,7 @@ dialog::backdrop{background:var(--scrim)}
     preview(null);
     stats();
     // warm the neighbours so flipping is instant
-    [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) cards.slice((p - 1) * PER, p * PER).forEach(function (c) { new Image().src = 'card_images/' + c.num + '.jpg'; }); });
+    [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) cards.slice((p - 1) * PER, p * PER).forEach(function (c) { new Image().src = artSrc(c.num); }); });
   }
   function stats() {
     var jp = 0, ph = 0, fo = 0, fn = 0;
@@ -350,7 +363,7 @@ dialog::backdrop{background:var(--scrim)}
     var c = n && cards.find(function (x) { return x.num === n; });
     if (!c) { pvEl.appendChild(el('div', 'hint', 'Hover a card to see it here. Click a card to mark the JP copy as owned; use the “i” for placeholders and foil.')); return; }
     var i = cards.indexOf(c), j = i % PER;
-    var img = el('img'); img.alt = c.name; img.src = 'card_images/' + c.num + '.jpg'; pvEl.appendChild(img);
+    var img = el('img'); img.alt = c.name; artImg(img, c.num); pvEl.appendChild(img);
     pvEl.appendChild(el('h3', '', c.name));
     pvEl.appendChild(el('div', 'meta', c.num + ' · ' + c.set + ' · ' + c.rar + ' · R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1)));
     pvEl.appendChild(el('div', 'note' + (has(c.num, 'jp') ? ' done' : ''), jpText(c, true) + '.'));
@@ -391,7 +404,7 @@ dialog::backdrop{background:var(--scrim)}
     var keep = [].indexOf.call(dlg.querySelectorAll('.tg'), document.activeElement);
     var i = cards.findIndex(function (c) { return c.num === n; }), c = cards[i], j = i % PER;
     var root = el('div', 'dl'), head = el('div', 'dh');
-    var img = el('img'); img.alt = c.name; img.src = 'card_images/' + c.num + '.jpg'; head.appendChild(img);
+    var img = el('img'); img.alt = c.name; artImg(img, c.num); head.appendChild(img);
     var t = el('div'); t.appendChild(el('h3', '', c.name));
     var m = el('div', 'meta');
     [['Code', c.num], ['Set', c.set], ['Rarity', c.rar], ['Slot', 'Page ' + pageOf(i) + ' · row ' + (Math.floor(j / 4) + 1) + ' · col ' + (j % 4 + 1)]].forEach(function (r) {
@@ -411,7 +424,7 @@ dialog::backdrop{background:var(--scrim)}
       s3.appendChild(tg('I have the JP foil', has(n, 'foil') ? 'Foil in hand' : 'No foil yet — the card still counts as complete', has(n, 'foil'), '', function () { toggle(n, 'foil'); }));
     } else s3.appendChild(el('div', 'small', 'No foil or parallel printing exists for this card.'));
     root.appendChild(s3);
-    root.appendChild(el('div', 'small', 'Art shown is the English release used as a reference. Your JP copy is what counts.'));
+    root.appendChild(el('div', 'small', showingJP(n) ? 'Art shown is the Japanese card.' : 'Art shown is the English release used as a reference. Your JP copy is what counts.'));
     var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { dlg.close(); }); root.appendChild(cl);
     dlg.replaceChildren(root);
     if (keep >= 0) { var b = dlg.querySelectorAll('.tg')[keep]; if (b) b.focus(); }
@@ -503,9 +516,22 @@ dialog::backdrop{background:var(--scrim)}
   /* ---------- boot ---------- */
   Promise.all([
     fetch('cards.json').then(function (r) { return r.json(); }),
-    fetch('/api/collection', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+    fetch('/api/collection', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }),
+    fetch('card_images_jp/manifest.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
   ]).then(function (res) {
     cards = res[0]; col = migrate(res[1]); N = Math.ceil(cards.length / PER);
+    (Array.isArray(res[2]) ? res[2] : []).forEach(function (n) { jpArt[n] = true; });
+    var artBtn = $('artbtn');
+    if (Object.keys(jpArt).length) {
+      artBtn.hidden = false;
+      var lab = function () { artBtn.textContent = 'Art: ' + (artMode === 'jp' ? 'JP' : 'EN'); artBtn.setAttribute('aria-pressed', artMode === 'jp'); };
+      lab();
+      artBtn.addEventListener('click', function () {
+        artMode = artMode === 'jp' ? 'en' : 'jp';
+        try { localStorage.setItem('binderArt', artMode); } catch (e) {}
+        lab(); render(0); if (openNum) fillInfo(openNum);
+      });
+    }
     var ps = $('pagesel'), ss = $('setsel');
     for (var p = 1; p <= N; p++) { var o = el('option', '', 'Page ' + p + ' / ' + N); o.value = p; ps.appendChild(o); }
     cards.forEach(function (c, i) { if (!firstPage[c.set]) { firstPage[c.set] = pageOf(i); var o = el('option', '', c.set + ' — p.' + firstPage[c.set]); o.value = firstPage[c.set]; ss.appendChild(o); } });

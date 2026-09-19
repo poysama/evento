@@ -43,6 +43,7 @@ KEYS_KEY = 'data/passkeys.json'
 
 LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>Event Binder</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2313202E'/%3E%3Crect x='6.5' y='6' width='14' height='20' rx='2.2' fill='%235B6B7D' transform='rotate(-9 13.5 16)'/%3E%3Crect x='11.5' y='5.5' width='14' height='20' rx='2.2' fill='%23F9FBFD' transform='rotate(5 18.5 15.5)'/%3E%3Ccircle cx='18.8' cy='16' r='5' fill='%231E7F5C'/%3E%3Cpath d='M16.3 16.2l2 2 3.6-4.2' fill='none' stroke='%23fff' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>body{font:16px system-ui,sans-serif;background:#E6ECF2;color:#13202E;display:grid;place-items:center;min-height:100vh;margin:0}
 @media(prefers-color-scheme:dark){body{background:#0D141C;color:#E3E9F0}input,button{background:#151E29;color:#E3E9F0;border-color:#2E3B4A}#pk{background:#E3E9F0;color:#0D141C}}
 main{display:flex;flex-direction:column;gap:12px;width:min(320px,86vw)}h1{font-size:18px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 4px}
