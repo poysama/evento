@@ -15,7 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 pkg = Path(tempfile.mkdtemp())
-for src in (REPO / 'aws' / 'lambda_function.py', REPO / 'index.html', REPO / 'cards.json'):
+for src in (REPO / 'aws' / 'lambda_function.py', REPO / 'aws' / 'share_data.json', REPO / 'index.html', REPO / 'cards.json', REPO / 'products.json'):
     shutil.copy(src, pkg)
 
 os.environ.update(BUCKET='test-bucket', PASSCODE='test-passcode')
@@ -89,11 +89,31 @@ cards = json.loads(h(ev('GET', '/cards.json', cookies=ck), None)['body'])
 check('login page has a favicon', 'rel="icon"' in h(ev('GET', '/'), None)['body'])
 check('the app page has a favicon', 'rel="icon"' in page['body'])
 check('cards.json has 404 cards', len(cards) == 404)
+check('the four Manga Events are marked, each with a real alt-art id',
+      sorted(c['num'] for c in cards if c.get('manga')) == ['OP09-020', 'OP09-057', 'OP09-078', 'OP09-096']
+      and all(c['manga'] in c['alt'] for c in cards if c.get('manga')))
 check('cards have the fields the UI needs', all({'slot', 'name', 'num', 'rar', 'set', 'foil'} <= set(c) for c in cards))
+
+# "What to buy" data: every product, and where each Event card can be found
+check('the product list needs a login', h(ev('GET', '/products.json'), None)['statusCode'] == 401)
+prod = json.loads(h(ev('GET', '/products.json', cookies=ck), None)['body'])
+codes = [p['code'] for p in prod['products']]
+check('all 59 products are listed once, in the binder\'s release order',
+      len(codes) == 59 and len(set(codes)) == 59 and codes[0] == 'ST-01' and codes[-1] == 'OP-17'
+      and [c['set'] for c in cards if c['set'] in codes][0] == 'ST-01')
+check('every product says what it is', all(p['kind'] in ('Booster pack', 'Extra booster', 'Premium booster', 'Starter deck') for p in prod['products']))
+check('every card can be found in at least the set it came from',
+      set(prod['sources']) == {c['num'] for c in cards} and all(c['set'] in prod['sources'][c['num']] for c in cards))
+check('every source is a real product', all(s in codes for v in prod['sources'].values() for s in v))
+check('reprints are recorded (some cards appear in more than one product)', sum(1 for v in prod['sources'].values() if len(v) > 1) >= 50)
 
 check('empty collection is {}', h(ev('GET', '/api/collection', cookies=ck), None)['body'] == '{}')
 good = {'OP01-026': {'jp': True}, 'ST01-014': {'jp': True, 'foil': True, 'en': True, 'kr': True}}
 check('valid save is accepted', h(ev('PUT', '/api/collection', json.dumps(good), cookies=ck), None)['statusCode'] == 200)
+check('the optional Manga flag is accepted and read back',
+      h(ev('PUT', '/api/collection', json.dumps({'OP09-057': {'manga': True}}), cookies=ck), None)['statusCode'] == 200
+      and json.loads(h(ev('GET', '/api/collection', cookies=ck), None)['body']) == {'OP09-057': {'manga': True}})
+h(ev('PUT', '/api/collection', json.dumps(good), cookies=ck), None)
 check('save reads back', json.loads(h(ev('GET', '/api/collection', cookies=ck), None)['body']) == good)
 enc = base64.b64encode(json.dumps(good).encode()).decode()
 check('base64 body is accepted', h(ev('PUT', '/api/collection', enc, cookies=ck, b64=True), None)['statusCode'] == 200)
@@ -132,6 +152,130 @@ check('English art still works alongside', h(ev('GET', '/card_images/OP01-026.jp
 del store['images_jp/manifest.json']
 check('a missing JP manifest is a clean 404 (the app then falls back to English)',
       h(ev('GET', '/card_images_jp/manifest.json', cookies=ck), None)['statusCode'] == 404)
+
+# ----------------------------------------------------------------------------------------------
+# Share "what I'm looking for": private settings API + unlisted public page (no login, no hosted art)
+# ----------------------------------------------------------------------------------------------
+import re as _re  # noqa: E402
+
+
+def put_share(obj, cookies=ck):
+    return h(ev('PUT', '/api/share', json.dumps(obj), cookies=cookies), None)
+
+
+def page_of(url):
+    return h(ev('GET', url.replace(L.ORIGIN, '')), None)          # anonymous: no cookies
+
+
+check('share settings need a login', h(ev('GET', '/api/share'), None)['statusCode'] == 401
+      and h(ev('PUT', '/api/share', json.dumps({'enabled': True})), None)['statusCode'] == 401)
+check('sharing starts switched off', json.loads(h(ev('GET', '/api/share', cookies=ck), None)['body'])
+      == {'enabled': False, 'foil': False, 'pics': True, 'name': '', 'message': '', 'url': None})
+check('a link that was never created is 404', page_of('/w/' + 'a' * 22)['statusCode'] == 404)
+
+# owned cards must NOT appear on the page; everything else must
+store['data/collection.json'] = json.dumps({'ST01-014': {'jp': True}, 'OP01-026': {'jp': True, 'foil': True},
+                                            'OP01-027': {'kr': True}}).encode()
+sh = json.loads(put_share({'enabled': True, 'name': 'Poy', 'message': 'Any condition is fine!'})['body'])
+check('turning sharing on gives an unguessable link', sh['enabled'] and _re.fullmatch(r'https://evento\.peonbox\.xyz/w/[A-Za-z0-9_-]{22}', sh['url']))
+pg = page_of(sh['url'])
+body = pg['body']
+check('the public page needs no login', pg['statusCode'] == 200 and 'looking for' in body)
+check('it lists what is missing, with name and code', 'Round Table' in body and 'OP01-027' in body and 'Punk Gibson' in body)
+check('cards already owned in JP are left off', 'Guard Point' not in body and 'ST01-014' not in body and 'OP01-026' not in body)
+check('a card held only as a KR/EN placeholder still counts as missing', 'OP01-027' in body)
+check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and 'of 404 still missing' in body)
+check('missing count is right', f'<b>{404 - 2}</b> of 404' in body)
+check('Japanese names are included for finding cards in shops', 'lang="ja"' in body)
+tok = sh['url'].rsplit('/', 1)[1]
+imgs = _re.findall(r'<img src="([^"]+)"', body)
+check('pictures are loaded through this same secret link, from no other site',
+      len(imgs) == 402 and all(_re.fullmatch(r'/w/' + tok + r'/img/[A-Z]{2,3}\d{2}-\d{3}\.png', u) for u in imgs)
+      and not _re.search(r'src="https?:', body) and 'card_images' not in body)
+check('each card links out to its page on Bandai\'s official list',
+      body.count('href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55') == 402 and 'rel="noopener noreferrer"' in body)
+check('the secret link is never sent to other sites as a referrer',
+      pg['headers']['Referrer-Policy'] == 'no-referrer' and 'name="referrer" content="no-referrer"' in body)
+check('the page is kept out of search engines', 'noindex' in pg['headers']['X-Robots-Tag'] and 'noindex' in body)
+check('no foil section unless asked for', 'foil / alt-art versions wanted' not in body and 'alt-art version' not in body)
+check('the page shows nothing that could be a login or key', 'evento_session' not in body and 'passcode' not in body.lower())
+
+# foil option: only foil-capable cards without a JP foil; uses the alt-art picture when Bandai has one
+sh2 = json.loads(put_share({'foil': True})['body'])
+body2 = page_of(sh2['url'])['body']
+check('turning on foil adds a foil / alt-art section', 'Also looking for the foil / alt-art versions' in body2 and 'foil / alt-art versions wanted' in body2)
+check('foil section skips the foil I already own', '<figcaption><b>Gum-Gum Fire-Fist Pistol Red Hawk</b>' not in body2.split('Also looking for the foil')[1])
+check('alt-art pictures are used', '_p' in body2.split('Also looking for the foil')[1])
+check('settings persist in the bucket', json.loads(store['data/share.json'])['foil'] is True and sh2['url'] == sh['url'])
+
+# the picture route: token-gated, only cards on the list, never a way to probe what you own
+def pic(path_tok, name):
+    return h(ev('GET', f'/w/{path_tok}/img/{name}'), None)
+
+
+store['images_jp/OP01-027.png'] = b'\x89PNG\r\n\x1a\nmissing-card'
+store['images_jp/OP01-026.png'] = b'\x89PNG\r\n\x1a\nOWNED-card'
+store['images_jp/OP01-029_p3.png'] = b'\x89PNG\r\n\x1a\nalt-art'
+p1 = pic(tok, 'OP01-027.png')
+check('a friend can load a wishlist card picture with no login',
+      p1['statusCode'] == 200 and p1['isBase64Encoded'] and base64.b64decode(p1['body']).endswith(b'missing-card')
+      and p1['headers']['Content-Type'] == 'image/png')
+check('picture responses are private, uncrawlable and leak no referrer',
+      'private' in p1['headers']['Cache-Control'] and p1['headers']['Referrer-Policy'] == 'no-referrer' and 'noindex' in p1['headers']['X-Robots-Tag'])
+check('a card you already own cannot be fetched (nothing to learn about your collection)', pic(tok, 'OP01-026.png')['statusCode'] == 404)
+check('a card you own looks exactly like a card that does not exist', pic(tok, 'OP01-026.png')['body'] == pic(tok, 'ZZZ99-999.png')['body'])
+check('alt-art is served only for foil cards still missing, with the foil option on', pic(tok, 'OP01-029_p3.png')['statusCode'] == 200)
+check('alt-art that is not on the list is refused', pic(tok, 'OP01-029_p9.png')['statusCode'] == 404 and pic(tok, 'OP01-027_p1.png')['statusCode'] == 404)
+check('pictures need the right link', pic('b' * 22, 'OP01-027.png')['statusCode'] == 404 and pic('short', 'OP01-027.png')['statusCode'] == 404)
+check('picture names are strictly validated',
+      all(pic(tok, n)['statusCode'] == 404 for n in ('../data/collection.json', 'OP01-027.jpg', 'op01-027.png', 'OP01-027.png/x', '%2e%2e%2fshare.json', 'OP01-027_p.png')))
+check('other sub-paths of the link are 404, a trailing slash is fine', h(ev('GET', f'/w/{tok}/anything'), None)['statusCode'] == 404 and h(ev('GET', f'/w/{tok}/x/y'), None)['statusCode'] == 404 and h(ev('GET', f'/w/{tok}/'), None)['statusCode'] == 200)
+
+# safety: text is escaped, lengths and types are enforced
+def body3_count_ok(b):      # the only <img> tags on the page are the card pictures (the injected one is inert text)
+    return all(t.startswith('<img src="/w/') for t in _re.findall(r'<img[^>]*>', b))
+
+
+inj =json.loads(put_share({'name': '<script>alert(1)</script>', 'message': '"><img src=x onerror=alert(2)>'})['body'])
+b3 = page_of(inj['url'])['body']
+check('names and messages cannot inject HTML',
+      '<script>alert' not in b3 and '<img src=x' not in b3 and '&lt;script&gt;' in b3 and '&lt;img src=x' in b3
+      and body3_count_ok(b3))
+check('long text is trimmed', len(json.loads(put_share({'message': 'x' * 900})['body'])['message']) == 300
+      and len(json.loads(put_share({'name': 'n' * 200})['body'])['name']) == 40)
+check('control characters are stripped', json.loads(put_share({'name': 'a\x00b\nc\td'})['body'])['name'] == 'a b c d')
+for label, bad in (('unknown field', {'token': 'x'}), ('non-boolean enabled', {'enabled': 'yes'}), ('non-text name', {'name': 5}),
+                   ('non-boolean rotate', {'rotate': 1}), ('not an object', [1])):
+    check('share settings reject ' + label, put_share(bad)['statusCode'] == 400)
+check('a wrong or malformed link is 404 and reveals nothing',
+      all(page_of(u)['statusCode'] == 404 for u in ('/w/' + 'b' * 22, '/w/short', '/w/../api/collection', '/w/' + sh['url'][-22:-1] + 'X', '/w/')))
+check('the public page is read-only', h(ev('POST', sh['url'].replace(L.ORIGIN, '')), None)['statusCode'] in (401, 404))
+
+# new link: the old one stops working; stop sharing: the link stops working; turning back on reuses it
+new = json.loads(put_share({'rotate': True})['body'])
+check('a new link replaces the old one', new['url'] != sh['url'] and page_of(sh['url'])['statusCode'] == 404 and page_of(new['url'])['statusCode'] == 200)
+off = json.loads(put_share({'enabled': False})['body'])
+check('stopping sharing kills the link', off['enabled'] is False and off['url'] is not None and page_of(new['url'])['statusCode'] == 404)
+back = json.loads(put_share({'enabled': True})['body'])
+check('sharing again reuses the same link', back['url'] == new['url'] and page_of(back['url'])['statusCode'] == 200)
+
+# pictures switched off: the page is text + links to Bandai, and the picture route serves nothing
+np = json.loads(put_share({'pics': False, 'foil': False})['body'])
+ntok = np['url'].rsplit('/', 1)[1]
+nbody = page_of(np['url'])['body']
+check('with pictures off the page has no images at all', np['pics'] is False and '<img' not in nbody and 'class="p"' not in nbody)
+check('with pictures off it still lists the cards and links to Bandai',
+      'Round Table' in nbody and 'OP01-027' in nbody and nbody.count('Bandai card list &rarr;') == 402 and 'Pictures are not included' in nbody)
+check('with pictures off the picture route serves nothing', pic(ntok, 'OP01-027.png')['statusCode'] == 404)
+check('pictures can be turned back on', json.loads(put_share({'pics': True})['body'])['pics'] is True and pic(ntok, 'OP01-027.png')['statusCode'] == 200)
+check('the pictures switch must be true or false', put_share({'pics': 'no'})['statusCode'] == 400)
+
+# nothing missing (foil option off, so no foil section either)
+put_share({'foil': False})
+store['data/collection.json'] = json.dumps({c['num']: {'jp': True} for c in cards}).encode()
+done = page_of(back['url'])['body']
+check('a complete collection says so instead of listing cards', 'the collection is complete' in done and '<img' not in done)
+store['data/collection.json'] = json.dumps(good).encode()
 
 # ----------------------------------------------------------------------------------------------
 # Passkeys: a software authenticator (real EC keys, real CBOR/COSE) runs the full ceremonies.

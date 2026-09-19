@@ -189,7 +189,20 @@ dialog::backdrop{background:var(--scrim)}
 .vp{left:4px}.vnx{right:4px}.vn:disabled{opacity:.22;cursor:default}
 .vf{display:flex;flex-direction:column;gap:8px;padding:10px 12px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
 .vf .note{padding:7px 10px;font-size:13px}
-.vrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vrow.three{grid-template-columns:1fr 1fr 1fr}
+.vrow{display:flex;gap:8px}.vrow .vb{flex:1 1 0;min-width:0}
+.vv{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:0 12px 8px}.vv[hidden]{display:none}
+.vv button{min-height:36px;border:1.5px solid var(--line);border-radius:999px;background:var(--sheet);color:var(--ink);font-weight:700;font-size:13px;padding:0 14px;cursor:pointer}
+.vv button[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+.mg{position:absolute;left:4px;bottom:4px;z-index:2;font:600 9px/1 var(--disp);letter-spacing:.08em;background:rgba(15,25,38,.82);color:#FFD24D;border-radius:3px;padding:3px 5px 2px;pointer-events:none}
+.btn{min-height:46px;border:1.5px solid var(--line);border-radius:10px;background:var(--sheet);color:var(--ink);font-weight:700;padding:0 14px;cursor:pointer;font-size:14px}
+.btn.pri{background:var(--own);border-color:var(--own);color:#fff}.btn.dng{color:var(--warn);border-color:var(--warn)}.btn:disabled{opacity:.55;cursor:default}
+.sh-row{display:flex;gap:8px;flex-wrap:wrap}.sh-row>.btn{flex:1 1 auto}
+.sh-url{display:flex;gap:8px}.sh-url input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--sheet);color:var(--ink);font:12.5px var(--mono)}
+.sh-f{display:flex;flex-direction:column;gap:8px}
+.sh-f input[type=text],.sh-f textarea{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--sheet);color:var(--ink);font:inherit}
+.sh-f textarea{min-height:64px;resize:vertical}
+.sh-f label.ck{display:flex;gap:10px;align-items:flex-start;font-size:14px}.sh-f label.ck input{margin-top:2px;width:20px;height:20px;flex:none}
+.sh-msg{min-height:1.3em;font-size:13px;font-weight:600}.sh-msg.err{color:var(--warn)}.sh-msg.ok{color:var(--own)}
 .vb{min-height:48px;border:1.5px solid var(--line);border-radius:10px;background:var(--sheet);color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;padding:6px 8px}
 .vb[hidden]{display:none}
 .vb.big{min-height:56px;font-size:16px}
@@ -197,6 +210,40 @@ dialog::backdrop{background:var(--scrim)}
 .vb.ph[aria-pressed="true"]{background:var(--amberbg);border-color:var(--amber);color:var(--amber)}
 .vf .small{font-size:11.5px}
 @media (pointer:coarse){.i{display:none}}
+/* ---- what to buy ---- */
+#sumdlg{padding:0;overflow:hidden;width:min(760px,96vw);height:min(94dvh,920px);max-height:none}
+#sumdlg[open]{display:flex}
+@media (max-width:560px){#sumdlg{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0}}
+.sm{display:flex;flex-direction:column;width:100%;height:100%;min-height:0}
+.sm-h{display:flex;align-items:center;gap:10px;padding:10px 10px 8px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
+.sm-h h3{flex:1;margin:0;font:600 20px/1.1 var(--disp);letter-spacing:.05em;text-transform:uppercase}
+.sm-b{flex:1;min-height:0;overflow:auto;padding:12px 12px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.sm-sum{font-size:15px;line-height:1.4}.sm-sum b{font-weight:800}
+.plan{border:1.5px solid var(--own);background:var(--ownbg);border-radius:12px;padding:12px 14px}
+.plan h4{margin:0 0 6px;font:600 15px var(--disp);letter-spacing:.06em;text-transform:uppercase;color:var(--own)}
+.plan ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}.plan li{line-height:1.3}
+.plan .small{margin:0 0 8px}
+.tg2{margin-left:8px;font:600 10px/1 var(--disp);letter-spacing:.08em;border:1px solid currentColor;border-radius:4px;padding:3px 5px 2px;color:var(--mute);white-space:nowrap;vertical-align:middle}.tg2.deck{color:var(--own)}
+.plan-more{margin-top:8px}.plan-more summary{cursor:pointer;font-weight:700;color:var(--own);padding:8px 0;min-height:40px;display:flex;align-items:center}.plan-more ol{margin-top:4px}
+.sm-ctl{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.sm-ctl label.ck{display:flex;gap:8px;align-items:center;font-size:14px}.sm-ctl label.ck input{width:20px;height:20px}
+.sr{border:1.5px solid var(--line);border-radius:12px;background:var(--sheet)}
+.sr summary{list-style:none;display:flex;align-items:center;gap:12px;padding:12px;cursor:pointer;min-height:64px}
+.sr summary::-webkit-details-marker{display:none}
+.sr[open] summary{border-bottom:1px solid var(--line)}
+.sr-c{flex:none;font:600 12px/1 var(--disp);letter-spacing:.08em;color:var(--chipink);background:var(--op);border-radius:4px;padding:5px 7px 4px;min-width:52px;text-align:center}
+.sr-c.st{background:var(--st)}.sr-c.eb{background:var(--eb)}.sr-c.prb{background:var(--prb)}
+.sr-t{flex:1;min-width:0}.sr-t b{display:block;line-height:1.25;overflow-wrap:anywhere}
+.sr-t small{display:block;color:var(--mute);font-size:12.5px;margin-top:1px}
+.sr-t .bar{margin-top:6px;height:6px}
+.sr-n{flex:none;text-align:right;line-height:1.05}.sr-n b{display:block;font:600 26px/1 var(--disp)}.sr-n span{font-size:11.5px;color:var(--mute)}
+.sr-n.zero b{color:var(--own)}
+.only{color:var(--amber);font-weight:700}
+.sr-l{display:flex;flex-direction:column}
+.sr-i{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:1px;padding:10px 14px;border-top:1px solid var(--line);cursor:pointer}
+.sr-i:first-child{border-top:0}.sr-i:hover,.sr-i:focus-visible{background:var(--ownbg)}
+.sr-i span{font:12px var(--mono);color:var(--mute)}.sr-i em{font-style:normal;font-size:12.5px;color:var(--mute)}
+.sm-empty{padding:26px 8px;text-align:center;font-weight:600;color:var(--own);font-size:17px}
 </style>
 </head>
 <body>
@@ -206,7 +253,7 @@ dialog::backdrop{background:var(--scrim)}
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -240,6 +287,8 @@ dialog::backdrop{background:var(--scrim)}
 
 <dialog id="dlg" aria-label="Card viewer"></dialog>
 <dialog id="pkdlg" aria-label="Passkeys"></dialog>
+<dialog id="shdlg" aria-label="Share what I am looking for"></dialog>
+<dialog id="sumdlg" aria-label="What to buy"></dialog>
 
 <script>
 (function () {
@@ -247,7 +296,7 @@ dialog::backdrop{background:var(--scrim)}
   var saveTimer = null, saving = false, dirty = false, openNum = null;
   var $ = function (id) { return document.getElementById(id); };
   var grid = $('grid'), dlg = $('dlg');
-  var KEYS = ['jp', 'foil', 'en', 'kr'];
+  var KEYS = ['jp', 'foil', 'en', 'kr', 'manga'];
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function has(n, k) { return !!(col[n] && col[n][k]); }
@@ -308,6 +357,7 @@ dialog::backdrop{background:var(--scrim)}
     art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (d ? 'not owned' : 'owned')) + '.');
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num);
     art.appendChild(img); art.appendChild(el('span', 'ok'));
+    if (c.manga) art.appendChild(el('span', 'mg', has(c.num, 'manga') ? 'MANGA ✓' : 'MANGA'));
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
     art.addEventListener('click', function () {
       if (window.matchMedia('(pointer: coarse)').matches) openInfo(c.num); else toggle(c.num, 'jp');
@@ -486,14 +536,35 @@ dialog::backdrop{background:var(--scrim)}
     r.en = vbtn('ph', false, function () { toggle(cards[vidx].num, 'en'); });
     r.kr = vbtn('ph', false, function () { toggle(cards[vidx].num, 'kr'); });
     r.foil = vbtn('', false, function () { toggle(cards[vidx].num, 'foil'); });
+    r.manga = vbtn('', false, function () { toggle(cards[vidx].num, 'manga'); });
     r.row = el('div', 'vrow');
-    r.row.appendChild(r.en); r.row.appendChild(r.kr); r.row.appendChild(r.foil);
+    r.row.appendChild(r.en); r.row.appendChild(r.kr); r.row.appendChild(r.foil); r.row.appendChild(r.manga);
+    r.vv = el('div', 'vv'); r.vv.hidden = true;
     r.art = el('div', 'small');
     ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.row); ft.appendChild(r.art);
 
-    root.appendChild(hd); root.appendChild(stage); root.appendChild(ft);
+    root.appendChild(hd); root.appendChild(stage); root.appendChild(r.vv); root.appendChild(ft);
     dlg.replaceChildren(root);
     vw = r;
+  }
+  var vwAlt = null;                       // which alt-art / Manga picture the viewer is showing (null = the standard card)
+  function vwShowArt(c) {
+    var img = el('img'); img.alt = c.name;
+    if (vwAlt) { img.onerror = function () { this.remove(); }; img.src = 'card_images_jp/' + c.num + '_' + vwAlt + '.png'; }
+    else artImg(img, c.num);
+    vw.wrap.replaceChildren(img);
+  }
+  function vwVariants(c) {                // Standard / Alt art / Manga: Japanese pictures only, so only where we have JP art
+    vw.vv.textContent = '';
+    var alts = (c.alt || []).filter(function () { return !!jpArt[c.num]; });
+    vw.vv.hidden = !alts.length;
+    if (!alts.length) return;
+    var opts = [[null, 'Standard']].concat(alts.map(function (a, i) { return [a, c.manga === a ? 'Manga ★' : (alts.length > 1 || c.manga ? 'Alt art ' + (i + 1) : 'Alt art')]; }));
+    opts.forEach(function (o) {
+      var b = el('button', '', o[1]); b.type = 'button'; b.setAttribute('aria-pressed', vwAlt === o[0] ? 'true' : 'false');
+      b.addEventListener('click', function () { vwAlt = o[0]; vwShowArt(c); vwVariants(c); vwUpdate(false); });
+      vw.vv.appendChild(b);
+    });
   }
   function vwUpdate(newCard, dir) {
     var c = cards[vidx], n = c.num, j = vidx % PER;
@@ -502,22 +573,24 @@ dialog::backdrop{background:var(--scrim)}
       vw.name.textContent = c.name;
       vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
       vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + ' · p' + pageOf(vidx) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
-      var img = el('img'); img.alt = c.name; artImg(img, n);
+      vwAlt = null;
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
-      vw.wrap.replaceChildren(img);
+      vwShowArt(c); vwVariants(c);
       vw.prev.disabled = vidx <= 0; vw.next.disabled = vidx >= cards.length - 1;
       [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) new Image().src = artSrc(cards[k].num); });
     }
     var done = has(n, 'jp');
     vw.note.className = 'note' + (done ? ' done' : '');
-    vw.note.textContent = jpText(c, true) + (c.foil ? (has(n, 'foil') ? ' · JP foil in hand' : ' · no foil yet, still counts as complete') : '') + '.';
+    vw.note.textContent = jpText(c, true) + (c.foil ? (has(n, 'foil') ? ' · JP foil in hand' : ' · no foil yet, still counts as complete') : '')
+      + (c.manga ? (has(n, 'manga') ? ' · Manga version owned' : ' · Manga version is optional') : '') + '.';
     vw.jp.setAttribute('aria-pressed', done ? 'true' : 'false');
     vw.jp.textContent = done ? '✓  JP card complete' : 'Mark JP card complete';
     vw.en.setAttribute('aria-pressed', has(n, 'en') ? 'true' : 'false'); vw.en.textContent = 'EN copy';
     vw.kr.setAttribute('aria-pressed', has(n, 'kr') ? 'true' : 'false'); vw.kr.textContent = 'KR copy';
     vw.foil.hidden = !c.foil; vw.foil.setAttribute('aria-pressed', has(n, 'foil') ? 'true' : 'false'); vw.foil.textContent = '★ JP foil';
-    vw.row.className = 'vrow' + (c.foil ? ' three' : '');
-    vw.art.textContent = (showingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + 'Swipe or use ‹ › for the next card.';
+    vw.manga.hidden = !c.manga; vw.manga.setAttribute('aria-pressed', has(n, 'manga') ? 'true' : 'false'); vw.manga.textContent = '✎ Manga';
+    vw.art.textContent = (vwAlt ? 'Showing the Japanese ' + (c.manga === vwAlt ? 'Manga' : 'alt-art') + ' version. '
+      : showingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + 'Swipe or use ‹ › for the next card.';
   }
   function vstep(d) {
     var k = vidx + d; if (k < 0 || k >= cards.length) return;
@@ -537,6 +610,7 @@ dialog::backdrop{background:var(--scrim)}
     var n = openNum; if (!n) return; openNum = null;
     var pg = pageOf(vidx); if (pg !== page) go(pg, 0);   // the grid follows wherever you swiped to
     flash(n);
+    if (typeof sumDlg !== 'undefined' && sumDlg.open) sumFill();   // the shopping list may have changed
   }
   function vwClose() { if (dlg.open) dlg.close(); vwAfterClose(); }
   dlg.addEventListener('close', vwAfterClose);
@@ -622,6 +696,237 @@ dialog::backdrop{background:var(--scrim)}
   $('pkyes').addEventListener('click', pkOpen);
   $('pkno').addEventListener('click', function () { try { localStorage.setItem('pkNo', '1'); } catch (e) {} pkBan.hidden = true; });
   pkDlg.addEventListener('click', function (e) { if (e.target === pkDlg) pkDlg.close(); });
+
+  /* ---------- share "what I'm looking for" with friends ---------- */
+  var shBtn = $('shbtn'), shDlg = $('shdlg'), shCfg = null, shMsg = null;
+  function missingList() { return cards.filter(function (c) { return !has(c.num, 'jp'); }); }
+  function foilMissingList() { return cards.filter(function (c) { return c.foil && !has(c.num, 'foil'); }); }
+  function wishText(withFoil) {
+    var m = missingList(), out = ["Japanese One Piece Event cards I'm looking for (" + m.length + ' of ' + cards.length + '):', ''], cur = null;
+    m.forEach(function (c) {
+      if (c.set !== cur) { if (cur) out.push(''); out.push(c.set); cur = c.set; }
+      out.push('- ' + c.num + ' ' + c.name + ' (' + c.rar + ')');
+    });
+    var f = withFoil ? foilMissingList() : [];
+    if (f.length) { out.push('', 'Also looking for the foil / alt-art versions of:'); f.forEach(function (c) { out.push('- ' + c.num + ' ' + c.name); }); }
+    if (shCfg && shCfg.enabled && shCfg.url) out.push('', 'Pictures: ' + shCfg.url);
+    return out.join('\n');
+  }
+  function legacyCopy(t) {          // for browsers / contexts where the modern clipboard call is refused
+    return new Promise(function (ok, no) {
+      var ta = el('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy') ? ok() : no(new Error('copy failed')); } catch (e) { no(e); } ta.remove();
+    });
+  }
+  function copyText(t) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t).catch(function () { return legacyCopy(t); });
+    return legacyCopy(t);
+  }
+  function shSay(t, cls) { if (shMsg) { shMsg.textContent = t; shMsg.className = 'sh-msg ' + (cls || ''); } }
+  function shLoad() { return pkFetch('/api/share').then(function (c) { shCfg = c; }).catch(function () { shCfg = null; }); }
+  function shOpen() { shLoad().then(function () { shFill(); if (!shDlg.open) shDlg.showModal(); }); }
+  function shPut(body, okText) {
+    return pkFetch('/api/share', { method: 'PUT', headers: JSONH, body: JSON.stringify(body) })
+      .then(function (c) { shCfg = c; shFill(); shSay(okText, 'ok'); })
+      .catch(function (e) { shSay('Could not save' + (e && e.message ? ': ' + e.message : '.'), 'err'); });
+  }
+  function shFill() {
+    var root = el('div', 'dl'), miss = missingList(), fm = foilMissingList();
+    root.appendChild(el('h3', '', 'Share what I’m looking for'));
+    root.appendChild(el('div', 'small', 'Show your friends the Japanese cards you still need, with pictures, so they know what to look for.'));
+    root.appendChild(el('div', 'note' + (miss.length ? '' : ' done'), miss.length
+      ? 'Still looking for ' + miss.length + ' of ' + cards.length + ' JP cards' + (fm.length ? ' (plus ' + fm.length + ' foil / alt-art versions)' : '') + '.'
+      : 'Nothing missing: the JP collection is complete!'));
+    shMsg = el('div', 'sh-msg'); shMsg.setAttribute('role', 'status');
+
+    if (shCfg) {
+      var sec = el('div', 'sec'); sec.appendChild(el('span', '', 'Link for friends'));
+      var f = el('div', 'sh-f');
+      if (shCfg.enabled && shCfg.url) {
+        var u = el('div', 'sh-url'), inp = el('input'); inp.type = 'text'; inp.readOnly = true; inp.value = shCfg.url; inp.setAttribute('aria-label', 'Share link');
+        inp.addEventListener('focus', function () { inp.select(); });
+        var cp = el('button', 'btn pri', 'Copy link'); cp.type = 'button';
+        cp.addEventListener('click', function () { copyText(shCfg.url).then(function () { shSay('Link copied. Paste it to your friends.', 'ok'); }, function () { inp.select(); shSay('Press Ctrl+C to copy.', 'err'); }); });
+        u.appendChild(inp); u.appendChild(cp); f.appendChild(u);
+        var row = el('div', 'sh-row');
+        if (navigator.share) {
+          var sb = el('button', 'btn', 'Share…'); sb.type = 'button';
+          sb.addEventListener('click', function () { navigator.share({ title: 'JP One Piece cards I’m looking for', text: 'Cards I’m still looking for — thanks for helping me find them!', url: shCfg.url }).catch(function () {}); });
+          row.appendChild(sb);
+        }
+        var op = el('a', 'btn', 'Open page'); op.href = shCfg.url; op.target = '_blank'; op.rel = 'noopener'; op.style.cssText = 'display:grid;place-items:center;text-decoration:none';
+        row.appendChild(op); f.appendChild(row);
+      }
+      var nm = el('input'); nm.type = 'text'; nm.maxLength = 40; nm.placeholder = 'Your name (shown at the top, optional)'; nm.value = shCfg.name || ''; nm.setAttribute('aria-label', 'Your name');
+      var ms = el('textarea'); ms.maxLength = 300; ms.placeholder = 'A short message for your friends (optional)'; ms.value = shCfg.message || ''; ms.setAttribute('aria-label', 'Message for your friends');
+      function ck(text, on) { var l = el('label', 'ck'), i = el('input'); i.type = 'checkbox'; i.checked = on; l.appendChild(i); l.appendChild(el('span', '', text)); return [l, i]; }
+      var c1 = ck('Show card pictures', shCfg.pics), c2 = ck('Also list the foil / alt-art versions I’m missing' + (fm.length ? ' (' + fm.length + ')' : ''), shCfg.foil);
+      f.appendChild(nm); f.appendChild(ms); f.appendChild(c1[0]); f.appendChild(c2[0]);
+      var go = el('button', 'btn pri', shCfg.enabled ? 'Save changes' : 'Create share link'); go.type = 'button';
+      go.addEventListener('click', function () { go.disabled = true; shPut({ enabled: true, name: nm.value, message: ms.value, pics: c1[1].checked, foil: c2[1].checked }, shCfg.enabled ? 'Saved.' : 'Link created. Copy it and send it to your friends.'); });
+      f.appendChild(go);
+      if (shCfg.enabled) {
+        var r2 = el('div', 'sh-row');
+        var stop = el('button', 'btn dng', 'Stop sharing'); stop.type = 'button';
+        stop.addEventListener('click', function () { shPut({ enabled: false }, 'Sharing is off. The link no longer works.'); });
+        var nw = el('button', 'btn', 'Make a new link'); nw.type = 'button';
+        nw.addEventListener('click', function () { if (window.confirm('Make a new link? The old one will stop working.')) shPut({ rotate: true }, 'New link ready. The old one no longer works.'); });
+        r2.appendChild(stop); r2.appendChild(nw); f.appendChild(r2);
+      }
+      sec.appendChild(f);
+      sec.appendChild(el('div', 'small', 'Anyone with the link can see this list, no login needed. It shows only the cards you’re missing; the rest of your collection stays private. '
+        + 'Pictures are Bandai’s official Japanese card images (with their sample watermark), served through your link only for cards on the list.'));
+      root.appendChild(sec);
+    } else {
+      root.appendChild(el('div', 'small', 'Sharing a link works on the hosted site (evento.peonbox.xyz). You can still copy the list as text below.'));
+    }
+
+    var s2 = el('div', 'sec'); s2.appendChild(el('span', '', 'Or copy the list as text'));
+    var ct = el('button', 'btn', 'Copy list as text'); ct.type = 'button';
+    ct.addEventListener('click', function () { copyText(wishText(shCfg ? shCfg.foil : false)).then(function () { shSay('List copied. Paste it into your chat.', 'ok'); }, function () { shSay('Could not copy. Try again.', 'err'); }); });
+    s2.appendChild(ct); root.appendChild(s2); root.appendChild(shMsg);
+    var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { shDlg.close(); }); root.appendChild(cl);
+    shDlg.replaceChildren(root);
+  }
+  shBtn.addEventListener('click', shOpen);
+  shDlg.addEventListener('click', function (e) { if (e.target === shDlg) shDlg.close(); });
+
+  /* ---------- what to buy: missing cards per product, where to find them, shortest shopping list ---------- */
+  var sumDlg = $('sumdlg'), PROD = null, sumMode = 'find', sumKind = 'all', sumHideDone = true;
+  function isDeck(p) { return p.family === 'ST'; }
+  function sumData() {
+    var miss = {}, prods = {}, bySet = {};
+    cards.forEach(function (c) { if (!has(c.num, 'jp')) miss[c.num] = true; });
+    PROD.products.forEach(function (p) { prods[p.code] = { p: p, total: 0, miss: [], only: 0 }; bySet[p.code] = { p: p, total: 0, miss: [] }; });
+    cards.forEach(function (c) {
+      var src = PROD.sources[c.num] || [c.set], m = !!miss[c.num];
+      src.forEach(function (code) { var d = prods[code]; if (!d) return; d.total++; if (m) { d.miss.push(c); if (src.length === 1) d.only++; } });
+      var b = bySet[c.set]; if (b) { b.total++; if (m) b.miss.push(c); }
+    });
+    return { prods: prods, bySet: bySet, missing: cards.filter(function (c) { return miss[c.num]; }) };
+  }
+  function sumPlan(D) {              // greedy cover: always take the product that adds the most still-missing cards (decks win ties)
+    var left = {}, n = D.missing.length, plan = [];
+    D.missing.forEach(function (c) { left[c.num] = true; });
+    var list = Object.keys(D.prods).map(function (k) { return D.prods[k]; }).filter(function (d) { return d.miss.length; });
+    while (n > 0) {
+      var best = null;
+      list.forEach(function (d) {
+        var g = d.miss.filter(function (c) { return left[c.num]; });
+        if (!g.length) return;
+        if (!best || g.length > best.gain.length || (g.length === best.gain.length && isDeck(d.p) && !isDeck(best.d.p))) best = { d: d, gain: g };
+      });
+      if (!best) break;
+      best.gain.forEach(function (c) { delete left[c.num]; n--; });
+      plan.push(best);
+    }
+    return plan;
+  }
+  function famClass(p) { return p.family === 'ST' ? ' st' : p.family === 'EB' ? ' eb' : p.family === 'PRB' ? ' prb' : ''; }
+  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : ''; }
+  function planText(plan, D) {
+    var out = ['Japanese One Piece Event cards I still need (' + D.missing.length + '). Shortest shopping list:', ''];
+    plan.forEach(function (s, i) { out.push((i + 1) + '. ' + s.d.p.code + ' ' + s.d.p.name + ' (' + s.d.p.kind.toLowerCase() + '): ' + s.gain.length + ' card' + (s.gain.length === 1 ? '' : 's') + ' - ' + s.gain.map(function (c) { return c.num; }).join(', ')); });
+    return out.join('\n');
+  }
+  function sumRow(d, mode) {
+    var det = el('details', 'sr'), sm = el('summary'), p = d.p;
+    sm.appendChild(el('span', 'sr-c' + famClass(p), p.code));
+    var t = el('div', 'sr-t'); t.appendChild(el('b', '', p.name));
+    var own = d.total - d.miss.length;
+    var sub = el('small'); sub.appendChild(document.createTextNode(p.kind + ' · ' + fmtDate(p.date) + ' · you have ' + own + ' of ' + d.total));
+    if (mode === 'find' && d.only) { sub.appendChild(document.createTextNode(' · ')); sub.appendChild(el('span', 'only', d.only + ' only found here')); }
+    t.appendChild(sub);
+    var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (d.total ? own / d.total * 100 : 100) + '%'; bar.appendChild(fill); t.appendChild(bar);
+    var n = el('div', 'sr-n' + (d.miss.length ? '' : ' zero')); n.appendChild(el('b', '', String(d.miss.length))); n.appendChild(el('span', '', d.miss.length ? 'missing' : 'complete'));
+    sm.appendChild(t); sm.appendChild(n); det.appendChild(sm);
+    var list = el('div', 'sr-l');
+    d.miss.forEach(function (c) {
+      var b = el('button', 'sr-i'); b.type = 'button';
+      b.appendChild(el('b', '', c.name));
+      b.appendChild(el('span', '', c.num + ' · ' + c.rar));
+      var others = (PROD.sources[c.num] || []).filter(function (x) { return x !== p.code; });
+      if (mode === 'find' && others.length) b.appendChild(el('em', '', 'also in ' + others.join(', ')));
+      if (mode === 'find' && !others.length) b.appendChild(el('em', 'only', 'only found here'));
+      b.addEventListener('click', function () { openInfo(c.num); });
+      list.appendChild(b);
+    });
+    det.appendChild(list);
+    return det;
+  }
+  function sumFill() {
+    var D = sumData(), plan = sumPlan(D), root = el('div', 'sm'), body = el('div', 'sm-b');
+    var prevScroll = sumDlg.querySelector('.sm-b') ? sumDlg.querySelector('.sm-b').scrollTop : 0;
+    var hd = el('header', 'sm-h'); hd.appendChild(el('h3', '', 'What to buy'));
+    var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.addEventListener('click', function () { sumDlg.close(); }); hd.appendChild(x);
+    if (!D.missing.length) {
+      body.appendChild(el('div', 'sm-empty', 'Nothing to buy: your JP collection is complete!'));
+    } else {
+      var inProds = Object.keys(D.prods).filter(function (k) { return D.prods[k].miss.length; }).length;
+      var s = el('div', 'sm-sum'); s.innerHTML = '';
+      s.appendChild(document.createTextNode('You are missing ')); s.appendChild(el('b', '', D.missing.length + ' of ' + cards.length));
+      s.appendChild(document.createTextNode(' JP Event cards. They can be found in ' + inProds + ' different products.'));
+      body.appendChild(s);
+      var pl = el('div', 'plan'); pl.appendChild(el('h4', '', 'Shortest shopping list'));
+      pl.appendChild(el('div', 'small', 'A DECK has fixed contents: you get exactly these cards. A PACK is a random draw, so you may need several.'));
+      var SHOW = 8;
+      function planList(from, to) {
+        var ol = el('ol'); ol.start = from + 1;
+        plan.slice(from, to).forEach(function (st) {
+          var li = el('li'); li.appendChild(el('b', '', st.d.p.code + ' ' + st.d.p.name));
+          li.appendChild(document.createTextNode(' — ' + st.gain.length + ' card' + (st.gain.length === 1 ? '' : 's')));
+          li.appendChild(el('span', 'tg2' + (isDeck(st.d.p) ? ' deck' : ''), isDeck(st.d.p) ? 'DECK' : 'PACK'));
+          ol.appendChild(li);
+        });
+        return ol;
+      }
+      pl.appendChild(planList(0, SHOW));
+      if (plan.length > SHOW) {
+        var more = el('details', 'plan-more'), ms = el('summary', '', 'Show the other ' + (plan.length - SHOW) + ' steps');
+        more.appendChild(ms); more.appendChild(planList(SHOW, plan.length)); pl.appendChild(more);
+      }
+      var cp = el('button', 'btn', 'Copy this list'); cp.type = 'button'; cp.style.marginTop = '10px';
+      cp.addEventListener('click', function () { copyText(planText(plan, D)).then(function () { cp.textContent = 'Copied ✓'; }, function () { cp.textContent = 'Could not copy'; }); });
+      pl.appendChild(cp); body.appendChild(pl);
+    }
+    // controls
+    var ctl = el('div', 'sm-ctl');
+    function seg(opts, cur, fn, label) {
+      var h = el('span', 'seg2'); h.setAttribute('role', 'group'); h.setAttribute('aria-label', label);
+      opts.forEach(function (o) { var b = el('button', '', o[1]); b.type = 'button'; b.setAttribute('aria-pressed', o[0] === cur ? 'true' : 'false'); b.addEventListener('click', function () { fn(o[0]); }); h.appendChild(b); });
+      return h;
+    }
+    ctl.appendChild(seg([['find', 'Where to find them'], ['set', 'By set']], sumMode, function (m) { sumMode = m; sumFill(); }, 'View'));
+    ctl.appendChild(seg([['all', 'All'], ['pack', 'Packs'], ['deck', 'Decks']], sumKind, function (k) { sumKind = k; sumFill(); }, 'Show'));
+    var lab = el('label', 'ck'), cb = el('input'); cb.type = 'checkbox'; cb.checked = sumHideDone;
+    cb.addEventListener('change', function () { sumHideDone = cb.checked; sumFill(); });
+    lab.appendChild(cb); lab.appendChild(el('span', '', 'Hide finished')); ctl.appendChild(lab);
+    body.appendChild(ctl);
+    body.appendChild(el('div', 'small', sumMode === 'find'
+      ? 'Counts every product that contains a card you are missing, including reprints, so you can pick where to look. Products are listed by how many of your missing cards they hold.'
+      : 'Counts each card only under the set it first came out in, the way your binder is laid out.'));
+    // rows
+    var src = sumMode === 'find' ? D.prods : D.bySet, rows = Object.keys(src).map(function (k) { return src[k]; }).filter(function (d) {
+      if (!d.total) return false;
+      if (sumKind === 'pack' && isDeck(d.p)) return false;
+      if (sumKind === 'deck' && !isDeck(d.p)) return false;
+      return !(sumHideDone && !d.miss.length);
+    });
+    if (sumMode === 'find') rows.sort(function (a, b) { return b.miss.length - a.miss.length || b.only - a.only || (a.p.date < b.p.date ? -1 : 1); });
+    if (!rows.length) body.appendChild(el('div', 'sm-empty', 'Nothing to show here.'));
+    rows.forEach(function (d) { body.appendChild(sumRow(d, sumMode)); });
+    root.appendChild(hd); root.appendChild(body); sumDlg.replaceChildren(root);
+    var nb = sumDlg.querySelector('.sm-b'); if (nb) nb.scrollTop = prevScroll;
+  }
+  function sumOpen() {
+    var go = function () { sumFill(); if (!sumDlg.open) sumDlg.showModal(); };
+    if (PROD) return go();
+    fetch('products.json').then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function (d) { PROD = d; go(); })
+      .catch(function () { window.alert('Could not load the product list. Refresh the page and try again.'); });
+  }
+  $('sumbtn').addEventListener('click', sumOpen);
+  sumDlg.addEventListener('click', function (e) { if (e.target === sumDlg) sumDlg.close(); });
 
   /* ---------- boot ---------- */
   Promise.all([

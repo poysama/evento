@@ -48,3 +48,23 @@ add a passkey on a brand-new device. Passkeys are checked with the `webauthn` li
 required, single-use challenges, sign-counter checks); the server only stores public keys.
 Passkeys are bound to the domain `evento.peonbox.xyz` - if the domain ever changes, add them again.
 `aws/test_handler.py` exercises the full registration and sign-in flows with a software authenticator.
+
+## Share what you are looking for
+
+The **Share** button creates an unlisted link to a read-only page showing the Japanese Event cards you are still
+missing (optionally with the foil / alt-art versions), so friends can help you find them. The page needs no login,
+shows only the missing cards, and can be stopped or replaced with a new link at any time.
+Bandai does not allow its pictures to be embedded on other sites, so the pictures are served from the private bucket
+through the secret link, only for cards on the list; "Show card pictures" can be switched off (names, codes and links
+to Bandai's own card list remain). The list can also be copied as plain text.
+
+## What to buy
+
+The **What to buy** button shows how many cards you are missing per product, which products contain them (including
+reprints in the PRB boosters and starter decks), and a shortest shopping list that covers everything you are missing
+with as few products as possible. Data: `products.json` (which products each card appears in, from Bandai's card list).
+
+## Manga and alt-art
+
+Cards with a Japanese alt-art printing get Standard / Alt art buttons in the card viewer; the four Manga Events
+(OP09-020, -057, -078, -096) are marked and have an optional "Manga" owned flag that never affects completion.

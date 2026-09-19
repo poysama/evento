@@ -20,7 +20,8 @@ LOCK = threading.Lock()
 #   jp   = you own the Japanese card (this is what counts as "complete")
 #   foil = you own the Japanese foil/parallel
 #   en / kr = you are holding an English / Korean copy as a placeholder
-FIELDS = {'jp', 'foil', 'en', 'kr'}
+#   manga = you own the optional Manga (special-art) version - never needed for a card to count as complete
+FIELDS = {'jp', 'foil', 'en', 'kr', 'manga'}
 
 
 def valid(owned):

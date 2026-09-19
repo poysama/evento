@@ -8,14 +8,16 @@ A cookie remembers the browser after either.
 
 Env vars: BUCKET (private S3 bucket), PASSCODE (fallback passcode),
           WEBAUTHN_ORIGIN (optional, default https://evento.peonbox.xyz - passkeys are bound to this host).
-Bucket layout: images/<CODE>.jpg (English art), images_jp/<CODE>.png + manifest.json (Japanese art), data/collection.json, data/passkeys.json, used/<challenge-id> (1-day lifecycle).
+Bucket layout: data/share.json (friends' wishlist link), images/<CODE>.jpg (English art), images_jp/<CODE>.png + manifest.json (Japanese art), data/collection.json, data/passkeys.json, used/<challenge-id> (1-day lifecycle).
 """
 import base64
 import hashlib
 import hmac
 import json
 import os
+import html as htmllib
 import re
+import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,9 +39,9 @@ TOKEN = hmac.new(PASSCODE.encode(), b'evento-session-v1', hashlib.sha256).hexdig
 CH_KEY = hmac.new(PASSCODE.encode(), b'evento-webauthn-challenge-v1', hashlib.sha256).digest()
 CH_TTL = 180
 MAX_PASSKEYS = 10
-FIELDS = {'jp', 'foil', 'en', 'kr'}
+FIELDS = {'jp', 'foil', 'en', 'kr', 'manga'}
 IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}\.jpg$')
-JP_IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}\.png$')
+JP_IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}(?:_p\d{1,2})?\.png$')
 KEYS_KEY = 'data/passkeys.json'
 
 LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -283,6 +285,239 @@ def webauthn_route(method, path, event):
     return js(404, {'error': 'not found'})
 
 
+# ---------------------------------------------------------------- share "what I'm looking for" with friends
+# A private settings API (login required) plus an unlisted, read-only page at /w/<token>. The page lists only the
+# cards still missing. Bandai's servers refuse to have their pictures embedded on other sites (Cross-Origin-Resource-
+# Policy), so the pictures are served from the private bucket instead - only through the secret link, and only for
+# cards that are on the list. "Show pictures" can be switched off (names, codes and links to Bandai's own list remain).
+SHARE_KEY = 'data/share.json'
+SHARE_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,64}$')
+SHARE_IMG_RE = re.compile(r'^([A-Z]{2,3}\d{2}-\d{3})(?:_(p\d{1,2}))?\.png$')
+BANDAI_LIST = 'https://www.onepiece-cardgame.com/cardlist/?search=true&series='
+SHARE_KEYS = {'enabled', 'foil', 'pics', 'name', 'message', 'rotate'}
+_CACHE = {'cat': None, 'own': (0.0, {})}
+
+
+def load_share():
+    try:
+        d = json.loads(s3.get_object(Bucket=BUCKET, Key=SHARE_KEY)['Body'].read())
+        return d if isinstance(d, dict) else None
+    except (ClientError, ValueError):
+        return None
+
+
+def save_share(cfg):
+    s3.put_object(Bucket=BUCKET, Key=SHARE_KEY, Body=json.dumps(cfg).encode(), ContentType='application/json')
+
+
+def clean_text(v, limit):
+    return re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f\x7f]+', ' ', str(v))).strip()[:limit]
+
+
+def share_view(cfg):
+    cfg = cfg or {}
+    tok = cfg.get('token')
+    return {'enabled': bool(cfg.get('enabled') and tok), 'foil': bool(cfg.get('foil')), 'pics': cfg.get('pics', True) is not False,
+            'name': cfg.get('name', ''), 'message': cfg.get('message', ''),
+            'url': f'{ORIGIN}/w/{tok}' if tok else None}
+
+
+def share_api(method, event):
+    cfg = load_share() or {}
+    if method == 'GET':
+        return js(200, share_view(cfg))
+    if method != 'PUT':
+        return js(404, {'error': 'not found'})
+    d = body_json(event)
+    if d is None or not set(d) <= SHARE_KEYS:
+        return js(400, {'error': 'bad request'})
+    for k in ('enabled', 'foil', 'pics', 'rotate'):
+        if k in d and not isinstance(d[k], bool):
+            return js(400, {'error': k + ' must be true or false'})
+    for k in ('name', 'message'):
+        if k in d and not isinstance(d[k], str):
+            return js(400, {'error': k + ' must be text'})
+    if 'name' in d:
+        cfg['name'] = clean_text(d['name'], 40)
+    if 'message' in d:
+        cfg['message'] = clean_text(d['message'], 300)
+    for k in ('foil', 'pics', 'enabled'):
+        if k in d:
+            cfg[k] = d[k]
+    if d.get('rotate') or (cfg.get('enabled') and not cfg.get('token')):
+        cfg['token'] = secrets.token_urlsafe(16)          # 128 bits: unguessable
+    cfg['updated'] = now_iso()
+    save_share(cfg)
+    return js(200, share_view(cfg))
+
+
+def share_gate(token):
+    """The share settings if this is the live, correct link - otherwise None."""
+    cfg = load_share()
+    if (SHARE_TOKEN_RE.match(token) and cfg and cfg.get('enabled') and cfg.get('token')
+            and hmac.compare_digest(token.encode(), str(cfg['token']).encode())):
+        return cfg
+    return None
+
+
+def _catalog():
+    if not _CACHE['cat']:
+        _CACHE['cat'] = (json.loads((HERE / 'cards.json').read_text(encoding='utf-8')),
+                         json.loads((HERE / 'share_data.json').read_text(encoding='utf-8')))
+    return _CACHE['cat']
+
+
+def _owned(max_age):
+    t, d = _CACHE['own']
+    if time.time() - t > max_age:
+        try:
+            d = json.loads(s3.get_object(Bucket=BUCKET, Key='data/collection.json')['Body'].read())
+        except (ClientError, ValueError):
+            d = {}
+        d = d if isinstance(d, dict) else {}
+        _CACHE['own'] = (time.time(), d)
+    return d
+
+
+def _wishlist(cfg, max_age=0):
+    cards, info = _catalog()
+    owned = _owned(max_age)
+    missing = [c for c in cards if not (owned.get(c['num']) or {}).get('jp')]
+    foil_missing = [c for c in cards if c['foil'] and not (owned.get(c['num']) or {}).get('foil')] if cfg.get('foil') else []
+    return cards, info, missing, foil_missing
+
+
+_HEAD = {'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer'}
+
+
+def _share_not_found():
+    return resp(404, '<!doctype html><meta charset=utf-8><meta name=robots content="noindex"><title>Not found</title>'
+                     '<body style="font:16px system-ui;padding:2rem"><h1>This link is not active</h1>'
+                     '<p>Ask your friend for a fresh one.</p>', 'text/html; charset=utf-8', extra=_HEAD)
+
+
+def share_image(token, name):
+    cfg = share_gate(token)
+    m = SHARE_IMG_RE.match(name)
+    if not cfg or not m or cfg.get('pics', True) is False:
+        return js(404, {'error': 'not found'})
+    num, alt = m.group(1), m.group(2)
+    _, info, missing, foil_missing = _wishlist(cfg, max_age=20)
+    if alt:
+        ok = num in {c['num'] for c in foil_missing} and alt in (info.get(num, {}).get('alt') or [])
+    else:
+        ok = num in {c['num'] for c in missing}
+    if not ok:                                   # only what is on the list: never reveals what you already own
+        return js(404, {'error': 'not found'})
+    try:
+        data = s3.get_object(Bucket=BUCKET, Key='images_jp/' + name)['Body'].read()
+    except ClientError:
+        return js(404, {'error': 'not found'})
+    return resp(200, base64.b64encode(data).decode(), 'image/png', b64=True,
+                extra=dict(_HEAD, **{'Cache-Control': 'private, max-age=3600'}))
+
+
+def _e(s):
+    return htmllib.escape(str(s), quote=True)
+
+
+def _figure(c, info, foil, token, pics):
+    n, alts = c['num'], info.get('alt') or []
+    pid = f'{n}_{alts[0]}' if (foil and alts) else n
+    jp = info.get('jp', '')
+    tag = ''
+    if foil:
+        tag = f'<span class="tag">{len(alts)} alt-art version{"s" if len(alts) != 1 else ""}</span>' if alts \
+            else '<span class="tag">foil / parallel</span>'
+    pic = ''
+    if pics:
+        src = f'/w/{token}/img/{pid}.png'
+        pic = (f'<a class="p" href="{_e(src)}" target="_blank" rel="noopener noreferrer"><img src="{_e(src)}" '
+               f'alt="{_e(c["name"])}" width="300" height="420" loading="lazy" decoding="async"></a>')
+    link = ''
+    if info.get('sid'):
+        link = (f'<a class="bl" href="{_e(BANDAI_LIST + str(info["sid"]))}#{_e(n)}" target="_blank" '
+                f'rel="noopener noreferrer">Bandai card list &rarr;</a>')
+    return (f'<figure class="c">{pic}<figcaption><b>{_e(c["name"])}</b>'
+            + (f'<span class="jp" lang="ja">{_e(jp)}</span>' if jp else '')
+            + f'<code>{_e(n)} &middot; {_e(c["rar"])}</code>{tag}{link}</figcaption></figure>')
+
+
+def _sections(items, info, prefix, foil, token, pics):
+    groups = []
+    for c in items:
+        if not groups or groups[-1][0] != c['set']:
+            groups.append((c['set'], []))
+        groups[-1][1].append(c)
+    nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{len(cs)}</i></a>' for s, cs in groups)
+    body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)}</small></h2>'
+                   f'<div class="g{"" if pics else " t"}">'
+                   + ''.join(_figure(c, info.get(c['num'], {}), foil, token, pics) for c in cs) + '</div></section>'
+                   for s, cs in groups)
+    return nav, body
+
+
+SHARE_CSS = """:root{--bg:#E6ECF2;--card:#F9FBFD;--ink:#13202E;--mute:#5B6B7D;--line:#B7C3D0;--acc:#1E7F5C;--accbg:#DDF1E7}
+@media(prefers-color-scheme:dark){:root{--bg:#0D141C;--card:#151E29;--ink:#E3E9F0;--mute:#93A2B3;--line:#2E3B4A;--acc:#5ED1A0;--accbg:#12362A}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;padding:16px}
+main{max-width:1000px;margin:0 auto}h1{font-size:24px;line-height:1.2;margin:8px 0 4px}h2{font-size:18px;margin:26px 0 10px;letter-spacing:.04em}
+h2 small{color:var(--mute);font-weight:500}.sub{color:var(--mute);margin:0 0 14px}
+.msg{background:var(--accbg);color:var(--acc);border-radius:10px;padding:10px 14px;font-weight:600;margin:12px 0}
+.stat{font-size:14px;color:var(--mute)}.stat b{color:var(--ink)}
+nav.chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 0}nav.chips a{border:1.5px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--ink);text-decoration:none;font-size:14px;background:var(--card)}
+nav.chips i{font-style:normal;color:var(--mute);margin-left:4px}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px 10px}.g.t{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.c{margin:0}.c a.p{display:block;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);background:var(--card);aspect-ratio:63/88}
+.c img{display:block;width:100%;height:100%;object-fit:cover}
+figcaption{display:flex;flex-direction:column;gap:1px;padding-top:6px;font-size:13.5px}figcaption b{line-height:1.25}
+.t figcaption{padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card)}
+.jp{color:var(--mute);font-size:12.5px}code{font:12px ui-monospace,Consolas,monospace;color:var(--mute)}
+.tag{align-self:flex-start;margin-top:3px;background:var(--accbg);color:var(--acc);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
+a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decoration:none}a.bl:hover{text-decoration:underline}
+.done{padding:28px 0;text-align:center;font-size:18px;font-weight:600}
+footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
+
+
+def share_page(token):
+    cfg = share_gate(token)
+    if not cfg:
+        return _share_not_found()
+    cards, info, missing, foil_missing = _wishlist(cfg)
+    pics = cfg.get('pics', True) is not False
+    name, message = cfg.get('name', ''), cfg.get('message', '')
+    nav1, body1 = _sections(missing, info, 'm', False, token, pics)
+    nav2, body2 = _sections(foil_missing, info, 'f', True, token, pics)
+    who = f'from {_e(name)}' if name else ''
+    title = f"{name + chr(39) + 's' if name else 'My'} Japanese One Piece Event card wishlist"
+    desc = f"{len(missing)} Japanese Event cards I'm still looking for"
+    parts = ['<h1>Japanese Event cards I&rsquo;m looking for</h1>',
+             f'<p class="sub">{who}</p>' if who else '',
+             f'<div class="msg">{_e(message)}</div>' if message else '',
+             f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still missing'
+             + (f' &middot; <b>{len(foil_missing)}</b> foil / alt-art versions wanted' if foil_missing else '') + '</p>']
+    if missing:
+        parts += [f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
+    else:
+        parts.append('<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
+    if foil_missing:
+        parts += ['<h2 style="margin-top:40px">Also looking for the foil / alt-art versions</h2>',
+                  f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
+    if pics:
+        note = ('Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample '
+                'watermark), shown here only so you can spot the right card. Tap a card for the full-size picture.')
+    else:
+        note = 'Pictures are not included here: tap &ldquo;Bandai card list&rdquo; under a card to see it on Bandai&rsquo;s official site.'
+    parts.append(f'<footer>{note} Not affiliated with Bandai. &copy; Eiichiro Oda / Shueisha / Toei Animation / Bandai.</footer>')
+    fav = re.search(r'<link rel="icon"[^>]*>', LOGIN_HTML)
+    page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">'
+            f'<title>{_e(title)}</title><meta property="og:title" content="{_e(title)}">'
+            f'<meta property="og:description" content="{_e(desc)}"><meta property="og:type" content="website">'
+            f'{fav.group(0) if fav else ""}<style>{SHARE_CSS}</style></head><body><main>{"".join(parts)}</main></body></html>')
+    return resp(200, page, 'text/html; charset=utf-8', extra=dict(_HEAD, **{'Cache-Control': 'private, max-age=60'}))
+
+
 # ---------------------------------------------------------------- handler
 def handler(event, context):
     http = event['requestContext']['http']
@@ -300,6 +535,10 @@ def handler(event, context):
     if path.startswith('/webauthn/'):
         return webauthn_route(method, path, event)
 
+    if method == 'GET' and path.startswith('/w/'):
+        tok, _, sub = path[3:].partition('/')
+        return share_image(tok, sub[4:]) if sub.startswith('img/') else (share_page(tok) if not sub else _share_not_found())
+
     if not authed(event):
         if method == 'GET' and path in ('/', '/index.html'):
             return resp(200, LOGIN_HTML, 'text/html; charset=utf-8')
@@ -309,6 +548,8 @@ def handler(event, context):
         return resp(200, (HERE / 'index.html').read_text(encoding='utf-8'), 'text/html; charset=utf-8')
     if method == 'GET' and path == '/cards.json':
         return resp(200, (HERE / 'cards.json').read_text(encoding='utf-8'), 'application/json')
+    if method == 'GET' and path == '/products.json':
+        return resp(200, (HERE / 'products.json').read_text(encoding='utf-8'), 'application/json')
 
     if method == 'GET' and path.startswith('/card_images/'):
         name = path[len('/card_images/'):]
@@ -338,6 +579,9 @@ def handler(event, context):
             return js(404, {'error': 'not found'})
         return resp(200, base64.b64encode(data).decode(), 'image/png', b64=True,
                     extra={'Cache-Control': 'private, max-age=31536000, immutable'})
+
+    if path == '/api/share':
+        return share_api(method, event)
 
     if path == '/api/collection':
         if method == 'GET':

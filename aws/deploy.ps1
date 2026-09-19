@@ -64,7 +64,7 @@ $py = if (Get-Command py -ErrorAction SilentlyContinue) { @('py', '-3') } else {
 & $py[0] $py[1..($py.Length - 1)] -m pip install --quiet --target $stage -r "$PSScriptRoot\requirements.txt" `
   --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 --python-version 3.12 --implementation cp --only-binary=:all:
 if ($LASTEXITCODE -ne 0) { throw 'pip install of Lambda dependencies failed' }
-Copy-Item "$PSScriptRoot\lambda_function.py","$App\index.html","$App\cards.json" $stage
+Copy-Item "$PSScriptRoot\lambda_function.py","$PSScriptRoot\share_data.json","$App\index.html","$App\cards.json","$App\products.json" $stage
 Get-ChildItem $stage -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
 
