@@ -111,6 +111,28 @@ check('missing image is 404', h(ev('GET', '/card_images/ZZZ99-999.jpg', cookies=
 check('path traversal is 404', h(ev('GET', '/card_images/../data/collection.json', cookies=ck), None)['statusCode'] == 404)
 check('unknown route is 404', h(ev('GET', '/nope', cookies=ck), None)['statusCode'] == 404)
 
+# Japanese art lives under images_jp/ and is served as PNG; English art is unaffected
+png = b'\x89PNG\r\n\x1a\nfakepngdata'
+store['images_jp/OP01-026.png'] = png
+store['images_jp/manifest.json'] = b'["OP01-026"]'
+check('JP art needs a login', h(ev('GET', '/card_images_jp/OP01-026.png'), None)['statusCode'] == 401)
+check('JP manifest needs a login', h(ev('GET', '/card_images_jp/manifest.json'), None)['statusCode'] == 401)
+jp = h(ev('GET', '/card_images_jp/OP01-026.png', cookies=ck), None)
+check('JP art is served as a cacheable base64 PNG',
+      jp['statusCode'] == 200 and jp['isBase64Encoded'] and jp['headers']['Content-Type'] == 'image/png'
+      and base64.b64decode(jp['body']) == png and 'immutable' in jp['headers']['Cache-Control'])
+mf = h(ev('GET', '/card_images_jp/manifest.json', cookies=ck), None)
+check('JP manifest is served and never cached',
+      mf['statusCode'] == 200 and json.loads(mf['body']) == ['OP01-026'] and mf['headers']['Cache-Control'] == 'no-store')
+check('missing JP art is 404', h(ev('GET', '/card_images_jp/ZZZ99-999.png', cookies=ck), None)['statusCode'] == 404)
+check('JP route only serves PNG card codes',
+      all(h(ev('GET', '/card_images_jp/' + n, cookies=ck), None)['statusCode'] == 404
+          for n in ('OP01-026.jpg', '../data/collection.json', '../images/OP01-026.jpg', 'op01-026.png', 'manifest.jsonx')))
+check('English art still works alongside', h(ev('GET', '/card_images/OP01-026.jpg', cookies=ck), None)['statusCode'] == 200)
+del store['images_jp/manifest.json']
+check('a missing JP manifest is a clean 404 (the app then falls back to English)',
+      h(ev('GET', '/card_images_jp/manifest.json', cookies=ck), None)['statusCode'] == 404)
+
 # ----------------------------------------------------------------------------------------------
 # Passkeys: a software authenticator (real EC keys, real CBOR/COSE) runs the full ceremonies.
 # ----------------------------------------------------------------------------------------------

@@ -36,7 +36,11 @@ Write-Host "bucket ready: $Bucket (public access blocked)"
 # --- card art (private; only the Lambda can read it)
 if (Test-Path "$App\card_images") {
   Run s3 sync "$App\card_images" "s3://$Bucket/images/" --exclude "*" --include "*.jpg" --only-show-errors
-  Write-Host "images synced"
+  Write-Host "English images synced"
+}
+if (Test-Path "$App\card_images_jp") {
+  Run s3 sync "$App\card_images_jp" "s3://$Bucket/images_jp/" --exclude "*" --include "*.png" --include "manifest.json" --only-show-errors
+  Write-Host "Japanese images synced"
 }
 
 # --- execution role (logs + read/write this bucket only)

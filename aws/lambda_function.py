@@ -8,7 +8,7 @@ A cookie remembers the browser after either.
 
 Env vars: BUCKET (private S3 bucket), PASSCODE (fallback passcode),
           WEBAUTHN_ORIGIN (optional, default https://evento.peonbox.xyz - passkeys are bound to this host).
-Bucket layout: images/<CODE>.jpg, data/collection.json, data/passkeys.json, used/<challenge-id> (1-day lifecycle).
+Bucket layout: images/<CODE>.jpg (English art), images_jp/<CODE>.png + manifest.json (Japanese art), data/collection.json, data/passkeys.json, used/<challenge-id> (1-day lifecycle).
 """
 import base64
 import hashlib
@@ -39,6 +39,7 @@ CH_TTL = 180
 MAX_PASSKEYS = 10
 FIELDS = {'jp', 'foil', 'en', 'kr'}
 IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}\.jpg$')
+JP_IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}\.png$')
 KEYS_KEY = 'data/passkeys.json'
 
 LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -318,6 +319,24 @@ def handler(event, context):
         except ClientError:
             return js(404, {'error': 'not found'})
         return resp(200, base64.b64encode(data).decode(), 'image/jpeg', b64=True,
+                    extra={'Cache-Control': 'private, max-age=31536000, immutable'})
+
+    # Japanese card art (images_jp/) and the manifest listing which cards have it
+    if method == 'GET' and path == '/card_images_jp/manifest.json':
+        try:
+            return resp(200, s3.get_object(Bucket=BUCKET, Key='images_jp/manifest.json')['Body'].read().decode(),
+                        'application/json')
+        except ClientError:
+            return js(404, {'error': 'not found'})
+    if method == 'GET' and path.startswith('/card_images_jp/'):
+        name = path[len('/card_images_jp/'):]
+        if not JP_IMG_RE.match(name):
+            return js(404, {'error': 'not found'})
+        try:
+            data = s3.get_object(Bucket=BUCKET, Key='images_jp/' + name)['Body'].read()
+        except ClientError:
+            return js(404, {'error': 'not found'})
+        return resp(200, base64.b64encode(data).decode(), 'image/png', b64=True,
                     extra={'Cache-Control': 'private, max-age=31536000, immutable'})
 
     if path == '/api/collection':

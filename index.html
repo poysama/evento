@@ -172,7 +172,11 @@ dialog::backdrop{background:var(--scrim)}
 .vh{display:flex;align-items:center;gap:10px;padding:10px 10px 8px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
 .vt{flex:1;min-width:0}.vt b{display:block;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vt span{display:block;font:11.5px var(--mono);color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.vc{font:12px var(--mono);color:var(--mute);white-space:nowrap}
+.seg2{display:inline-flex;flex:none;border:1.5px solid var(--ink);border-radius:10px;overflow:hidden}
+.seg2[hidden]{display:none}
+.seg2 button{border:0;background:var(--sheet);color:var(--ink);font-weight:700;font-size:13px;min-width:44px;min-height:38px;padding:0 10px;cursor:pointer}
+.seg2 button+button{border-left:1.5px solid var(--ink)}
+.seg2 button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
 .vx{flex:none;width:54px;height:54px;border-radius:50%;border:2px solid var(--ink);background:var(--ink);color:var(--sheet);font-size:26px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
 .vs{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:pan-y}
 .vi{height:100%;width:100%;min-height:0;display:flex;align-items:center;justify-content:center}
@@ -202,7 +206,7 @@ dialog::backdrop{background:var(--scrim)}
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="artbtn" hidden>Art: JP</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -254,6 +258,29 @@ dialog::backdrop{background:var(--scrim)}
   var jpArt = {}, artMode = 'jp';
   try { if (localStorage.getItem('binderArt') === 'en') artMode = 'en'; } catch (e) {}
   function showingJP(n) { return artMode === 'jp' && !!jpArt[n]; }
+  var artSegs = [];
+  function hasJP() { for (var k in jpArt) if (jpArt[k]) return true; return false; }
+  function syncSegs() {
+    artSegs.forEach(function (h) {
+      h.hidden = !hasJP();
+      [].forEach.call(h.children, function (b) { b.setAttribute('aria-pressed', b.dataset.m === artMode ? 'true' : 'false'); });
+    });
+  }
+  function makeArtSeg(host) {          // an EN | JP switch; every copy of it stays in sync
+    host.textContent = ''; host.setAttribute('role', 'group'); host.setAttribute('aria-label', 'Card art language');
+    [['en', 'EN'], ['jp', 'JP']].forEach(function (o) {
+      var b = el('button', '', o[1]); b.type = 'button'; b.dataset.m = o[0];
+      b.setAttribute('aria-label', o[0] === 'jp' ? 'Show Japanese card art' : 'Show English card art');
+      b.addEventListener('click', function () { setArt(o[0]); });
+      host.appendChild(b);
+    });
+    artSegs.push(host); syncSegs();
+  }
+  function setArt(m) {
+    if (m === artMode) return;
+    artMode = m; try { localStorage.setItem('binderArt', m); } catch (e) {}
+    syncSegs(); render(0); if (openNum) vwUpdate(true, 0);
+  }
   function artSrc(n) { return showingJP(n) ? 'card_images_jp/' + n + '.png' : 'card_images/' + n + '.jpg'; }
   function artImg(img, n) {
     img.onerror = function () {
@@ -433,11 +460,11 @@ dialog::backdrop{background:var(--scrim)}
   function vwBuild() {
     var root = el('div', 'vw'), r = {};
     var hd = el('header', 'vh'), tt = el('div', 'vt');
-    r.name = el('b'); r.meta = el('span'); tt.appendChild(r.name); tt.appendChild(r.meta);
-    r.count = el('span', 'vc');
+    r.name = el('b'); r.meta = el('span'); r.meta2 = el('span'); tt.appendChild(r.name); tt.appendChild(r.meta); tt.appendChild(r.meta2);
+    r.artseg = el('span', 'seg2'); makeArtSeg(r.artseg);
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close card viewer');
     x.addEventListener('click', function () { vwClose(); });
-    hd.appendChild(tt); hd.appendChild(r.count); hd.appendChild(x);
+    hd.appendChild(tt); hd.appendChild(r.artseg); hd.appendChild(x);
 
     var stage = el('div', 'vs');
     r.prev = el('button', 'vn vp', '‹'); r.prev.type = 'button'; r.prev.setAttribute('aria-label', 'Previous card');
@@ -473,8 +500,8 @@ dialog::backdrop{background:var(--scrim)}
     openNum = n;
     if (newCard) {
       vw.name.textContent = c.name;
-      vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar + ' · p' + pageOf(vidx) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
-      vw.count.textContent = (vidx + 1) + ' / ' + cards.length;
+      vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
+      vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + ' · p' + pageOf(vidx) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
       var img = el('img'); img.alt = c.name; artImg(img, n);
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
       vw.wrap.replaceChildren(img);
@@ -604,17 +631,7 @@ dialog::backdrop{background:var(--scrim)}
   ]).then(function (res) {
     cards = res[0]; col = migrate(res[1]); N = Math.ceil(cards.length / PER);
     (Array.isArray(res[2]) ? res[2] : []).forEach(function (n) { jpArt[n] = true; });
-    var artBtn = $('artbtn');
-    if (Object.keys(jpArt).length) {
-      artBtn.hidden = false;
-      var lab = function () { artBtn.textContent = 'Art: ' + (artMode === 'jp' ? 'JP' : 'EN'); artBtn.setAttribute('aria-pressed', artMode === 'jp'); };
-      lab();
-      artBtn.addEventListener('click', function () {
-        artMode = artMode === 'jp' ? 'en' : 'jp';
-        try { localStorage.setItem('binderArt', artMode); } catch (e) {}
-        lab(); render(0); if (openNum) fillInfo(openNum);
-      });
-    }
+    makeArtSeg($('artseg'));
     var ps = $('pagesel'), ss = $('setsel');
     for (var p = 1; p <= N; p++) { var o = el('option', '', 'Page ' + p + ' / ' + N); o.value = p; ps.appendChild(o); }
     cards.forEach(function (c, i) { if (!firstPage[c.set]) { firstPage[c.set] = pageOf(i); var o = el('option', '', c.set + ' — p.' + firstPage[c.set]); o.value = firstPage[c.set]; ss.appendChild(o); } });
