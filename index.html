@@ -164,6 +164,35 @@ dialog::backdrop{background:var(--scrim)}
 .pk-add .go{min-height:48px;border:0;border-radius:10px;background:var(--own);color:#fff;font-weight:700;cursor:pointer}
 .pk-add .go:disabled{opacity:.6;cursor:default}
 .pk-msg{min-height:1.3em;font-size:13px;font-weight:600}.pk-msg.err{color:var(--warn)}.pk-msg.ok{color:var(--own)}
+/* ---- card viewer ---- */
+#dlg{padding:0;overflow:hidden;width:min(540px,96vw);height:min(94dvh,880px);max-height:none}
+#dlg[open]{display:flex}
+@media (max-width:560px){#dlg{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0}}
+.vw{display:flex;flex-direction:column;width:100%;height:100%;min-height:0}
+.vh{display:flex;align-items:center;gap:10px;padding:10px 10px 8px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
+.vt{flex:1;min-width:0}.vt b{display:block;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vt span{display:block;font:11.5px var(--mono);color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vc{font:12px var(--mono);color:var(--mute);white-space:nowrap}
+.vx{flex:none;width:54px;height:54px;border-radius:50%;border:2px solid var(--ink);background:var(--ink);color:var(--sheet);font-size:26px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+.vs{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:pan-y}
+.vi{height:100%;width:100%;min-height:0;display:flex;align-items:center;justify-content:center}
+.vi img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;box-shadow:0 4px 22px rgba(0,0,0,.35)}
+.vi.sl-n img{animation:vsn .2s ease-out}.vi.sl-p img{animation:vsp .2s ease-out}
+@keyframes vsn{from{opacity:.2;transform:translateX(28px)}to{opacity:1;transform:none}}
+@keyframes vsp{from{opacity:.2;transform:translateX(-28px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.vi.sl-n img,.vi.sl-p img{animation:none}}
+.vn{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:68px;border:1px solid rgba(255,255,255,.55);border-radius:12px;background:rgba(15,25,38,.62);color:#fff;font-size:34px;line-height:1;cursor:pointer;z-index:2;padding:0 0 4px}
+.vp{left:4px}.vnx{right:4px}.vn:disabled{opacity:.22;cursor:default}
+.vf{display:flex;flex-direction:column;gap:8px;padding:10px 12px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.vf .note{padding:7px 10px;font-size:13px}
+.vrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vrow.three{grid-template-columns:1fr 1fr 1fr}
+.vb{min-height:48px;border:1.5px solid var(--line);border-radius:10px;background:var(--sheet);color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;padding:6px 8px}
+.vb[hidden]{display:none}
+.vb.big{min-height:56px;font-size:16px}
+.vb[aria-pressed="true"]{background:var(--ownbg);border-color:var(--own);color:var(--own)}
+.vb.ph[aria-pressed="true"]{background:var(--amberbg);border-color:var(--amber);color:var(--amber)}
+.vf .small{font-size:11.5px}
+@media (pointer:coarse){.i{display:none}}
 </style>
 </head>
 <body>
@@ -205,7 +234,7 @@ dialog::backdrop{background:var(--scrim)}
 </main>
 </div>
 
-<dialog id="dlg" aria-label="Card details"></dialog>
+<dialog id="dlg" aria-label="Card viewer"></dialog>
 <dialog id="pkdlg" aria-label="Passkeys"></dialog>
 
 <script>
@@ -249,11 +278,13 @@ dialog::backdrop{background:var(--scrim)}
     var card = el('div', 'card' + (d ? ' done' : '') + (p ? ' hasph' : ''));
     card.dataset.n = c.num;
     var art = el('button', 'art'); art.type = 'button'; art.setAttribute('aria-pressed', d);
-    art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to mark JP card ' + (d ? 'not owned' : 'owned') + '.');
+    art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (d ? 'not owned' : 'owned')) + '.');
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num);
     art.appendChild(img); art.appendChild(el('span', 'ok'));
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
-    art.addEventListener('click', function () { toggle(c.num, 'jp'); });
+    art.addEventListener('click', function () {
+      if (window.matchMedia('(pointer: coarse)').matches) openInfo(c.num); else toggle(c.num, 'jp');
+    });
     var info = el('button', 'i', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Card info: ' + c.name);
     info.addEventListener('click', function (e) { e.stopPropagation(); openInfo(c.num); });
     var cap = el('div', 'cap');
@@ -393,44 +424,96 @@ dialog::backdrop{background:var(--scrim)}
   q.addEventListener('keydown', function (e) { if (e.key === 'Escape') { hits.hidden = true; q.blur(); } });
   document.addEventListener('click', function (e) { if (!e.target.closest('.find')) hits.hidden = true; });
 
-  /* ---------- info panel ---------- */
-  function openInfo(n) { openNum = n; fillInfo(n); if (!dlg.open) dlg.showModal(); }
-  function tg(label, sub, on, cls, fn) {
-    var b = el('button', 'tg' + (cls ? ' ' + cls : '')); b.type = 'button'; b.setAttribute('aria-pressed', on);
-    var s = el('span', '', label); if (sub) { s.appendChild(document.createElement('br')); s.appendChild(el('em', '', sub)); }
-    b.appendChild(s); b.addEventListener('click', fn); return b;
+  /* ---------- card viewer: full-screen on phones, big close button, swipe / arrows for next + previous ---------- */
+  var vw = null, vidx = 0;
+  function vbtn(cls, on, fn) {
+    var b = el('button', 'vb' + (cls ? ' ' + cls : '')); b.type = 'button'; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.addEventListener('click', fn); return b;
   }
-  function fillInfo(n) {
-    var keep = [].indexOf.call(dlg.querySelectorAll('.tg'), document.activeElement);
-    var i = cards.findIndex(function (c) { return c.num === n; }), c = cards[i], j = i % PER;
-    var root = el('div', 'dl'), head = el('div', 'dh');
-    var img = el('img'); img.alt = c.name; artImg(img, c.num); head.appendChild(img);
-    var t = el('div'); t.appendChild(el('h3', '', c.name));
-    var m = el('div', 'meta');
-    [['Code', c.num], ['Set', c.set], ['Rarity', c.rar], ['Slot', 'Page ' + pageOf(i) + ' · row ' + (Math.floor(j / 4) + 1) + ' · col ' + (j % 4 + 1)]].forEach(function (r) {
-      var d = el('div'); d.appendChild(document.createTextNode(r[0] + ': ')); d.appendChild(el('b', '', r[1])); m.appendChild(d);
-    });
-    t.appendChild(m); head.appendChild(t); root.appendChild(head);
-    root.appendChild(el('div', 'note' + (has(n, 'jp') ? ' done' : ''), jpText(c, true) + '.'));
-    var s1 = el('div', 'sec'); s1.appendChild(el('span', '', 'Japanese card'));
-    s1.appendChild(tg('I have the JP card', 'Counts this slot as complete', has(n, 'jp'), '', function () { toggle(n, 'jp'); })); root.appendChild(s1);
-    var s2 = el('div', 'sec'); s2.appendChild(el('span', '', 'Holding a placeholder'));
-    var two = el('div', 'two');
-    two.appendChild(tg('English', null, has(n, 'en'), 'ph', function () { toggle(n, 'en'); }));
-    two.appendChild(tg('Korean', null, has(n, 'kr'), 'ph', function () { toggle(n, 'kr'); }));
-    s2.appendChild(two); root.appendChild(s2);
-    var s3 = el('div', 'sec'); s3.appendChild(el('span', '', 'Foil / parallel'));
-    if (c.foil) {
-      s3.appendChild(tg('I have the JP foil', has(n, 'foil') ? 'Foil in hand' : 'No foil yet — the card still counts as complete', has(n, 'foil'), '', function () { toggle(n, 'foil'); }));
-    } else s3.appendChild(el('div', 'small', 'No foil or parallel printing exists for this card.'));
-    root.appendChild(s3);
-    root.appendChild(el('div', 'small', showingJP(n) ? 'Art shown is the Japanese card.' : 'Art shown is the English release used as a reference. Your JP copy is what counts.'));
-    var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { dlg.close(); }); root.appendChild(cl);
+  function vwBuild() {
+    var root = el('div', 'vw'), r = {};
+    var hd = el('header', 'vh'), tt = el('div', 'vt');
+    r.name = el('b'); r.meta = el('span'); tt.appendChild(r.name); tt.appendChild(r.meta);
+    r.count = el('span', 'vc');
+    var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close card viewer');
+    x.addEventListener('click', function () { vwClose(); });
+    hd.appendChild(tt); hd.appendChild(r.count); hd.appendChild(x);
+
+    var stage = el('div', 'vs');
+    r.prev = el('button', 'vn vp', '‹'); r.prev.type = 'button'; r.prev.setAttribute('aria-label', 'Previous card');
+    r.next = el('button', 'vn vnx', '›'); r.next.type = 'button'; r.next.setAttribute('aria-label', 'Next card');
+    r.prev.addEventListener('click', function () { vstep(-1); });
+    r.next.addEventListener('click', function () { vstep(1); });
+    r.wrap = el('div', 'vi');
+    stage.appendChild(r.prev); stage.appendChild(r.wrap); stage.appendChild(r.next);
+    var sx = 0, sy = 0, st = 0;
+    stage.addEventListener('touchstart', function (e) { var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; st = Date.now(); }, { passive: true });
+    stage.addEventListener('touchend', function (e) {
+      var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Date.now() - st < 800 && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) vstep(dx < 0 ? 1 : -1);
+    }, { passive: true });
+
+    var ft = el('div', 'vf');
+    r.note = el('div', 'note');
+    r.jp = vbtn('big', false, function () { toggle(cards[vidx].num, 'jp'); });
+    r.en = vbtn('ph', false, function () { toggle(cards[vidx].num, 'en'); });
+    r.kr = vbtn('ph', false, function () { toggle(cards[vidx].num, 'kr'); });
+    r.foil = vbtn('', false, function () { toggle(cards[vidx].num, 'foil'); });
+    r.row = el('div', 'vrow');
+    r.row.appendChild(r.en); r.row.appendChild(r.kr); r.row.appendChild(r.foil);
+    r.art = el('div', 'small');
+    ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.row); ft.appendChild(r.art);
+
+    root.appendChild(hd); root.appendChild(stage); root.appendChild(ft);
     dlg.replaceChildren(root);
-    if (keep >= 0) { var b = dlg.querySelectorAll('.tg')[keep]; if (b) b.focus(); }
+    vw = r;
   }
-  dlg.addEventListener('close', function () { openNum = null; });
-  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+  function vwUpdate(newCard, dir) {
+    var c = cards[vidx], n = c.num, j = vidx % PER;
+    openNum = n;
+    if (newCard) {
+      vw.name.textContent = c.name;
+      vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar + ' · p' + pageOf(vidx) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
+      vw.count.textContent = (vidx + 1) + ' / ' + cards.length;
+      var img = el('img'); img.alt = c.name; artImg(img, n);
+      vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
+      vw.wrap.replaceChildren(img);
+      vw.prev.disabled = vidx <= 0; vw.next.disabled = vidx >= cards.length - 1;
+      [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) new Image().src = artSrc(cards[k].num); });
+    }
+    var done = has(n, 'jp');
+    vw.note.className = 'note' + (done ? ' done' : '');
+    vw.note.textContent = jpText(c, true) + (c.foil ? (has(n, 'foil') ? ' · JP foil in hand' : ' · no foil yet, still counts as complete') : '') + '.';
+    vw.jp.setAttribute('aria-pressed', done ? 'true' : 'false');
+    vw.jp.textContent = done ? '✓  JP card complete' : 'Mark JP card complete';
+    vw.en.setAttribute('aria-pressed', has(n, 'en') ? 'true' : 'false'); vw.en.textContent = 'EN copy';
+    vw.kr.setAttribute('aria-pressed', has(n, 'kr') ? 'true' : 'false'); vw.kr.textContent = 'KR copy';
+    vw.foil.hidden = !c.foil; vw.foil.setAttribute('aria-pressed', has(n, 'foil') ? 'true' : 'false'); vw.foil.textContent = '★ JP foil';
+    vw.row.className = 'vrow' + (c.foil ? ' three' : '');
+    vw.art.textContent = (showingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + 'Swipe or use ‹ › for the next card.';
+  }
+  function vstep(d) {
+    var k = vidx + d; if (k < 0 || k >= cards.length) return;
+    vidx = k; vwUpdate(true, d);
+  }
+  function openInfo(n) {
+    vidx = Math.max(0, cards.findIndex(function (c) { return c.num === n; }));
+    if (!vw) vwBuild();
+    vwUpdate(true, 0);
+    if (!dlg.open) dlg.showModal();
+  }
+  function fillInfo() { if (vw && dlg.open) vwUpdate(false); }
+  dlg.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowLeft') { vstep(-1); e.preventDefault(); } else if (e.key === 'ArrowRight') { vstep(1); e.preventDefault(); }
+  });
+  function vwAfterClose() {        // idempotent: runs from the X, the backdrop, Esc and the Android back gesture
+    var n = openNum; if (!n) return; openNum = null;
+    var pg = pageOf(vidx); if (pg !== page) go(pg, 0);   // the grid follows wherever you swiped to
+    flash(n);
+  }
+  function vwClose() { if (dlg.open) dlg.close(); vwAfterClose(); }
+  dlg.addEventListener('close', vwAfterClose);
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) vwClose(); });
 
   (function () {
     var s = 'm'; try { s = localStorage.getItem('binderSize') || 'm'; } catch (e) {}
