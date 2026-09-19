@@ -6,3 +6,8 @@ collection.json.bak
 collection.json.tmp
 __pycache__/
 *.pyc
+
+# AWS deploy artifacts / secrets
+aws/passcode.txt
+aws/*.zip
+aws/__pycache__/

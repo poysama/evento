@@ -1,0 +1,64 @@
+name: Deploy
+
+# Every push to main: test, then update the live site at https://evento.peonbox.xyz
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# one deploy at a time; a newer push waits for the running one instead of racing it
+concurrency:
+  group: deploy-evento
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # short-lived AWS credentials via OIDC (no stored keys)
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-1
+  FUNCTION_NAME: evento-binder
+  SITE_URL: https://evento.peonbox.xyz
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: python3 aws/test_handler.py
+
+      - name: Package
+        run: |
+          mkdir build
+          cp aws/lambda_function.py index.html cards.json build/
+          (cd build && zip -q -r ../evento-lambda.zip .)
+          ls -l evento-lambda.zip
+
+      - name: Assume AWS deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy
+        run: |
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://evento-lambda.zip --query '[FunctionName,LastModified]' --output text
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+      - name: Verify the live function is this build
+        run: |
+          want=$(openssl dgst -sha256 -binary evento-lambda.zip | base64)
+          got=$(aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --query CodeSha256 --output text)
+          echo "built:    $want"
+          echo "deployed: $got"
+          test "$want" = "$got"
+
+      - name: Smoke test the site
+        run: |
+          curl -fsS --retry 3 --retry-delay 3 "$SITE_URL/" | grep -q 'Passcode'
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/api/collection")" = "401"
+          echo "site is up and locked"
