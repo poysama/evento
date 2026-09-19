@@ -27,6 +27,10 @@ if (-not (Exists { aws s3api head-bucket --bucket $Bucket })) {
   Run s3api create-bucket --bucket $Bucket --region $Region --create-bucket-configuration "LocationConstraint=$Region" | Out-Null
 }
 Run s3api put-public-access-block --bucket $Bucket --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+# used passkey challenges (used/) only need to live a day; keeps the bucket tidy
+$lc = '{"Rules":[{"ID":"expire-used-challenges","Status":"Enabled","Filter":{"Prefix":"used/"},"Expiration":{"Days":1}}]}'
+$lcFile = Join-Path $env:TEMP 'evento-lifecycle.json'; $lc | Set-Content $lcFile -Encoding ascii
+Run s3api put-bucket-lifecycle-configuration --bucket $Bucket --lifecycle-configuration "file://$lcFile"
 Write-Host "bucket ready: $Bucket (public access blocked)"
 
 # --- card art (private; only the Lambda can read it)
@@ -51,7 +55,13 @@ if ($newRole) { Write-Host 'waiting for IAM to propagate...'; Start-Sleep 12 }
 $zip = Join-Path $PSScriptRoot 'evento-lambda.zip'; if (Test-Path $zip) { Remove-Item $zip }
 $stage = Join-Path $env:TEMP 'evento-stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory $stage | Out-Null
+# runtime deps (passkey crypto) as Linux / Python 3.12 wheels - what Lambda runs, whatever this PC is
+$py = if (Get-Command py -ErrorAction SilentlyContinue) { @('py', '-3') } else { @('python') }
+& $py[0] $py[1..($py.Length - 1)] -m pip install --quiet --target $stage -r "$PSScriptRoot\requirements.txt" `
+  --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 --python-version 3.12 --implementation cp --only-binary=:all:
+if ($LASTEXITCODE -ne 0) { throw 'pip install of Lambda dependencies failed' }
 Copy-Item "$PSScriptRoot\lambda_function.py","$App\index.html","$App\cards.json" $stage
+Get-ChildItem $stage -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
 
 # --- function

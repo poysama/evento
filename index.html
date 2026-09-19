@@ -150,6 +150,19 @@ dialog::backdrop{background:var(--scrim)}
   .pv .small{font-size:12px}
   .hov{display:none!important}
 }
+/* ---- passkeys ---- */
+.mini{font-size:12px;padding:5px 10px;min-height:32px;border:1px solid var(--line);border-radius:8px;background:var(--sheet);cursor:pointer;font-weight:600}
+.mini[hidden]{display:none}
+.ban{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;justify-content:center;background:var(--ownbg);color:var(--own);padding:9px 12px;margin:0 -12px;font-weight:600;font-size:13.5px}
+.ban[hidden]{display:none}.ban button{border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;min-height:36px}
+.pk-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.pk-row:last-child{border-bottom:0}.pk-row>div{flex:1;min-width:0}.pk-row b{display:block;overflow-wrap:anywhere}
+.pk-row small{color:var(--mute);font-size:12px}
+.pk-row button{border:1px solid var(--line);background:var(--sheet);color:var(--ink);border-radius:8px;padding:8px 12px;min-height:40px;cursor:pointer;font-weight:600}
+.pk-add{display:flex;flex-direction:column;gap:8px}.pk-add input{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--sheet)}
+.pk-add .go{min-height:48px;border:0;border-radius:10px;background:var(--own);color:#fff;font-weight:700;cursor:pointer}
+.pk-add .go:disabled{opacity:.6;cursor:default}
+.pk-msg{min-height:1.3em;font-size:13px;font-weight:600}.pk-msg.err{color:var(--warn)}.pk-msg.ok{color:var(--own)}
 </style>
 </head>
 <body>
@@ -157,8 +170,9 @@ dialog::backdrop{background:var(--scrim)}
 
 <div class="app">
 <aside class="side">
+<div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -191,6 +205,7 @@ dialog::backdrop{background:var(--scrim)}
 </div>
 
 <dialog id="dlg" aria-label="Card details"></dialog>
+<dialog id="pkdlg" aria-label="Passkeys"></dialog>
 
 <script>
 (function () {
@@ -415,6 +430,76 @@ dialog::backdrop{background:var(--scrim)}
 
   window.addEventListener('beforeunload', function (ev) { if (saveTimer || saving) { ev.preventDefault(); ev.returnValue = ''; } });
 
+  /* ---------- passkeys (hosted version only; hidden when the server has none) ---------- */
+  var pkBtn = $('pkbtn'), pkDlg = $('pkdlg'), pkBan = $('pkban'), pkList = null, pkMsg = null;
+  var canPK = !!(window.PublicKeyCredential && PublicKeyCredential.parseCreationOptionsFromJSON);
+  var JSONH = { 'Content-Type': 'application/json' };
+  function pkFetch(path, opts) {
+    return fetch(path, opts).then(function (r) {
+      return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || r.status); return b; });
+    });
+  }
+  function deviceName() {
+    var u = navigator.userAgent;
+    var os = /Windows/.test(u) ? 'Windows' : /iPhone|iPad/.test(u) ? 'iPhone/iPad' : /Android/.test(u) ? 'Android' : /Mac/.test(u) ? 'Mac' : /Linux/.test(u) ? 'Linux' : 'Device';
+    var br = /Edg\//.test(u) ? 'Edge' : /Firefox/.test(u) ? 'Firefox' : /Chrome/.test(u) ? 'Chrome' : /Safari/.test(u) ? 'Safari' : 'browser';
+    return os + ' · ' + br;
+  }
+  function pkDismissed() { try { return localStorage.getItem('pkNo') === '1'; } catch (e) { return false; } }
+  function pkRefresh() {
+    return pkFetch('/webauthn/passkeys').then(function (list) {
+      pkList = list; pkBtn.hidden = false;
+      pkBan.hidden = !(canPK && !list.length && !pkDismissed());
+      if (pkDlg.open) pkFill();
+    }).catch(function () { pkList = null; pkBtn.hidden = true; pkBan.hidden = true; });
+  }
+  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'never'; }
+  function pkSay(t, cls) { if (pkMsg) { pkMsg.textContent = t; pkMsg.className = 'pk-msg ' + (cls || ''); } }
+  function pkFill() {
+    var root = el('div', 'dl');
+    root.appendChild(el('h3', '', 'Passkeys'));
+    root.appendChild(el('div', 'small', 'Sign in with Face ID, Windows Hello, Touch ID or a security key instead of typing the passcode. The passcode keeps working as a backup.'));
+    var sec = el('div', 'sec'); sec.appendChild(el('span', '', 'Your passkeys'));
+    if (!pkList || !pkList.length) sec.appendChild(el('div', 'small', 'None yet.'));
+    (pkList || []).forEach(function (k) {
+      var row = el('div', 'pk-row'), d = el('div');
+      d.appendChild(el('b', '', k.name));
+      d.appendChild(el('small', '', 'Added ' + fmtDate(k.created) + ' · last used ' + fmtDate(k.used) + (k.synced ? ' · synced' : '')));
+      var rm = el('button', '', 'Remove'); rm.type = 'button';
+      rm.addEventListener('click', function () {
+        if (!window.confirm('Remove “' + k.name + '”? You can still sign in with the passcode.')) return;
+        pkFetch('/webauthn/passkeys/' + encodeURIComponent(k.id), { method: 'DELETE' }).then(pkRefresh).catch(function () { pkSay('Could not remove it.', 'err'); });
+      });
+      row.appendChild(d); row.appendChild(rm); sec.appendChild(row);
+    });
+    root.appendChild(sec);
+    if (canPK) {
+      var add = el('div', 'pk-add'); add.appendChild(el('span', 'small', 'Add a passkey on this device'));
+      var nm = el('input'); nm.type = 'text'; nm.maxLength = 40; nm.value = deviceName(); nm.setAttribute('aria-label', 'Name for this passkey');
+      var go = el('button', 'go', 'Add passkey'); go.type = 'button';
+      pkMsg = el('div', 'pk-msg'); pkMsg.setAttribute('role', 'status');
+      go.addEventListener('click', function () {
+        go.disabled = true; pkSay('Follow your device’s prompt…');
+        pkFetch('/webauthn/register/options', { method: 'POST' }).then(function (o) {
+          return navigator.credentials.create({ publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(o.options) }).then(function (c) {
+            return pkFetch('/webauthn/register/verify', { method: 'POST', headers: JSONH, body: JSON.stringify({ token: o.token, credential: c.toJSON(), name: nm.value }) });
+          });
+        }).then(function () { return pkRefresh().then(function () { pkSay('Passkey added. Next time, sign in with it.', 'ok'); }); })
+          .catch(function (e) {
+            pkSay(e && e.name === 'NotAllowedError' ? 'Cancelled.' : e && e.name === 'InvalidStateError' ? 'This device already has a passkey for this site.' : 'Could not add the passkey' + (e && e.message ? ': ' + e.message : '.'), 'err');
+          }).then(function () { go.disabled = false; });
+      });
+      add.appendChild(nm); add.appendChild(go); add.appendChild(pkMsg); root.appendChild(add);
+    } else root.appendChild(el('div', 'small', 'This browser cannot create passkeys. Open the site in a current Chrome, Edge, Safari or Firefox to add one.'));
+    var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { pkDlg.close(); }); root.appendChild(cl);
+    pkDlg.replaceChildren(root);
+  }
+  function pkOpen() { pkFill(); if (!pkDlg.open) pkDlg.showModal(); }
+  pkBtn.addEventListener('click', pkOpen);
+  $('pkyes').addEventListener('click', pkOpen);
+  $('pkno').addEventListener('click', function () { try { localStorage.setItem('pkNo', '1'); } catch (e) {} pkBan.hidden = true; });
+  pkDlg.addEventListener('click', function (e) { if (e.target === pkDlg) pkDlg.close(); });
+
   /* ---------- boot ---------- */
   Promise.all([
     fetch('cards.json').then(function (r) { return r.json(); }),
@@ -427,7 +512,7 @@ dialog::backdrop{background:var(--scrim)}
     var m = /p=(\d+)/.exec(location.hash), start = m ? +m[1] : 0;
     if (!start) { try { start = +localStorage.getItem('binderPage') || 1; } catch (e) { start = 1; } }
     page = Math.max(1, Math.min(N, start));
-    setStatus('loaded'); render(0);
+    setStatus('loaded'); render(0); pkRefresh();
   }).catch(function () {
     setStatus('NOT SAVED', true);
     grid.textContent = 'This page needs the binder server. Close this tab and double-click "Start Binder.bat".';

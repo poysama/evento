@@ -27,13 +27,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: aws/requirements.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r aws/requirements.txt
+
       - name: Test
-        run: python3 aws/test_handler.py
+        run: python aws/test_handler.py
 
       - name: Package
         run: |
           mkdir build
+          # bundle the runtime deps as Linux / Python 3.12 wheels (what Lambda runs)
+          python -m pip install --quiet --target build -r aws/requirements.txt \
+            --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 \
+            --python-version 3.12 --implementation cp --only-binary=:all:
           cp aws/lambda_function.py index.html cards.json build/
+          find build -name __pycache__ -type d -prune -exec rm -rf {} +
           (cd build && zip -q -r ../evento-lambda.zip .)
           ls -l evento-lambda.zip
 

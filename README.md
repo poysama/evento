@@ -38,3 +38,13 @@ credentials for a role that only `main` of this repo can assume - no keys are st
 One-time setup scripts (run from a machine with AWS credentials): `aws/deploy.ps1` (bucket, role, function,
 uploads local card art), `aws/setup-domain.ps1` (certificate, API, DNS), `aws/setup-ci.ps1` (GitHub deploy role).
 Card art is uploaded only by `deploy.ps1` from your local `card_images/` and is never part of the repo or CI.
+
+## Passkey sign-in
+
+The hosted site signs you in with a **passkey** (Face ID, Windows Hello, Touch ID or a security key) instead of
+typing the passcode. Open the site with the passcode once, use the **Passkeys** button (or the banner) to add
+each device, and from then on sign in with one tap. The passcode keeps working as a backup and as the way to
+add a passkey on a brand-new device. Passkeys are checked with the `webauthn` library (user verification
+required, single-use challenges, sign-counter checks); the server only stores public keys.
+Passkeys are bound to the domain `evento.peonbox.xyz` - if the domain ever changes, add them again.
+`aws/test_handler.py` exercises the full registration and sign-in flows with a software authenticator.

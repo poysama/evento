@@ -1,0 +1,5 @@
+# Runtime dependencies bundled into the Lambda zip (pinned; Linux/Python 3.12 wheels)
+webauthn==3.0.0
+cryptography==50.0.1
+cbor2==6.1.4
+pyOpenSSL==26.4.0
