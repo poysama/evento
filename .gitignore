@@ -1,0 +1,8 @@
+﻿# Card art is not redistributed - keep it local
+card_images/
+# Your personal collection data
+collection.json
+collection.json.bak
+collection.json.tmp
+__pycache__/
+*.pyc
