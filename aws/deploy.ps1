@@ -27,11 +27,20 @@ if (-not (Exists { aws s3api head-bucket --bucket $Bucket })) {
   Run s3api create-bucket --bucket $Bucket --region $Region --create-bucket-configuration "LocationConstraint=$Region" | Out-Null
 }
 Run s3api put-public-access-block --bucket $Bucket --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
-# used passkey challenges (used/) only need to live a day; keeps the bucket tidy
-$lc = '{"Rules":[{"ID":"expire-used-challenges","Status":"Enabled","Filter":{"Prefix":"used/"},"Expiration":{"Days":1}}]}'
+# versioning: every save of data/ (collection, share link, passkeys) keeps the previous copy, so a bad save is recoverable
+Run s3api put-bucket-versioning --bucket $Bucket --versioning-configuration Status=Enabled
+# Lifecycle rules. S3 replaces the WHOLE lifecycle configuration on every update, so all rules live together here.
+#  1. used/ passkey challenges only need to live a day
+#  2. old versions of data/ are dropped after 14 days (the current copy is never expired)
+#  3. tidy: expired delete markers and half-finished uploads
+$lc = '{"Rules":[' +
+  '{"ID":"expire-used-challenges","Status":"Enabled","Filter":{"Prefix":"used/"},"Expiration":{"Days":1},"NoncurrentVersionExpiration":{"NoncurrentDays":1}},' +
+  '{"ID":"expire-old-data-versions","Status":"Enabled","Filter":{"Prefix":"data/"},"NoncurrentVersionExpiration":{"NoncurrentDays":14}},' +
+  '{"ID":"cleanup-delete-markers-and-uploads","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"ExpiredObjectDeleteMarker":true},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}' +
+  ']}'
 $lcFile = Join-Path $env:TEMP 'evento-lifecycle.json'; $lc | Set-Content $lcFile -Encoding ascii
 Run s3api put-bucket-lifecycle-configuration --bucket $Bucket --lifecycle-configuration "file://$lcFile"
-Write-Host "bucket ready: $Bucket (public access blocked)"
+Write-Host "bucket ready: $Bucket (public access blocked, versioning on, old data versions kept 14 days)"
 
 # --- card art (private; only the Lambda can read it)
 if (Test-Path "$App\card_images") {

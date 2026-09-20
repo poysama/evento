@@ -58,6 +58,23 @@ Bandai does not allow its pictures to be embedded on other sites, so the picture
 through the secret link, only for cards on the list; "Show card pictures" can be switched off (names, codes and links
 to Bandai's own card list remain). The list can also be copied as plain text.
 
+## Backups and restoring
+
+The bucket has S3 versioning on: every save of `data/` (your collection, the share link, passkeys) keeps the previous
+copy for 14 days, then drops it (the current copy is never dropped). `aws/deploy.ps1` sets this up, together with the
+one-day expiry of `used/`, because S3 replaces the whole lifecycle configuration on each update.
+
+If a bad save ever wipes your data, list the versions and copy an older one back (use your default AWS profile):
+
+```powershell
+$B = 'evento-binder-861276084535'
+aws s3api list-object-versions --bucket $B --prefix data/collection.json --region ap-southeast-1 --query "Versions[].[VersionId,LastModified,Size,IsLatest]" --output table
+aws s3api copy-object --bucket $B --key data/collection.json --copy-source "$B/data/collection.json?versionId=THE_VERSION_ID" --region ap-southeast-1
+```
+
+Pick the newest version whose size looks right, then reload the site. (An old `null` version is the copy from before
+versioning was switched on.)
+
 ## Foil and Manga are optional extras
 
 Foil and Manga are ticked *after* a card is marked JP complete (their buttons stay greyed out until then) and never
