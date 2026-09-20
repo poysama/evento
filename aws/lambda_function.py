@@ -460,14 +460,15 @@ def _figure(c, info, foil, token, pics):
             + f'<code>{_e(n)} &middot; {_e(c["rar"])}</code>{tag}{link}</figcaption></figure>')
 
 
-def _sections(items, info, prefix, foil, token, pics):
+def _sections(items, info, prefix, foil, token, pics, totals):
+    """Sections by set. Each pill and heading shows 'missing/total' for the set, e.g. 2/3 = still need 2 of its 3 cards."""
     groups = []
     for c in items:
         if not groups or groups[-1][0] != c['set']:
             groups.append((c['set'], []))
         groups[-1][1].append(c)
-    nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{len(cs)}</i></a>' for s, cs in groups)
-    body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)}</small></h2>'
+    nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{len(cs)}/{totals.get(s, len(cs))}</i></a>' for s, cs in groups)
+    body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)}/{totals.get(s, len(cs))} missing</small></h2>'
                    f'<div class="g{"" if pics else " t"}">'
                    + ''.join(_figure(c, info.get(c['num'], {}), foil, token, pics) for c in cs) + '</div></section>'
                    for s, cs in groups)
@@ -508,16 +509,23 @@ def share_page(token):
     cards, info, missing, foil_missing = _wishlist(cfg)
     pics = cfg.get('pics', True) is not False
     name, message = cfg.get('name', ''), cfg.get('message', '')
-    nav1, body1 = _sections(missing, info, 'm', False, token, pics)
-    nav2, body2 = _sections(foil_missing, info, 'f', True, token, pics)
+    def per_set(cs):
+        t = {}
+        for c in cs:
+            t[c['set']] = t.get(c['set'], 0) + 1
+        return t
+    foil_all = [c for c in cards if c['foil'] or _foil_alts(c, info)]
+    nav1, body1 = _sections(missing, info, 'm', False, token, pics, per_set(cards))
+    nav2, body2 = _sections(foil_missing, info, 'f', True, token, pics, per_set(foil_all))
     who = f'from {_e(name)}' if name else ''
     title = f"{name + chr(39) + 's' if name else 'My'} Japanese One Piece Event card wishlist"
     desc = f"{len(missing)} Japanese Event cards I'm still looking for"
     parts = ['<h1>Japanese Event cards I&rsquo;m looking for</h1>',
              f'<p class="sub">{who}</p>' if who else '',
              f'<div class="msg">{_e(message)}</div>' if message else '',
-             f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still missing'
-             + (f' &middot; <b>{len(foil_missing)}</b> foil / alt-art versions wanted' if foil_missing else '') + '</p>']
+             f'<p class="stat"><b>{len(missing)}/{len(cards)}</b> still missing'
+             + (f' &middot; <b>{len(foil_missing)}/{len(foil_all)}</b> foil / alt-art versions wanted' if foil_missing else '') + '</p>',
+             '<p class="stat">Numbers like 2/3 mean I still need 2 of the 3 cards in that set.</p>']
     if missing:
         parts += [f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
     else:
