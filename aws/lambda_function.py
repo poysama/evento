@@ -460,15 +460,20 @@ def _figure(c, info, foil, token, pics):
             + f'<code>{_e(n)} &middot; {_e(c["rar"])}</code>{tag}{link}</figcaption></figure>')
 
 
+def _need(n, total):
+    """'need 2 of 3' / 'need all 3' / 'need it' - always says what is MISSING, never reads like what is owned."""
+    return 'need it' if total == 1 else f'need all {total}' if n == total else f'need {n} of {total}'
+
+
 def _sections(items, info, prefix, foil, token, pics, totals):
-    """Sections by set. Each pill and heading shows 'missing/total' for the set, e.g. 2/3 = still need 2 of its 3 cards."""
+    """Sections by set; each pill and heading says how many of the set's cards are still missing."""
     groups = []
     for c in items:
         if not groups or groups[-1][0] != c['set']:
             groups.append((c['set'], []))
         groups[-1][1].append(c)
-    nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{len(cs)}/{totals.get(s, len(cs))}</i></a>' for s, cs in groups)
-    body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)}/{totals.get(s, len(cs))} missing</small></h2>'
+    nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{_need(len(cs), totals.get(s, len(cs)))}</i></a>' for s, cs in groups)
+    body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)} of {totals.get(s, len(cs))} missing</small></h2>'
                    f'<div class="g{"" if pics else " t"}">'
                    + ''.join(_figure(c, info.get(c['num'], {}), foil, token, pics) for c in cs) + '</div></section>'
                    for s, cs in groups)
@@ -523,9 +528,9 @@ def share_page(token):
     parts = ['<h1>Japanese Event cards I&rsquo;m looking for</h1>',
              f'<p class="sub">{who}</p>' if who else '',
              f'<div class="msg">{_e(message)}</div>' if message else '',
-             f'<p class="stat"><b>{len(missing)}/{len(cards)}</b> still missing'
-             + (f' &middot; <b>{len(foil_missing)}/{len(foil_all)}</b> foil / alt-art versions wanted' if foil_missing else '') + '</p>',
-             '<p class="stat">Numbers like 2/3 mean I still need 2 of the 3 cards in that set.</p>']
+             f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still missing'
+             + (f' &middot; <b>{len(foil_missing)}</b> of {len(foil_all)} foil / alt-art versions wanted' if foil_missing else '') + '</p>',
+             '<p class="stat">Each set below says how many of its cards I still need.</p>']
     if missing:
         parts += [f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
     else:

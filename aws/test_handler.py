@@ -190,9 +190,10 @@ check('the public page needs no login', pg['statusCode'] == 200 and 'looking for
 check('it lists what is missing, with name and code', 'Round Table' in body and 'OP01-027' in body and 'Punk Gibson' in body)
 check('cards already owned in JP are left off', 'Guard Point' not in body and 'ST01-014' not in body and 'OP01-026' not in body)
 check('a card held only as a KR/EN placeholder still counts as missing', 'OP01-027' in body)
-check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and '/410</b> still missing' in body)
-check('pills and headings show missing/total per set (e.g. ST-01 2/3)', 'ST-01 <i>2/3</i>' in body and 'ST-01 <small>2/3 missing</small>' in body and 'OP-01 <i>' in body)
-check('missing count is right', f'<b>{410 - 2}/410</b> still missing' in body)
+check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and '</b> of 410 still missing' in body)
+check('pills and headings say how many are missing per set', 'ST-01 <i>need 2 of 3</i>' in body and 'ST-01 <small>2 of 3 missing</small>' in body
+      and 'ST-02 <i>need all 3</i>' in body and 'P-2207 <i>need it</i>' in body and '/3<' not in body.split('<nav')[1].split('</nav>')[0])
+check('missing count is right', f'<b>{410 - 2}</b> of 410 still missing' in body)
 check('Japanese names are included for finding cards in shops', 'lang="ja"' in body)
 tok = sh['url'].rsplit('/', 1)[1]
 imgs = _re.findall(r'data-s="([^"]+)"', body)
@@ -213,7 +214,7 @@ check('the page shows nothing that could be a login or key', 'evento_session' no
 # foil option: only foil-capable cards without a JP foil; uses the alt-art picture when Bandai has one
 sh2 = json.loads(put_share({'foil': True})['body'])
 body2 = page_of(sh2['url'])['body']
-check('turning on foil adds a foil / alt-art section', 'Also looking for the foil / alt-art versions' in body2 and 'foil / alt-art versions wanted' in body2 and _re.search(r'<b>\d+/\d+</b> foil / alt-art versions wanted', body2))
+check('turning on foil adds a foil / alt-art section', 'Also looking for the foil / alt-art versions' in body2 and 'foil / alt-art versions wanted' in body2 and _re.search(r'<b>\d+</b> of \d+ foil / alt-art versions wanted', body2))
 foil_part = body2.split('Also looking for the foil')[1]
 check('foil section skips the foil I already own', 'OP01-026 &middot;' not in foil_part and 'OP01-029 &middot;' in foil_part)
 check('cards known to have a parallel are offered even when the English site lists no foil', 'OP11-114 &middot;' in foil_part)
