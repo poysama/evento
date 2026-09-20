@@ -719,7 +719,8 @@ dialog::backdrop{background:var(--scrim)}
     var m = missingList(), out = ["Japanese One Piece Event cards I'm looking for (" + m.length + ' of ' + cards.length + '):', ''], cur = null;
     m.forEach(function (c) {
       if (c.set !== cur) { if (cur) out.push(''); out.push(c.set); cur = c.set; }
-      out.push('- ' + c.num + ' ' + c.name + ' (' + c.rar + ')');
+      var ph = phList(c.num);
+      out.push('- ' + c.num + ' ' + c.name + ' (' + c.rar + ')' + (ph.length ? ' - I have the ' + ph.join('/') + ' copy, need the JP card' : ''));
     });
     var f = withFoil ? foilMissingList() : [];
     if (f.length) { out.push('', 'Also looking for the foil / alt-art versions of:'); f.forEach(function (c) { out.push('- ' + c.num + ' ' + c.name); }); }

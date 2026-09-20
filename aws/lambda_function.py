@@ -437,7 +437,16 @@ def _e(s):
     return htmllib.escape(str(s), quote=True)
 
 
-def _figure(c, info, foil, token, pics):
+COLOURS = [('Red', '#D6443A'), ('Green', '#2E9E5B'), ('Blue', '#2F6FDE'), ('Purple', '#8E4EC6'), ('Black', '#2B2F36'), ('Yellow', '#E6B800')]
+
+
+def _placeholders(owned, num):
+    """Non-JP copies held for a card that is still missing in JP, e.g. ['EN', 'KR']."""
+    e = owned.get(num) or {}
+    return [k.upper() for k in ('en', 'kr') if e.get(k)]
+
+
+def _figure(c, info, foil, token, pics, ph=()):
     n, alts = c['num'], [a for a in (info.get('alt') or []) if a != c.get('manga')]
     pid = f'{n}_{alts[0]}' if (foil and alts) else n
     jp = info.get('jp', '')
@@ -455,9 +464,12 @@ def _figure(c, info, foil, token, pics):
     if info.get('sid'):
         link = (f'<a class="bl" href="{_e(BANDAI_LIST + str(info["sid"]))}#{_e(n)}" target="_blank" '
                 f'rel="noopener noreferrer">Bandai card list &rarr;</a>')
-    return (f'<figure class="c">{pic}<figcaption><b>{_e(c["name"])}</b>'
+    if ph:
+        tag += f'<span class="tag ph">Have the {_e(" + ".join(ph))} copy, still need the JP card</span>'
+    colour = c.get('col', '')
+    return (f'<figure class="c" data-c="{_e(colour)}">{pic}<figcaption><b>{_e(c["name"])}</b>'
             + (f'<span class="jp" lang="ja">{_e(jp)}</span>' if jp else '')
-            + f'<code>{_e(n)} &middot; {_e(c["rar"])}</code>{tag}{link}</figcaption></figure>')
+            + f'<code>{_e(n)} &middot; {_e(c["rar"])}' + (f' &middot; {_e(colour)}' if colour else '') + f'</code>{tag}{link}</figcaption></figure>')
 
 
 def _need(n, total):
@@ -465,7 +477,7 @@ def _need(n, total):
     return 'need it' if total == 1 else f'need all {total}' if n == total else f'need {n} of {total}'
 
 
-def _sections(items, info, prefix, foil, token, pics, totals):
+def _sections(items, info, prefix, foil, token, pics, totals, owned=None):
     """Sections by set; each pill and heading says how many of the set's cards are still missing."""
     groups = []
     for c in items:
@@ -475,13 +487,14 @@ def _sections(items, info, prefix, foil, token, pics, totals):
     nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{_need(len(cs), totals.get(s, len(cs)))}</i></a>' for s, cs in groups)
     body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)} of {totals.get(s, len(cs))} missing</small></h2>'
                    f'<div class="g{"" if pics else " t"}">'
-                   + ''.join(_figure(c, info.get(c['num'], {}), foil, token, pics) for c in cs) + '</div></section>'
+                   + ''.join(_figure(c, info.get(c['num'], {}), foil, token, pics, () if foil else _placeholders(owned or {}, c['num']))
+                             for c in cs) + '</div></section>'
                    for s, cs in groups)
     return nav, body
 
 
-SHARE_CSS = """:root{--bg:#E6ECF2;--card:#F9FBFD;--ink:#13202E;--mute:#5B6B7D;--line:#B7C3D0;--acc:#1E7F5C;--accbg:#DDF1E7}
-@media(prefers-color-scheme:dark){:root{--bg:#0D141C;--card:#151E29;--ink:#E3E9F0;--mute:#93A2B3;--line:#2E3B4A;--acc:#5ED1A0;--accbg:#12362A}}
+SHARE_CSS = """:root{--bg:#E6ECF2;--card:#F9FBFD;--ink:#13202E;--mute:#5B6B7D;--line:#B7C3D0;--acc:#1E7F5C;--accbg:#DDF1E7;--amber:#8A5A16;--amberbg:#F6E7C8}
+@media(prefers-color-scheme:dark){:root{--bg:#0D141C;--card:#151E29;--ink:#E3E9F0;--mute:#93A2B3;--line:#2E3B4A;--acc:#5ED1A0;--accbg:#12362A;--amber:#E0B16B;--amberbg:#3A2C10}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;padding:16px}
 main{max-width:1000px;margin:0 auto}h1{font-size:24px;line-height:1.2;margin:8px 0 4px}h2{font-size:18px;margin:26px 0 10px;letter-spacing:.04em}
 h2 small{color:var(--mute);font-weight:500}.sub{color:var(--mute);margin:0 0 14px}
@@ -497,6 +510,15 @@ figcaption{display:flex;flex-direction:column;gap:1px;padding-top:6px;font-size:
 .jp{color:var(--mute);font-size:12.5px}code{font:12px ui-monospace,Consolas,monospace;color:var(--mute)}
 .tag{align-self:flex-start;margin-top:3px;background:var(--accbg);color:var(--acc);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
 a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decoration:none}a.bl:hover{text-decoration:underline}
+.tag.ph{background:var(--amberbg);color:var(--amber)}
+.cf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0 0;padding:8px 0}
+@media(min-width:700px){.cf{position:sticky;top:0;z-index:3;background:var(--bg)}}
+.cf[hidden]{display:none}.cf>span:first-child{font-size:13px;color:var(--mute);font-weight:600;margin-right:2px}
+.cf button{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);border-radius:999px;padding:6px 12px;background:var(--card);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+.cf button i{width:12px;height:12px;border-radius:50%;border:1px solid rgba(128,128,128,.55)}.cf button b{color:var(--mute);font-weight:600}
+.cf button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}.cf button[aria-pressed="true"] b{color:var(--bg)}
+.cf .fs{flex-basis:100%;font-size:13px;color:var(--mute)}
+[hidden]{display:none!important}
 .done{padding:28px 0;text-align:center;font-size:18px;font-weight:600}
 footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 
@@ -504,7 +526,20 @@ footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 # a picture that fails to load (expired direct link, flaky connection) is retried through the site's own picture route
 SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i||i.tagName!=='IMG'||!i.dataset.s)return;"
             "var n=+i.dataset.r||0;if(n>=3)return;i.dataset.r=n+1;"
-            "setTimeout(function(){i.src=i.dataset.s+'?r='+(n+1)},500*(n+1)+Math.random()*1500)},true);")
+            "setTimeout(function(){i.src=i.dataset.s+'?r='+(n+1)},500*(n+1)+Math.random()*1500)},true);"
+            # colour filter: toggle one or more colours; sets with nothing left in those colours are hidden
+            "(function(){var bar=document.querySelector('.cf');if(!bar)return;bar.hidden=false;var on={},fs=bar.querySelector('.fs'),"
+            "q=function(s){return[].slice.call(document.querySelectorAll(s))};"
+            "q('nav.chips a i,section h2 small').forEach(function(x){x.dataset.t=x.textContent});"
+            "function run(){var names=Object.keys(on),any=names.length>0,shown=0;"
+            "q('figure.c').forEach(function(f){f.hidden=any&&!on[f.dataset.c]});"
+            "q('section').forEach(function(s){var n=s.querySelectorAll('figure.c:not([hidden])').length,h=s.querySelector('h2 small'),"
+            "a=document.querySelector('nav.chips a[href=\"#'+s.id+'\"]');"
+            "s.hidden=!n;if(s.id.charAt(0)==='m')shown+=n;if(h)h.textContent=any?n+' missing':h.dataset.t;"
+            "if(a){a.hidden=!n;var i=a.querySelector('i');i.textContent=any?'need '+n:i.dataset.t}});"
+            "fs.textContent=any?'Showing '+shown+' missing '+names.join(' + ')+' card'+(shown===1?'':'s')+'. Tap a colour again to clear it.':''}"
+            "q('.cf button').forEach(function(b){b.addEventListener('click',function(){var c=b.dataset.c;if(on[c]){delete on[c]}else{on[c]=1}"
+            "b.setAttribute('aria-pressed',on[c]?'true':'false');run()})})})();")
 
 
 def share_page(token):
@@ -520,7 +555,16 @@ def share_page(token):
             t[c['set']] = t.get(c['set'], 0) + 1
         return t
     foil_all = [c for c in cards if c['foil'] or _foil_alts(c, info)]
-    nav1, body1 = _sections(missing, info, 'm', False, token, pics, per_set(cards))
+    owned = _owned(0)
+    holding = sum(1 for c in missing if _placeholders(owned, c['num']))
+    by_col = {}
+    for c in missing:
+        by_col[c.get('col', '')] = by_col.get(c.get('col', ''), 0) + 1
+    colour_bar = ('<div class="cf" role="group" aria-label="Filter by colour" hidden><span>Colour</span>'
+                  + ''.join(f'<button type="button" data-c="{n}" aria-pressed="false"><i style="background:{hx}"></i>{n} <b>{by_col.get(n, 0)}</b></button>'
+                            for n, hx in COLOURS if by_col.get(n))
+                  + '<span class="fs" aria-live="polite"></span></div>')
+    nav1, body1 = _sections(missing, info, 'm', False, token, pics, per_set(cards), owned)
     nav2, body2 = _sections(foil_missing, info, 'f', True, token, pics, per_set(foil_all))
     who = f'from {_e(name)}' if name else ''
     title = f"{name + chr(39) + 's' if name else 'My'} Japanese One Piece Event card wishlist"
@@ -530,9 +574,11 @@ def share_page(token):
              f'<div class="msg">{_e(message)}</div>' if message else '',
              f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still missing'
              + (f' &middot; <b>{len(foil_missing)}</b> of {len(foil_all)} foil / alt-art versions wanted' if foil_missing else '') + '</p>',
-             '<p class="stat">Each set below says how many of its cards I still need.</p>']
+             '<p class="stat">Each set below says how many of its cards I still need.'
+             + (f' For <b>{holding}</b> of them I already have the EN or KR copy, so they are tagged &mdash; only the Japanese card is missing.' if holding else '')
+             + '</p>']
     if missing:
-        parts += [f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
+        parts += [colour_bar, f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
     else:
         parts.append('<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
     if foil_missing:

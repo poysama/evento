@@ -211,6 +211,19 @@ check('the page is kept out of search engines', 'noindex' in pg['headers']['X-Ro
 check('no foil section unless asked for', 'foil / alt-art versions wanted' not in body and 'alt-art version' not in body)
 check('the page shows nothing that could be a login or key', 'evento_session' not in body and 'passcode' not in body.lower())
 
+# colour filter + "have a non-JP copy" tag
+_figs = _re.findall(r'<figure class="c" data-c="([^"]*)"', body)
+check('every card carries its colour', len(_figs) == 408 and set(_figs) <= {'Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'})
+_btns = _re.findall(r'<button type="button" data-c="(\w+)" aria-pressed="false"><i [^>]*></i>\w+ <b>(\d+)</b></button>', body)
+check('there is a filter button per colour, with the number still missing', [b[0] for b in _btns] == ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow']
+      and sum(int(b[1]) for b in _btns) == 408 and all(int(b[1]) == _figs.count(b[0]) for b in _btns))
+check('the filter starts hidden until the script runs (page still works without it)', '<div class="cf" role="group" aria-label="Filter by colour" hidden>' in body)
+check('each caption names the colour', 'OP01-027 &middot; ' in body and _re.search(r'<code>OP01-027 &middot; \w+ &middot; (Red|Green|Blue|Purple|Black|Yellow)</code>', body))
+check('a card I only hold as a KR copy says so, and nothing else is tagged', body.count('class="tag ph"') == 1
+      and 'Have the KR copy, still need the JP card' in body.split('OP01-027 &middot;')[1].split('</figure>')[0])
+check('the header counts the cards held as placeholders', 'For <b>1</b> of them I already have the EN or KR copy' in body)
+check('cards owned in JP or with no placeholder are not tagged', 'Have the' not in body.split('OP01-028 &middot;')[1].split('</figure>')[0])
+
 # foil option: only foil-capable cards without a JP foil; uses the alt-art picture when Bandai has one
 sh2 = json.loads(put_share({'foil': True})['body'])
 body2 = page_of(sh2['url'])['body']

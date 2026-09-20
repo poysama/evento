@@ -56,7 +56,9 @@ missing (optionally with the foil / alt-art versions), so friends can help you f
 shows only the missing cards, and can be stopped or replaced with a new link at any time.
 Bandai does not allow its pictures to be embedded on other sites, so the pictures are served from the private bucket
 through the secret link, only for cards on the list; "Show card pictures" can be switched off (names, codes and links
-to Bandai's own card list remain). The list can also be copied as plain text.
+to Bandai's own card list remain). The page has a colour filter (toggle one or more of Red / Green / Blue / Purple / Black / Yellow, each showing how many
+are still missing) and tags cards that are missing in JP only because you hold the EN or KR copy. The list can also be
+copied as plain text (with the same EN/KR note).
 
 ## Backups and restoring
 
