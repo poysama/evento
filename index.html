@@ -244,7 +244,8 @@ dialog::backdrop{background:var(--scrim)}
 .ch.own{color:var(--own);background:var(--ownbg);border-color:transparent}.ch.only{color:var(--amber);background:var(--amberbg);border-color:transparent}
 .ch.fo{color:var(--foil);border-color:var(--foil)}
 .sm-h2{margin:6px 0 -4px;font:600 14px var(--disp);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
-.skip{display:flex;flex-wrap:wrap;gap:6px}
+.sk{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--sheet)}
+.sk .sr-t small{display:block;color:var(--mute);font-size:12.5px;margin-top:2px}
 .sr-l{display:flex;flex-direction:column}
 .sr-i{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:1px;padding:10px 14px;border-top:1px solid var(--line);cursor:pointer}
 .sr-i:first-child{border-top:0}.sr-i:hover,.sr-i:focus-visible{background:var(--ownbg)}
@@ -981,17 +982,24 @@ dialog::backdrop{background:var(--scrim)}
       body.appendChild(el('div', 'sm-empty', 'No set is complete yet.' + (near ? ' Closest: ' + near.p.code + ' ' + near.p.name + ', ' + near.miss.length + ' to go.' : '')));
     } else {
       body.appendChild(el('h4', 'sm-h2', 'Completed sets'));
-      body.appendChild(el('div', 'small', 'Every Event card that first came out in these sets is in your binder as a JP card. Skip these when shopping for singles.'));
+      body.appendChild(el('div', 'small', 'Every Event card that first came out in these sets is in your binder as a JP card. Skip these when shopping for singles. Products that only reprint cards from other sets are listed further down.'));
       full.forEach(function (d) { body.appendChild(doneRow(d)); });
     }
     var setCodes = {}; full.forEach(function (d) { setCodes[d.p.code] = true; });
     var skip = Object.keys(D.prods).map(function (k) { return D.prods[k]; }).filter(function (d) { return d.total && !d.miss.length && !setCodes[d.p.code]; });
     if (skip.length) {
-      body.appendChild(el('h4', 'sm-h2', 'Also nothing left to find in'));
-      body.appendChild(el('div', 'small', 'Every Event card in these products is already in your binder.'));
-      var row = el('div', 'skip');
-      skip.forEach(function (d) { var c = el('span', 'ch own', d.p.code + ' ' + d.p.name); row.appendChild(c); });
-      body.appendChild(row);
+      body.appendChild(el('h4', 'sm-h2', 'Products you can skip'));
+      body.appendChild(el('div', 'small', 'These decks and boosters have no Event cards of their own. Every Event inside is a reprint of a card from another set, and you already have it, so there is nothing to buy.'));
+      skip.forEach(function (d) {
+        var inside = cards.filter(function (c) { return (PROD.sources[c.num] || []).indexOf(d.p.code) >= 0; });
+        var by = {}; inside.forEach(function (c) { by[c.set] = (by[c.set] || 0) + 1; });
+        var txt = inside.length <= 2
+          ? 'Reprint of ' + inside.map(function (c) { return c.name + ' (' + c.num + ', from ' + c.set + ')'; }).join(' and ')
+          : inside.length + ' reprints, from ' + Object.keys(by).map(function (k) { return k + (by[k] > 1 ? ' ×' + by[k] : ''); }).join(', ');
+        var r = el('div', 'sk'); r.appendChild(el('span', 'sr-c' + famClass(d.p), d.p.code));
+        var t = el('div', 'sr-t'); t.appendChild(el('b', '', d.p.name)); t.appendChild(el('small', '', txt)); r.appendChild(t);
+        body.appendChild(r);
+      });
     }
     root.appendChild(hd); root.appendChild(body); doneDlg.replaceChildren(root);
     var nb = doneDlg.querySelector('.sm-b'); if (nb) nb.scrollTop = prevScroll;
