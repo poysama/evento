@@ -243,6 +243,7 @@ dialog::backdrop{background:var(--scrim)}
 .ch{font-size:11.5px;font-weight:600;line-height:1.2;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--mute);white-space:nowrap}
 .ch.own{color:var(--own);background:var(--ownbg);border-color:transparent}.ch.only{color:var(--amber);background:var(--amberbg);border-color:transparent}
 .ch.fo{color:var(--foil);border-color:var(--foil)}
+.sm-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}.sm-hd .sm-h2{margin:0}
 .sm-h2{margin:6px 0 -4px;font:600 14px var(--disp);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
 .sk{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--sheet)}
 .sk .sr-t small{display:block;color:var(--mute);font-size:12.5px;margin-top:2px}
@@ -952,7 +953,27 @@ dialog::backdrop{background:var(--scrim)}
   sumDlg.addEventListener('click', function (e) { if (e.target === sumDlg) sumDlg.close(); });
 
   /* ---------- completed: the opposite of "what to buy" - sets with every JP card in hand ---------- */
-  var doneDlg = $('donedlg');
+  var doneDlg = $('donedlg'), doneMin = 80;           // "close to completion" starts at 80% collected (80% or 90% selectable)
+  function nearRow(d) {
+    var det = el('details', 'sr'), sm = el('summary'), p = d.p, own = d.total - d.miss.length, pct = Math.floor(own / d.total * 100);
+    sm.appendChild(el('span', 'sr-c' + famClass(p), p.code));
+    var t = el('div', 'sr-t'); t.appendChild(el('b', '', p.name));
+    t.appendChild(chipRow([[p.kind, ''], [fmtDate(p.date), ''], [d.miss.length + ' to go', 'only']]));
+    var bar = el('div', 'bar'), fill = el('i'); fill.style.width = pct + '%'; bar.appendChild(fill); t.appendChild(bar);
+    var n = el('div', 'sr-n'); n.appendChild(el('b', '', pct + '%')); n.appendChild(el('span', '', own + '/' + d.total));
+    sm.appendChild(t); sm.appendChild(n); det.appendChild(sm);
+    var list = el('div', 'sr-l');
+    d.miss.forEach(function (c) {
+      var b = el('button', 'sr-i'); b.type = 'button';
+      b.appendChild(el('b', '', c.name)); b.appendChild(el('span', '', c.num + ' · ' + c.rar));
+      var others = (PROD.sources[c.num] || []).filter(function (x) { return x !== p.code; });
+      if (others.length) b.appendChild(el('em', '', 'also in ' + others.join(', ')));
+      b.addEventListener('click', function () { openInfo(c.num); });
+      list.appendChild(b);
+    });
+    det.appendChild(list);
+    return det;
+  }
   function doneRow(d) {
     var det = el('details', 'sr'), sm = el('summary'), p = d.p;
     var cs = cards.filter(function (c) { return c.set === p.code; });
@@ -985,12 +1006,27 @@ dialog::backdrop{background:var(--scrim)}
     s.appendChild(el('b', '', jpN + ' of ' + cards.length)); s.appendChild(document.createTextNode(' JP Event cards in hand.'));
     body.appendChild(s);
     if (!full.length) {
-      var near = sets.filter(function (d) { return d.miss.length; }).sort(function (a, b) { return a.miss.length - b.miss.length; })[0];
-      body.appendChild(el('div', 'sm-empty', 'No set is complete yet.' + (near ? ' Closest: ' + near.p.code + ' ' + near.p.name + ', ' + near.miss.length + ' to go.' : '')));
+      body.appendChild(el('div', 'sm-empty', 'No set is complete yet.'));
     } else {
       body.appendChild(el('h4', 'sm-h2', 'Completed sets'));
       body.appendChild(el('div', 'small', 'Every Event card that first came out in these sets is in your binder as a JP card. Skip these when shopping for singles. Products that only reprint cards from other sets are listed further down.'));
       full.forEach(function (d) { body.appendChild(doneRow(d)); });
+    }
+    var near = sets.filter(function (d) { return d.miss.length && Math.floor((d.total - d.miss.length) / d.total * 100) >= doneMin; })
+      .sort(function (a, b) { return a.miss.length / a.total - b.miss.length / b.total || a.miss.length - b.miss.length; });
+    var nh = el('div', 'sm-hd'); nh.appendChild(el('h4', 'sm-h2', 'Close to completion'));
+    var ns = el('span', 'seg2'); ns.setAttribute('role', 'group'); ns.setAttribute('aria-label', 'How close');
+    [80, 90].forEach(function (v) {
+      var b = el('button', '', v + '%+'); b.type = 'button'; b.setAttribute('aria-pressed', v === doneMin ? 'true' : 'false');
+      b.addEventListener('click', function () { doneMin = v; doneFill(); }); ns.appendChild(b);
+    });
+    nh.appendChild(ns); body.appendChild(nh);
+    if (near.length) {
+      body.appendChild(el('div', 'small', 'Sets that are at least ' + doneMin + '% collected, closest first. Open one to see the cards still missing and where else they were printed.'));
+      near.forEach(function (d) { body.appendChild(nearRow(d)); });
+    } else {
+      var next = sets.filter(function (d) { return d.miss.length; }).sort(function (a, b) { return a.miss.length / a.total - b.miss.length / b.total; })[0];
+      body.appendChild(el('div', 'small', 'No set is ' + doneMin + '% collected yet.' + (next ? ' Closest: ' + next.p.code + ' ' + next.p.name + ', ' + (next.total - next.miss.length) + '/' + next.total + ' (' + Math.floor((next.total - next.miss.length) / next.total * 100) + '%).' : '')));
     }
     var setCodes = {}; full.forEach(function (d) { setCodes[d.p.code] = true; });
     var skip = Object.keys(D.prods).map(function (k) { return D.prods[k]; }).filter(function (d) { return d.total && !d.miss.length && !setCodes[d.p.code]; });

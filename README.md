@@ -91,7 +91,8 @@ Six Events have no set of their own: P-002, P-024 and P-057 to P-060. They sit i
 ## Completed
 
 The **Completed** button is the opposite of What to buy: the sets where every Event card is in your binder, with card
-lists and foil counts, plus other products that have nothing left to find.
+lists and foil counts, a **Close to completion** list (sets that are 80% or 90% collected, with the percentage, x/y and the
+missing cards), plus other products that have nothing left to find.
 
 ## What to buy
 
