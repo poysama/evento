@@ -24,9 +24,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 s3 = boto3.client('s3')
+# signs short-lived direct links to pictures, so the bytes come from S3 and not through this (concurrency-limited) function
+s3_sign = boto3.client('s3', region_name=os.environ.get('AWS_REGION', 'ap-southeast-1'), config=Config(signature_version='s3v4'))
 BUCKET = os.environ['BUCKET']
 PASSCODE = os.environ['PASSCODE']
 ORIGIN = os.environ.get('WEBAUTHN_ORIGIN', 'https://evento.peonbox.xyz')
@@ -379,11 +382,18 @@ def _owned(max_age):
     return d
 
 
+def _foil_alts(c, info):
+    """Alt-art / parallel pictures of a card, leaving out the optional Manga version (that is not a foil)."""
+    return [a for a in (info.get(c['num'], {}).get('alt') or []) if a != c.get('manga')]
+
+
 def _wishlist(cfg, max_age=0):
     cards, info = _catalog()
     owned = _owned(max_age)
     missing = [c for c in cards if not (owned.get(c['num']) or {}).get('jp')]
-    foil_missing = [c for c in cards if c['foil'] and not (owned.get(c['num']) or {}).get('foil')] if cfg.get('foil') else []
+    # foil is an optional extra tag: any card known to have a foil / alt-art printing that has not been ticked as foil
+    foil_missing = ([c for c in cards if (c['foil'] or _foil_alts(c, info)) and not (owned.get(c['num']) or {}).get('foil')]
+                    if cfg.get('foil') else [])
     return cards, info, missing, foil_missing
 
 
@@ -404,17 +414,18 @@ def share_image(token, name):
     num, alt = m.group(1), m.group(2)
     _, info, missing, foil_missing = _wishlist(cfg, max_age=20)
     if alt:
-        ok = num in {c['num'] for c in foil_missing} and alt in (info.get(num, {}).get('alt') or [])
+        card = next((c for c in foil_missing if c['num'] == num), None)
+        ok = bool(card) and alt in _foil_alts(card, info)
     else:
         ok = num in {c['num'] for c in missing}
     if not ok:                                   # only what is on the list: never reveals what you already own
         return js(404, {'error': 'not found'})
-    try:
-        data = s3.get_object(Bucket=BUCKET, Key='images_jp/' + name)['Body'].read()
-    except ClientError:
-        return js(404, {'error': 'not found'})
-    return resp(200, base64.b64encode(data).decode(), 'image/png', b64=True,
-                extra=dict(_HEAD, **{'Cache-Control': 'private, max-age=3600'}))
+    # Hand the browser a 5-minute direct link to the picture in the private bucket. The picture bytes then never pass
+    # through this function, so a page full of pictures cannot run into the account's concurrent-run limit.
+    url = s3_sign.generate_presigned_url('get_object', ExpiresIn=300, Params={
+        'Bucket': BUCKET, 'Key': 'images_jp/' + name,
+        'ResponseContentType': 'image/png', 'ResponseCacheControl': 'private, max-age=86400'})
+    return resp(302, '', 'text/plain; charset=utf-8', extra=dict(_HEAD, **{'Location': url, 'Cache-Control': 'private, max-age=240'}))
 
 
 def _e(s):
@@ -422,7 +433,7 @@ def _e(s):
 
 
 def _figure(c, info, foil, token, pics):
-    n, alts = c['num'], info.get('alt') or []
+    n, alts = c['num'], [a for a in (info.get('alt') or []) if a != c.get('manga')]
     pid = f'{n}_{alts[0]}' if (foil and alts) else n
     jp = info.get('jp', '')
     tag = ''
@@ -478,6 +489,12 @@ a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decor
 footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 
 
+# a picture that fails to load (a flaky connection) is retried a few times instead of staying blank
+SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i||i.tagName!=='IMG')return;"
+            "var n=+i.dataset.r||0;if(n>=3)return;var s=i.dataset.s||(i.dataset.s=i.getAttribute('src').split('?')[0]);"
+            "i.dataset.r=n+1;setTimeout(function(){i.src=s+'?r='+(n+1)},700*(n+1)+Math.random()*800)},true);")
+
+
 def share_page(token):
     cfg = share_gate(token)
     if not cfg:
@@ -514,7 +531,8 @@ def share_page(token):
             '<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">'
             f'<title>{_e(title)}</title><meta property="og:title" content="{_e(title)}">'
             f'<meta property="og:description" content="{_e(desc)}"><meta property="og:type" content="website">'
-            f'{fav.group(0) if fav else ""}<style>{SHARE_CSS}</style></head><body><main>{"".join(parts)}</main></body></html>')
+            f'{fav.group(0) if fav else ""}<style>{SHARE_CSS}</style></head><body><main>{"".join(parts)}</main>'
+            f'<script>{SHARE_JS}</script></body></html>')
     return resp(200, page, 'text/html; charset=utf-8', extra=dict(_HEAD, **{'Cache-Control': 'private, max-age=60'}))
 
 

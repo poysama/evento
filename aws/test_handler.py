@@ -48,11 +48,17 @@ class FakeS3:
     def put_object(self, Bucket, Key, Body, ContentType=None):
         store[Key] = Body
 
+    def generate_presigned_url(self, op, Params, ExpiresIn):
+        assert op == 'get_object' and ExpiresIn <= 300 and Params['Bucket']
+        return f"https://fake-bucket.s3.ap-southeast-1.amazonaws.com/{Params['Key']}?X-Amz-Expires={ExpiresIn}&sig=abc"
+
 
 botocore, exc, boto3 = types.ModuleType('botocore'), types.ModuleType('botocore.exceptions'), types.ModuleType('boto3')
 exc.ClientError = ClientError
+cfg_mod = types.ModuleType('botocore.config')
+cfg_mod.Config = lambda **k: None
 boto3.client = lambda *a, **k: FakeS3()
-sys.modules.update({'botocore': botocore, 'botocore.exceptions': exc, 'boto3': boto3})
+sys.modules.update({'botocore': botocore, 'botocore.exceptions': exc, 'botocore.config': cfg_mod, 'boto3': boto3})
 sys.path.insert(0, str(pkg))
 L = importlib.import_module('lambda_function')
 L.time.sleep = lambda s: None
@@ -204,7 +210,9 @@ check('the page shows nothing that could be a login or key', 'evento_session' no
 sh2 = json.loads(put_share({'foil': True})['body'])
 body2 = page_of(sh2['url'])['body']
 check('turning on foil adds a foil / alt-art section', 'Also looking for the foil / alt-art versions' in body2 and 'foil / alt-art versions wanted' in body2)
-check('foil section skips the foil I already own', '<figcaption><b>Gum-Gum Fire-Fist Pistol Red Hawk</b>' not in body2.split('Also looking for the foil')[1])
+foil_part = body2.split('Also looking for the foil')[1]
+check('foil section skips the foil I already own', 'OP01-026 &middot;' not in foil_part and 'OP01-029 &middot;' in foil_part)
+check('cards known to have a parallel are offered even when the English site lists no foil', 'OP11-114 &middot;' in foil_part)
 check('alt-art pictures are used', '_p' in body2.split('Also looking for the foil')[1])
 check('settings persist in the bucket', json.loads(store['data/share.json'])['foil'] is True and sh2['url'] == sh['url'])
 
@@ -217,14 +225,16 @@ store['images_jp/OP01-027.png'] = b'\x89PNG\r\n\x1a\nmissing-card'
 store['images_jp/OP01-026.png'] = b'\x89PNG\r\n\x1a\nOWNED-card'
 store['images_jp/OP01-029_p3.png'] = b'\x89PNG\r\n\x1a\nalt-art'
 p1 = pic(tok, 'OP01-027.png')
-check('a friend can load a wishlist card picture with no login',
-      p1['statusCode'] == 200 and p1['isBase64Encoded'] and base64.b64decode(p1['body']).endswith(b'missing-card')
-      and p1['headers']['Content-Type'] == 'image/png')
+check('a friend gets a short-lived direct link to a wishlist card picture, with no login',
+      p1['statusCode'] == 302 and p1['headers']['Location'].startswith('https://fake-bucket.s3.')
+      and '/images_jp/OP01-027.png?' in p1['headers']['Location'] and 'Expires=300' in p1['headers']['Location'])
+check('the picture bytes do not pass through the function', p1['body'] == '')
 check('picture responses are private, uncrawlable and leak no referrer',
       'private' in p1['headers']['Cache-Control'] and p1['headers']['Referrer-Policy'] == 'no-referrer' and 'noindex' in p1['headers']['X-Robots-Tag'])
 check('a card you already own cannot be fetched (nothing to learn about your collection)', pic(tok, 'OP01-026.png')['statusCode'] == 404)
 check('a card you own looks exactly like a card that does not exist', pic(tok, 'OP01-026.png')['body'] == pic(tok, 'ZZZ99-999.png')['body'])
-check('alt-art is served only for foil cards still missing, with the foil option on', pic(tok, 'OP01-029_p3.png')['statusCode'] == 200)
+check('the page retries a picture that fails to load', "addEventListener('error'" in body and body.count('<script>') == 1)
+check('alt-art is served only for foil cards still missing, with the foil option on', pic(tok, 'OP01-029_p3.png')['statusCode'] == 302)
 check('alt-art that is not on the list is refused', pic(tok, 'OP01-029_p9.png')['statusCode'] == 404 and pic(tok, 'OP01-027_p1.png')['statusCode'] == 404)
 check('pictures need the right link', pic('b' * 22, 'OP01-027.png')['statusCode'] == 404 and pic('short', 'OP01-027.png')['statusCode'] == 404)
 check('picture names are strictly validated',
@@ -267,7 +277,7 @@ check('with pictures off the page has no images at all', np['pics'] is False and
 check('with pictures off it still lists the cards and links to Bandai',
       'Round Table' in nbody and 'OP01-027' in nbody and nbody.count('Bandai card list &rarr;') == 402 and 'Pictures are not included' in nbody)
 check('with pictures off the picture route serves nothing', pic(ntok, 'OP01-027.png')['statusCode'] == 404)
-check('pictures can be turned back on', json.loads(put_share({'pics': True})['body'])['pics'] is True and pic(ntok, 'OP01-027.png')['statusCode'] == 200)
+check('pictures can be turned back on', json.loads(put_share({'pics': True})['body'])['pics'] is True and pic(ntok, 'OP01-027.png')['statusCode'] == 302)
 check('the pictures switch must be true or false', put_share({'pics': 'no'})['statusCode'] == 400)
 
 # nothing missing (foil option off, so no foil section either)
