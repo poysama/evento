@@ -43,8 +43,9 @@ CH_KEY = hmac.new(PASSCODE.encode(), b'evento-webauthn-challenge-v1', hashlib.sh
 CH_TTL = 180
 MAX_PASSKEYS = 10
 FIELDS = {'jp', 'foil', 'en', 'kr', 'manga'}
-IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}\.jpg$')
-JP_IMG_RE = re.compile(r'^[A-Z]{2,3}\d{2}-\d{3}(?:_p\d{1,2})?\.png$')
+CARD = r'(?:[A-Z]{2,3}\d{2}|P)-\d{3}'          # OP01-026, EB02-007, ST01-014 ... and promos such as P-057
+IMG_RE = re.compile(r'^' + CARD + r'\.jpg$')
+JP_IMG_RE = re.compile(r'^' + CARD + r'(?:_p\d{1,2})?\.png$')
 KEYS_KEY = 'data/passkeys.json'
 
 LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -295,7 +296,7 @@ def webauthn_route(method, path, event):
 # cards that are on the list. "Show pictures" can be switched off (names, codes and links to Bandai's own list remain).
 SHARE_KEY = 'data/share.json'
 SHARE_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,64}$')
-SHARE_IMG_RE = re.compile(r'^([A-Z]{2,3}\d{2}-\d{3})(?:_(p\d{1,2}))?\.png$')
+SHARE_IMG_RE = re.compile(r'^(' + CARD + r')(?:_(p\d{1,2}))?\.png$')
 BANDAI_LIST = 'https://www.onepiece-cardgame.com/cardlist/?search=true&series='
 SHARE_KEYS = {'enabled', 'foil', 'pics', 'name', 'message', 'rotate'}
 _CACHE = {'cat': None, 'own': (0.0, {})}

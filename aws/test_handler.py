@@ -94,7 +94,7 @@ check('logged-in / serves the app', page['statusCode'] == 200 and 'JP Event Bind
 cards = json.loads(h(ev('GET', '/cards.json', cookies=ck), None)['body'])
 check('login page has a favicon', 'rel="icon"' in h(ev('GET', '/'), None)['body'])
 check('the app page has a favicon', 'rel="icon"' in page['body'])
-check('cards.json has 404 cards', len(cards) == 404)
+check('cards.json has 410 cards (404 set Events + 6 promo-only Events)', len(cards) == 410)
 check('the four Manga Events are marked, each with a real alt-art id',
       sorted(c['num'] for c in cards if c.get('manga')) == ['OP09-020', 'OP09-057', 'OP09-078', 'OP09-096']
       and all(c['manga'] in c['alt'] for c in cards if c.get('manga')))
@@ -104,10 +104,10 @@ check('cards have the fields the UI needs', all({'slot', 'name', 'num', 'rar', '
 check('the product list needs a login', h(ev('GET', '/products.json'), None)['statusCode'] == 401)
 prod = json.loads(h(ev('GET', '/products.json', cookies=ck), None)['body'])
 codes = [p['code'] for p in prod['products']]
-check('all 59 products are listed once, in the binder\'s release order',
-      len(codes) == 59 and len(set(codes)) == 59 and codes[0] == 'ST-01' and codes[-1] == 'OP-17'
+check('all 62 products (59 sets + 3 promo sources) are listed once, in the binder\'s release order',
+      len(codes) == 62 and len(set(codes)) == 62 and codes[0] == 'ST-01' and codes[-1] == 'OP-17'
       and [c['set'] for c in cards if c['set'] in codes][0] == 'ST-01')
-check('every product says what it is', all(p['kind'] in ('Booster pack', 'Extra booster', 'Premium booster', 'Starter deck') for p in prod['products']))
+check('every product says what it is', all(p['kind'] in ('Booster pack', 'Extra booster', 'Premium booster', 'Starter deck', 'Promo pack', 'Event promo', 'Cinema promo') for p in prod['products']))
 check('every card can be found in at least the set it came from',
       set(prod['sources']) == {c['num'] for c in cards} and all(c['set'] in prod['sources'][c['num']] for c in cards))
 check('every source is a real product', all(s in codes for v in prod['sources'].values() for s in v))
@@ -190,19 +190,19 @@ check('the public page needs no login', pg['statusCode'] == 200 and 'looking for
 check('it lists what is missing, with name and code', 'Round Table' in body and 'OP01-027' in body and 'Punk Gibson' in body)
 check('cards already owned in JP are left off', 'Guard Point' not in body and 'ST01-014' not in body and 'OP01-026' not in body)
 check('a card held only as a KR/EN placeholder still counts as missing', 'OP01-027' in body)
-check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and 'of 404 still missing' in body)
-check('missing count is right', f'<b>{404 - 2}</b> of 404' in body)
+check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and 'of 410 still missing' in body)
+check('missing count is right', f'<b>{410 - 2}</b> of 410' in body)
 check('Japanese names are included for finding cards in shops', 'lang="ja"' in body)
 tok = sh['url'].rsplit('/', 1)[1]
 imgs = _re.findall(r'data-s="([^"]+)"', body)
 direct = _re.findall(r'<img src="([^"]+)"', body)
 check('every picture has a fallback through this same secret link',
-      len(imgs) == 402 and all(_re.fullmatch(r'/w/' + tok + r'/img/[A-Z]{2,3}\d{2}-\d{3}\.png', u) for u in imgs) and 'card_images' not in body)
+      len(imgs) == 408 and all(_re.fullmatch(r'/w/' + tok + r'/img/(?:[A-Z]{2,3}\d{2}|P)-\d{3}\.png', u) for u in imgs) and 'card_images' not in body)
 check('pictures load directly from the private bucket (never through the function), from no other site',
-      len(direct) == 402 and all(u.startswith('https://fake-bucket.s3.ap-southeast-1.amazonaws.com/images_jp/') and 'Expires=3600' in u for u in direct)
+      len(direct) == 408 and all(u.startswith('https://fake-bucket.s3.ap-southeast-1.amazonaws.com/images_jp/') and 'Expires=3600' in u for u in direct)
       and not _re.search(r'src="https?://(?!fake-bucket\.s3)', body))
 check('each card links out to its page on Bandai\'s official list',
-      body.count('href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55') == 402 and 'rel="noopener noreferrer"' in body)
+      body.count('href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55') == 408 and 'rel="noopener noreferrer"' in body)
 check('the secret link is never sent to other sites as a referrer',
       pg['headers']['Referrer-Policy'] == 'no-referrer' and 'name="referrer" content="no-referrer"' in body)
 check('the page is kept out of search engines', 'noindex' in pg['headers']['X-Robots-Tag'] and 'noindex' in body)
@@ -244,6 +244,16 @@ check('picture names are strictly validated',
       all(pic(tok, n)['statusCode'] == 404 for n in ('../data/collection.json', 'OP01-027.jpg', 'op01-027.png', 'OP01-027.png/x', '%2e%2e%2fshare.json', 'OP01-027_p.png')))
 check('other sub-paths of the link are 404, a trailing slash is fine', h(ev('GET', f'/w/{tok}/anything'), None)['statusCode'] == 404 and h(ev('GET', f'/w/{tok}/x/y'), None)['statusCode'] == 404 and h(ev('GET', f'/w/{tok}/'), None)['statusCode'] == 200)
 
+# promo-only Events (P-002 ...) work like every other card: listed, pictured, and served through the link
+check('promo Events are on the public list', all(n in body for n in ('P-002', 'P-024', 'P-057', 'P-060')) and 'I Smell Adventure!!!' in body)
+store['images_jp/P-002.png'] = b'\x89PNG\r\n\x1a\npromo'
+check('a promo picture is served with a direct link', pic(tok, 'P-002.png')['statusCode'] == 302 and '/images_jp/P-002.png?' in pic(tok, 'P-002.png')['headers']['Location'])
+check('promo card numbers are validated too', pic(tok, 'P-02.png')['statusCode'] == 404 and pic(tok, 'P-0002.png')['statusCode'] == 404)
+_pj = json.loads((L.HERE / 'products.json').read_text(encoding='utf-8'))
+_pc = {p['code'] for p in _pj['products']}
+check('promo Events have a product to be found in', all(set(_pj['sources'][n]) <= _pc for n in ('P-002', 'P-024', 'P-057')) and _pj['sources']['P-002'] == ['P-2207']
+      and _pj['sources']['P-057'] == ['P-2311', 'ST-16'])
+
 # safety: text is escaped, lengths and types are enforced
 def body3_count_ok(b):      # the only <img> tags on the page are the card pictures (the injected one is inert text)
     return all(t.startswith('<img src="https://fake-bucket.s3.') for t in _re.findall(r'<img[^>]*>', b))
@@ -278,7 +288,7 @@ ntok = np['url'].rsplit('/', 1)[1]
 nbody = page_of(np['url'])['body']
 check('with pictures off the page has no images at all', np['pics'] is False and '<img' not in nbody and 'class="p"' not in nbody)
 check('with pictures off it still lists the cards and links to Bandai',
-      'Round Table' in nbody and 'OP01-027' in nbody and nbody.count('Bandai card list &rarr;') == 402 and 'Pictures are not included' in nbody)
+      'Round Table' in nbody and 'OP01-027' in nbody and nbody.count('Bandai card list &rarr;') == 408 and 'Pictures are not included' in nbody)
 check('with pictures off the picture route serves nothing', pic(ntok, 'OP01-027.png')['statusCode'] == 404)
 check('pictures can be turned back on', json.loads(put_share({'pics': True})['body'])['pics'] is True and pic(ntok, 'OP01-027.png')['statusCode'] == 302)
 check('the pictures switch must be true or false', put_share({'pics': 'no'})['statusCode'] == 400)

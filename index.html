@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -232,7 +232,7 @@ dialog::backdrop{background:var(--scrim)}
 .sr summary::-webkit-details-marker{display:none}
 .sr[open] summary{border-bottom:1px solid var(--line)}
 .sr-c{flex:none;font:600 12px/1 var(--disp);letter-spacing:.08em;color:var(--chipink);background:var(--op);border-radius:4px;padding:5px 7px 4px;min-width:52px;text-align:center}
-.sr-c.st{background:var(--st)}.sr-c.eb{background:var(--eb)}.sr-c.prb{background:var(--prb)}
+.sr-c.st{background:var(--st)}.sr-c.eb{background:var(--eb)}.sr-c.prb{background:var(--prb)}.sr-c.pr{background:var(--foil)}
 .sr-t{flex:1;min-width:0}.sr-t b{display:block;line-height:1.25;overflow-wrap:anywhere}
 .sr-t small{display:block;color:var(--mute);font-size:12.5px;margin-top:1px}
 .sr-t .bar{margin-top:6px;height:6px}
@@ -342,7 +342,9 @@ dialog::backdrop{background:var(--scrim)}
   function artSrc(n) { return showingJP(n) ? 'card_images_jp/' + n + '.png' : 'card_images/' + n + '.jpg'; }
   function artImg(img, n) {
     img.onerror = function () {
-      if (this.src.indexOf('card_images_jp/') >= 0) { jpArt[n] = false; this.src = 'card_images/' + n + '.jpg'; } else this.remove();
+      if (this.src.indexOf('card_images_jp/') >= 0) { jpArt[n] = false; this.src = 'card_images/' + n + '.jpg'; }
+      else if (jpArt[n] && !this.dataset.fb) { this.dataset.fb = '1'; this.src = 'card_images_jp/' + n + '.png'; }   // no English print (some promos): show the Japanese art
+      else this.remove();
     };
     img.src = artSrc(n);
   }
@@ -817,10 +819,10 @@ dialog::backdrop{background:var(--scrim)}
     });
     return { prods: prods, bySet: bySet, missing: cards.filter(function (c) { return miss[c.num]; }) };
   }
-  function sumPlan(D) {              // greedy cover: always take the product that adds the most still-missing cards (decks win ties)
+  function sumPlan(D, kind) {        // greedy cover: always take the product that adds the most still-missing cards (decks win ties)
     var left = {}, n = D.missing.length, plan = [];
     D.missing.forEach(function (c) { left[c.num] = true; });
-    var list = Object.keys(D.prods).map(function (k) { return D.prods[k]; }).filter(function (d) { return d.miss.length; });
+    var list = Object.keys(D.prods).map(function (k) { return D.prods[k]; }).filter(function (d) { return d.miss.length && (!kind || kind === 'all' || kindOf(d.p) === kind); });
     while (n > 0) {
       var best = null;
       list.forEach(function (d) {
@@ -839,7 +841,9 @@ dialog::backdrop{background:var(--scrim)}
     list.forEach(function (c) { if (!c || !c[0]) return; var s = el('span', 'ch' + (c[1] ? ' ' + c[1] : ''), c[0]); if (c[2]) s.title = c[2]; row.appendChild(s); });
     return row;
   }
-  function famClass(p) { return p.family === 'ST' ? ' st' : p.family === 'EB' ? ' eb' : p.family === 'PRB' ? ' prb' : ''; }
+  function famClass(p) { return p.family === 'ST' ? ' st' : p.family === 'EB' ? ' eb' : p.family === 'PRB' ? ' prb' : p.family === 'P' ? ' pr' : ''; }
+  function kindOf(p) { return p.family === 'ST' ? 'deck' : p.family === 'P' ? 'promo' : 'pack'; }
+  var KIND_LABEL = { all: 'all products', pack: 'boosters', deck: 'starter decks', promo: 'promos' };
   function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : ''; }
   function planText(plan, D) {
     var out = ['Japanese One Piece Event cards I still need (' + D.missing.length + '). Shortest shopping list:', ''];
@@ -871,7 +875,7 @@ dialog::backdrop{background:var(--scrim)}
     return det;
   }
   function sumFill() {
-    var D = sumData(), plan = sumPlan(D), root = el('div', 'sm'), body = el('div', 'sm-b');
+    var D = sumData(), plan = sumPlan(D, sumKind), root = el('div', 'sm'), body = el('div', 'sm-b');
     var prevScroll = sumDlg.querySelector('.sm-b') ? sumDlg.querySelector('.sm-b').scrollTop : 0;
     var hd = el('header', 'sm-h'); hd.appendChild(el('h3', '', 'What to buy'));
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.addEventListener('click', function () { sumDlg.close(); }); hd.appendChild(x);
@@ -883,15 +887,18 @@ dialog::backdrop{background:var(--scrim)}
       s.appendChild(document.createTextNode('You are missing ')); s.appendChild(el('b', '', D.missing.length + ' of ' + cards.length));
       s.appendChild(document.createTextNode(' JP Event cards. They can be found in ' + inProds + ' different products.'));
       body.appendChild(s);
-      var pl = el('div', 'plan'); pl.appendChild(el('h4', '', 'Shortest shopping list'));
-      pl.appendChild(el('div', 'small', 'A DECK has fixed contents: you get exactly these cards. A PACK is a random draw, so you may need several.'));
+      var pl = el('div', 'plan'); pl.appendChild(el('h4', '', 'Shortest shopping list' + (sumKind === 'all' ? '' : ': ' + KIND_LABEL[sumKind] + ' only')));
+      pl.appendChild(el('div', 'small', 'A DECK has fixed contents: you get exactly these cards. A PACK is a random draw, so you may need several. A PROMO was a giveaway, so it usually means buying that single card.'));
+      var covered = plan.reduce(function (n, st) { return n + st.gain.length; }, 0);
+      if (sumKind !== 'all') pl.appendChild(el('div', 'small', !plan.length ? 'None of your missing cards are in a ' + KIND_LABEL[sumKind].replace(/s$/, '') + '.'
+        : covered === D.missing.length ? 'These cover every card you are missing.' : covered + ' of your ' + D.missing.length + ' missing cards are in ' + KIND_LABEL[sumKind] + '; the other ' + (D.missing.length - covered) + ' are not.'));
       var SHOW = 8;
       function planList(from, to) {
         var ol = el('ol'); ol.start = from + 1;
         plan.slice(from, to).forEach(function (st) {
           var li = el('li'); li.appendChild(el('b', '', st.d.p.code + ' ' + st.d.p.name));
           li.appendChild(document.createTextNode(' — ' + st.gain.length + ' card' + (st.gain.length === 1 ? '' : 's')));
-          li.appendChild(el('span', 'tg2' + (isDeck(st.d.p) ? ' deck' : ''), isDeck(st.d.p) ? 'DECK' : 'PACK'));
+          li.appendChild(el('span', 'tg2' + (isDeck(st.d.p) ? ' deck' : ''), isDeck(st.d.p) ? 'DECK' : st.d.p.family === 'P' ? 'PROMO' : 'PACK'));
           ol.appendChild(li);
         });
         return ol;
@@ -913,7 +920,7 @@ dialog::backdrop{background:var(--scrim)}
       return h;
     }
     ctl.appendChild(seg([['find', 'Where to find them'], ['set', 'By set']], sumMode, function (m) { sumMode = m; sumFill(); }, 'View'));
-    ctl.appendChild(seg([['all', 'All'], ['pack', 'Packs'], ['deck', 'Decks']], sumKind, function (k) { sumKind = k; sumFill(); }, 'Show'));
+    ctl.appendChild(seg([['all', 'All'], ['pack', 'Boosters'], ['deck', 'Starter decks'], ['promo', 'Promos']], sumKind, function (k) { sumKind = k; sumFill(); }, 'Show'));
     var lab = el('label', 'ck'), cb = el('input'); cb.type = 'checkbox'; cb.checked = sumHideDone;
     cb.addEventListener('change', function () { sumHideDone = cb.checked; sumFill(); });
     lab.appendChild(cb); lab.appendChild(el('span', '', 'Hide finished')); ctl.appendChild(lab);
@@ -924,8 +931,7 @@ dialog::backdrop{background:var(--scrim)}
     // rows
     var src = sumMode === 'find' ? D.prods : D.bySet, rows = Object.keys(src).map(function (k) { return src[k]; }).filter(function (d) {
       if (!d.total) return false;
-      if (sumKind === 'pack' && isDeck(d.p)) return false;
-      if (sumKind === 'deck' && !isDeck(d.p)) return false;
+      if (sumKind !== 'all' && kindOf(d.p) !== sumKind) return false;
       return !(sumHideDone && !d.miss.length);
     });
     if (sumMode === 'find') rows.sort(function (a, b) { return b.miss.length - a.miss.length || b.only - a.only || (a.p.date < b.p.date ? -1 : 1); });

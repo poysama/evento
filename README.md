@@ -1,4 +1,4 @@
-﻿# Evento - One Piece Event Card binder tracker
+# Evento - One Piece Event Card binder tracker
 
 A small local app for tracking a Japanese-language collection of every One Piece Card Game **Event** card
 (ST-01 through OP-17), laid out as a 4x4 binder. Mark each slot as a JP card you own, note EN/KR placeholders
@@ -23,7 +23,7 @@ put your own images in `card_images/<CODE>.jpg` (e.g. `card_images/OP01-026.jpg`
 
 - `server.py` - tiny local server: serves the page and saves your collection (127.0.0.1 only)
 - `index.html` - the whole UI
-- `cards.json` - the 404 Event cards in binder order
+- `cards.json` - the 410 Event cards in binder order (404 from the sets plus 6 promo-only Events, placed by release date)
 
 ## Hosting (AWS) and auto-deploy
 
@@ -64,6 +64,11 @@ Foil and Manga are ticked *after* a card is marked JP complete (their buttons st
 affect completion. Any card can be marked foil; the built-in list of which cards have a foil is not treated as complete.
 Un-ticking the JP card hides its foil / Manga marks but keeps them, so they come back if you tick it again.
 
+## Promo-only Events
+
+Six Events have no set of their own: P-002, P-024 and P-057 to P-060. They sit in the binder where they came out
+(pseudo-sets `P-2207`, `P-2209`, `P-2311`). The four Uta cards also come, in parallel art, in the ST-16 deck.
+
 ## Completed
 
 The **Completed** button is the opposite of What to buy: the sets where every Event card is in your binder, with card
@@ -73,7 +78,7 @@ lists and foil counts, plus other products that have nothing left to find.
 
 The **What to buy** button shows how many cards you are missing per product, which products contain them (including
 reprints in the PRB boosters and starter decks), and a shortest shopping list that covers everything you are missing
-with as few products as possible. "14 only in OP-03" means 14 of your missing cards appear in no other product. Data: `products.json` (which products each card appears in, from Bandai's card list).
+with as few products as possible. The Boosters / Starter decks / Promos filter limits both the list and the products shown (decks have fixed contents, so decks only is a safe way to buy). "14 only in OP-03" means 14 of your missing cards appear in no other product. Data: `products.json` (which products each card appears in, from Bandai's card list).
 
 ## Manga and alt-art
 
