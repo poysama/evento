@@ -406,6 +406,12 @@ def _share_not_found():
                      '<p>Ask your friend for a fresh one.</p>', 'text/html; charset=utf-8', extra=_HEAD)
 
 
+def _sign_image(name, ttl):
+    return s3_sign.generate_presigned_url('get_object', ExpiresIn=ttl, Params={
+        'Bucket': BUCKET, 'Key': 'images_jp/' + name,
+        'ResponseContentType': 'image/png', 'ResponseCacheControl': 'private, max-age=86400'})
+
+
 def share_image(token, name):
     cfg = share_gate(token)
     m = SHARE_IMG_RE.match(name)
@@ -422,9 +428,7 @@ def share_image(token, name):
         return js(404, {'error': 'not found'})
     # Hand the browser a 5-minute direct link to the picture in the private bucket. The picture bytes then never pass
     # through this function, so a page full of pictures cannot run into the account's concurrent-run limit.
-    url = s3_sign.generate_presigned_url('get_object', ExpiresIn=300, Params={
-        'Bucket': BUCKET, 'Key': 'images_jp/' + name,
-        'ResponseContentType': 'image/png', 'ResponseCacheControl': 'private, max-age=86400'})
+    url = _sign_image(name, 300)
     return resp(302, '', 'text/plain; charset=utf-8', extra=dict(_HEAD, **{'Location': url, 'Cache-Control': 'private, max-age=240'}))
 
 
@@ -442,9 +446,10 @@ def _figure(c, info, foil, token, pics):
             else '<span class="tag">foil / parallel</span>'
     pic = ''
     if pics:
-        src = f'/w/{token}/img/{pid}.png'
-        pic = (f'<a class="p" href="{_e(src)}" target="_blank" rel="noopener noreferrer"><img src="{_e(src)}" '
-               f'alt="{_e(c["name"])}" width="300" height="420" loading="lazy" decoding="async"></a>')
+        src = f'/w/{token}/img/{pid}.png'          # always-fresh route: the link target and the fallback
+        # the page itself carries a 1-hour direct link, so the pictures load from S3 without touching the function
+        pic = (f'<a class="p" href="{_e(src)}" target="_blank" rel="noopener noreferrer"><img src="{_e(_sign_image(pid + ".png", 3600))}" '
+               f'data-s="{_e(src)}" alt="{_e(c["name"])}" width="300" height="420" loading="lazy" decoding="async"></a>')
     link = ''
     if info.get('sid'):
         link = (f'<a class="bl" href="{_e(BANDAI_LIST + str(info["sid"]))}#{_e(n)}" target="_blank" '
@@ -489,10 +494,10 @@ a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decor
 footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 
 
-# a picture that fails to load (a flaky connection) is retried a few times instead of staying blank
-SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i||i.tagName!=='IMG')return;"
-            "var n=+i.dataset.r||0;if(n>=3)return;var s=i.dataset.s||(i.dataset.s=i.getAttribute('src').split('?')[0]);"
-            "i.dataset.r=n+1;setTimeout(function(){i.src=s+'?r='+(n+1)},700*(n+1)+Math.random()*800)},true);")
+# a picture that fails to load (expired direct link, flaky connection) is retried through the site's own picture route
+SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i||i.tagName!=='IMG'||!i.dataset.s)return;"
+            "var n=+i.dataset.r||0;if(n>=3)return;i.dataset.r=n+1;"
+            "setTimeout(function(){i.src=i.dataset.s+'?r='+(n+1)},500*(n+1)+Math.random()*1500)},true);")
 
 
 def share_page(token):

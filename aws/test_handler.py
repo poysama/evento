@@ -49,7 +49,7 @@ class FakeS3:
         store[Key] = Body
 
     def generate_presigned_url(self, op, Params, ExpiresIn):
-        assert op == 'get_object' and ExpiresIn <= 300 and Params['Bucket']
+        assert op == 'get_object' and ExpiresIn <= 3600 and Params['Bucket']
         return f"https://fake-bucket.s3.ap-southeast-1.amazonaws.com/{Params['Key']}?X-Amz-Expires={ExpiresIn}&sig=abc"
 
 
@@ -194,10 +194,13 @@ check('it shows the header, name and message', 'Poy' in body and 'Any condition 
 check('missing count is right', f'<b>{404 - 2}</b> of 404' in body)
 check('Japanese names are included for finding cards in shops', 'lang="ja"' in body)
 tok = sh['url'].rsplit('/', 1)[1]
-imgs = _re.findall(r'<img src="([^"]+)"', body)
-check('pictures are loaded through this same secret link, from no other site',
-      len(imgs) == 402 and all(_re.fullmatch(r'/w/' + tok + r'/img/[A-Z]{2,3}\d{2}-\d{3}\.png', u) for u in imgs)
-      and not _re.search(r'src="https?:', body) and 'card_images' not in body)
+imgs = _re.findall(r'data-s="([^"]+)"', body)
+direct = _re.findall(r'<img src="([^"]+)"', body)
+check('every picture has a fallback through this same secret link',
+      len(imgs) == 402 and all(_re.fullmatch(r'/w/' + tok + r'/img/[A-Z]{2,3}\d{2}-\d{3}\.png', u) for u in imgs) and 'card_images' not in body)
+check('pictures load directly from the private bucket (never through the function), from no other site',
+      len(direct) == 402 and all(u.startswith('https://fake-bucket.s3.ap-southeast-1.amazonaws.com/images_jp/') and 'Expires=3600' in u for u in direct)
+      and not _re.search(r'src="https?://(?!fake-bucket\.s3)', body))
 check('each card links out to its page on Bandai\'s official list',
       body.count('href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55') == 402 and 'rel="noopener noreferrer"' in body)
 check('the secret link is never sent to other sites as a referrer',
@@ -243,7 +246,7 @@ check('other sub-paths of the link are 404, a trailing slash is fine', h(ev('GET
 
 # safety: text is escaped, lengths and types are enforced
 def body3_count_ok(b):      # the only <img> tags on the page are the card pictures (the injected one is inert text)
-    return all(t.startswith('<img src="/w/') for t in _re.findall(r'<img[^>]*>', b))
+    return all(t.startswith('<img src="https://fake-bucket.s3.') for t in _re.findall(r'<img[^>]*>', b))
 
 
 inj =json.loads(put_share({'name': '<script>alert(1)</script>', 'message': '"><img src=x onerror=alert(2)>'})['body'])
