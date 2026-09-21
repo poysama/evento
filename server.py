@@ -21,7 +21,9 @@ LOCK = threading.Lock()
 #   foil = you own the Japanese foil/parallel
 #   en / kr = you are holding an English / Korean copy as a placeholder
 #   manga = you own the optional Manga (special-art) version - never needed for a card to count as complete
-FIELDS = {'jp', 'foil', 'en', 'kr', 'manga'}
+#   ordered = bought (e.g. through a proxy) but not received yet; note = free text about that order
+FIELDS = {'jp', 'foil', 'en', 'kr', 'manga', 'ordered'}
+NOTE_MAX = 200
 
 
 def valid(owned):
@@ -30,8 +32,12 @@ def valid(owned):
     for k, v in owned.items():
         if not isinstance(k, str) or not isinstance(v, dict) or not v:
             return False
-        if not set(v) <= FIELDS or not all(x is True for x in v.values()):
-            return False
+        for f, x in v.items():
+            if f == 'note':                      # free text for an order: where it was bought, order id ...
+                if not isinstance(x, str) or not 0 < len(x) <= NOTE_MAX:
+                    return False
+            elif f not in FIELDS or x is not True:
+                return False
     return True
 
 

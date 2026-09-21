@@ -115,6 +115,13 @@ check('reprints are recorded (some cards appear in more than one product)', sum(
 
 check('empty collection is {}', h(ev('GET', '/api/collection', cookies=ck), None)['body'] == '{}')
 good = {'OP01-026': {'jp': True}, 'ST01-014': {'jp': True, 'foil': True, 'en': True, 'kr': True}}
+_ord = {'OP01-027': {'ordered': True, 'note': 'Buyee order #12345 (Mercari)'}, 'OP01-028': {'ordered': True}}
+check('an "on order" card with a note is accepted', h(ev('PUT', '/api/collection', json.dumps(_ord), cookies=ck), None)['statusCode'] == 200
+      and json.loads(h(ev('GET', '/api/collection', cookies=ck), None)['body']) == _ord)
+for _label, _bad in (('an empty note', {'OP01-027': {'ordered': True, 'note': ''}}), ('a non-text note', {'OP01-027': {'ordered': True, 'note': 5}}),
+                     ('a too-long note', {'OP01-027': {'ordered': True, 'note': 'x' * 201}}), ('ordered = false', {'OP01-027': {'ordered': False}}),
+                     ('an unknown field', {'OP01-027': {'ordered': True, 'shipped': True}})):
+    check('saving rejects ' + _label, h(ev('PUT', '/api/collection', json.dumps(_bad), cookies=ck), None)['statusCode'] == 400)
 check('valid save is accepted', h(ev('PUT', '/api/collection', json.dumps(good), cookies=ck), None)['statusCode'] == 200)
 check('the optional Manga flag is accepted and read back',
       h(ev('PUT', '/api/collection', json.dumps({'OP09-057': {'manga': True}}), cookies=ck), None)['statusCode'] == 200
@@ -190,10 +197,10 @@ check('the public page needs no login', pg['statusCode'] == 200 and 'looking for
 check('it lists what is missing, with name and code', 'Round Table' in body and 'OP01-027' in body and 'Punk Gibson' in body)
 check('cards already owned in JP are left off', 'Guard Point' not in body and 'ST01-014' not in body and 'OP01-026' not in body)
 check('a card held only as a KR/EN placeholder still counts as missing', 'OP01-027' in body)
-check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and '</b> of 410 still missing' in body)
+check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and '</b> of 410 still looking for' in body)
 check('pills and headings say how many are missing per set', 'ST-01 <i>need 2 of 3</i>' in body and 'ST-01 <small>2 of 3 missing</small>' in body
       and 'ST-02 <i>need all 3</i>' in body and 'P-2207 <i>need it</i>' in body and '/3<' not in body.split('<nav')[1].split('</nav>')[0])
-check('missing count is right', f'<b>{410 - 2}</b> of 410 still missing' in body)
+check('missing count is right', f'<b>{410 - 2}</b> of 410 still looking for' in body)
 check('Japanese names are included for finding cards in shops', 'lang="ja"' in body)
 tok = sh['url'].rsplit('/', 1)[1]
 imgs = _re.findall(r'data-s="([^"]+)"', body)
@@ -210,6 +217,23 @@ check('the secret link is never sent to other sites as a referrer',
 check('the page is kept out of search engines', 'noindex' in pg['headers']['X-Robots-Tag'] and 'noindex' in body)
 check('no foil section unless asked for', 'foil / alt-art versions wanted' not in body and 'alt-art version' not in body)
 check('the page shows nothing that could be a login or key', 'evento_session' not in body and 'passcode' not in body.lower())
+
+# cards bought by proxy (on order) are taken off the "looking for" list, and their note is never shown
+_saved = store['data/collection.json']
+store['data/collection.json'] = json.dumps({'ST01-014': {'jp': True}, 'OP01-026': {'jp': True, 'foil': True}, 'OP01-027': {'kr': True},
+                                            'OP01-028': {'ordered': True, 'note': 'SECRET-ORDER-NOTE-777'},
+                                            'OP01-030': {'ordered': True, 'en': True}}).encode()
+_ob = page_of(sh['url'])['body']
+check('a card on order is not listed as looking for', 'Green Star Rafflesia' not in _ob and 'OP01-028' not in _ob and 'OP01-030' not in _ob)
+check('the header counts them separately', f'<b>{410 - 2 - 2}</b> of 410 still looking for' in _ob and '<b>2</b> more already bought and on the way' in _ob)
+check('cards still needed stay listed', 'Round Table' in _ob and 'OP01-027' in _ob)
+check('the order note is never shown to friends', 'SECRET-ORDER-NOTE-777' not in _ob and 'Buyee' not in _ob)
+check('a picture for a card on order is refused (nothing about it leaks)', h(ev('GET', f'/w/{tok}/img/OP01-028.png'), None)['statusCode'] == 404)
+check('cards on order are not counted in a per-set need (20 cards, 1 owned, 2 on order)', 'OP-01 <i>need 17 of 20</i>' in _ob)
+store['data/collection.json'] = json.dumps({c['num']: {'jp': True} for c in cards if c['num'] not in ('OP01-027',)} | {'OP01-027': {'ordered': True}}).encode()
+_all = page_of(sh['url'])['body']
+check('when everything missing is on order it says so', 'already on its way' in _all and '<img' not in _all)
+store['data/collection.json'] = _saved
 
 # colour filter + "have a non-JP copy" tag
 _figs = _re.findall(r'<figure class="c" data-c="([^"]*)"', body)

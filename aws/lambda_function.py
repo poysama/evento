@@ -42,7 +42,8 @@ TOKEN = hmac.new(PASSCODE.encode(), b'evento-session-v1', hashlib.sha256).hexdig
 CH_KEY = hmac.new(PASSCODE.encode(), b'evento-webauthn-challenge-v1', hashlib.sha256).digest()
 CH_TTL = 180
 MAX_PASSKEYS = 10
-FIELDS = {'jp', 'foil', 'en', 'kr', 'manga'}
+FIELDS = {'jp', 'foil', 'en', 'kr', 'manga', 'ordered'}   # ordered = bought, still on its way
+NOTE_MAX = 200                                        # free-text note per card (where it was ordered from ...)
 CARD = r'(?:[A-Z]{2,3}\d{2}|P)-\d{3}'          # OP01-026, EB02-007, ST01-014 ... and promos such as P-057
 IMG_RE = re.compile(r'^' + CARD + r'\.jpg$')
 JP_IMG_RE = re.compile(r'^' + CARD + r'(?:_p\d{1,2})?\.png$')
@@ -96,8 +97,12 @@ def valid(owned):
     for k, v in owned.items():
         if not isinstance(k, str) or not isinstance(v, dict) or not v:
             return False
-        if not set(v) <= FIELDS or not all(x is True for x in v.values()):
-            return False
+        for f, x in v.items():
+            if f == 'note':                      # free text for an order: where it was bought, order id ...
+                if not isinstance(x, str) or not 0 < len(x) <= NOTE_MAX:
+                    return False
+            elif f not in FIELDS or x is not True:
+                return False
     return True
 
 
@@ -391,11 +396,13 @@ def _foil_alts(c, info):
 def _wishlist(cfg, max_age=0):
     cards, info = _catalog()
     owned = _owned(max_age)
-    missing = [c for c in cards if not (owned.get(c['num']) or {}).get('jp')]
+    have = lambda c, k: (owned.get(c['num']) or {}).get(k)
+    on_way = [c for c in cards if have(c, 'ordered') and not have(c, 'jp')]           # bought, waiting for delivery
+    missing = [c for c in cards if not have(c, 'jp') and not have(c, 'ordered')]      # still looking for
     # foil is an optional extra tag: any card known to have a foil / alt-art printing that has not been ticked as foil
-    foil_missing = ([c for c in cards if (c['foil'] or _foil_alts(c, info)) and not (owned.get(c['num']) or {}).get('foil')]
+    foil_missing = ([c for c in cards if (c['foil'] or _foil_alts(c, info)) and not have(c, 'foil') and not have(c, 'ordered')]
                     if cfg.get('foil') else [])
-    return cards, info, missing, foil_missing
+    return cards, info, missing, foil_missing, on_way
 
 
 _HEAD = {'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer'}
@@ -419,7 +426,7 @@ def share_image(token, name):
     if not cfg or not m or cfg.get('pics', True) is False:
         return js(404, {'error': 'not found'})
     num, alt = m.group(1), m.group(2)
-    _, info, missing, foil_missing = _wishlist(cfg, max_age=20)
+    _, info, missing, foil_missing, _ = _wishlist(cfg, max_age=20)
     if alt:
         card = next((c for c in foil_missing if c['num'] == num), None)
         ok = bool(card) and alt in _foil_alts(card, info)
@@ -546,7 +553,7 @@ def share_page(token):
     cfg = share_gate(token)
     if not cfg:
         return _share_not_found()
-    cards, info, missing, foil_missing = _wishlist(cfg)
+    cards, info, missing, foil_missing, on_way = _wishlist(cfg)
     pics = cfg.get('pics', True) is not False
     name, message = cfg.get('name', ''), cfg.get('message', '')
     def per_set(cs):
@@ -572,7 +579,8 @@ def share_page(token):
     parts = ['<h1>Japanese Event cards I&rsquo;m looking for</h1>',
              f'<p class="sub">{who}</p>' if who else '',
              f'<div class="msg">{_e(message)}</div>' if message else '',
-             f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still missing'
+             f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still looking for'
+             + (f' &middot; <b>{len(on_way)}</b> more already bought and on the way' if on_way else '')
              + (f' &middot; <b>{len(foil_missing)}</b> of {len(foil_all)} foil / alt-art versions wanted' if foil_missing else '') + '</p>',
              '<p class="stat">Each set below says how many of its cards I still need.'
              + (f' For <b>{holding}</b> of them I already have the EN or KR copy, so they are tagged &mdash; only the Japanese card is missing.' if holding else '')
@@ -580,7 +588,8 @@ def share_page(token):
     if missing:
         parts += [colour_bar, f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
     else:
-        parts.append('<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
+        parts.append('<div class="done">Nothing left to find &mdash; everything I still need is already on its way!</div>' if on_way
+                     else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
     if foil_missing:
         parts += ['<h2 style="margin-top:40px">Also looking for the foil / alt-art versions</h2>',
                   f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]

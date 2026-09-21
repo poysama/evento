@@ -77,6 +77,15 @@ aws s3api copy-object --bucket $B --key data/collection.json --copy-source "$B/d
 Pick the newest version whose size looks right, then reload the site. (An old `null` version is the copy from before
 versioning was switched on.)
 
+## Bought by proxy (on order)
+
+For cards you have bought through a proxy but not received yet: open the card and tap **Bought by proxy, on the way**, and
+optionally write where it came from (shop, proxy, order id) in the note. A card on order is marked ON ORDER in the binder,
+is taken off your friends' share page (it is no longer "looking for"; they only see "N more already bought and on the way",
+never the note) and is not counted in What to buy. The **On order** button lists everything you are waiting for, with a
+note field, a **Received** button and a copy-as-text list. Marking the card JP complete (or **Received**) ends the order
+and clears the note. The Completed page and the binder progress still count only cards in hand.
+
 ## Foil and Manga are optional extras
 
 Foil and Manga are ticked *after* a card is marked JP complete (their buttons stay greyed out until then) and never
