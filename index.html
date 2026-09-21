@@ -64,6 +64,14 @@ h1{font:600 18px/1 var(--disp);letter-spacing:.06em;text-transform:uppercase;mar
 @media (hover:hover){.hov{display:block}.card:hover .hov,.card:focus-within .hov{opacity:1}}
 .hov b{display:block;font-size:12.5px;line-height:1.15}.hov span{font:11px var(--mono);opacity:.9}
 .card.flash .art{animation:fl 1.6s ease-out}
+.grid.spot .card:not(.spot){opacity:.25;filter:grayscale(1);transition:opacity .35s,filter .35s}
+.grid.spot .card.spot{z-index:3}
+.card.spot .art{border-color:#FFD24D;transform:scale(1.06);box-shadow:0 0 0 3px #FFD24D,0 0 26px 8px rgba(255,210,77,.85);animation:spotpulse 1.1s ease-in-out infinite}
+.card.spot .art img{filter:none}
+.card.spot .art::after{content:'';position:absolute;top:-10%;bottom:-10%;left:-60%;width:60%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.85),transparent);transform:skewX(-18deg) translateX(-120%);animation:spotshine 1.3s ease-in-out infinite;pointer-events:none}
+@keyframes spotpulse{0%,100%{box-shadow:0 0 0 3px #FFD24D,0 0 14px 4px rgba(255,210,77,.6)}50%{box-shadow:0 0 0 3px #FFD24D,0 0 34px 12px rgba(255,210,77,.95)}}
+@keyframes spotshine{0%{transform:skewX(-18deg) translateX(-120%)}65%,100%{transform:skewX(-18deg) translateX(420%)}}
+@media (prefers-reduced-motion:reduce){.card.spot .art,.card.spot .art::after{animation:none}}
 @keyframes fl{0%,60%{box-shadow:0 0 0 4px var(--focus)}100%{box-shadow:0 0 0 0 transparent}}
 .cap{font-size:clamp(9px,1.3vw + 4.2px,12px);line-height:1.25;min-height:3.75em}
 .cap .cn{display:block;font-family:var(--mono);color:var(--mute)}
@@ -210,6 +218,18 @@ dialog::backdrop{background:var(--scrim)}
 .vb[aria-pressed="true"]{background:var(--ownbg);border-color:var(--own);color:var(--own)}
 .vb.ph[aria-pressed="true"]{background:var(--amberbg);border-color:var(--amber);color:var(--amber)}
 .vb.ord[aria-pressed="true"]{background:var(--ordbg);border-color:var(--ord);color:var(--ord)}
+.vrow[hidden],.note[hidden]{display:none}.valt{display:flex;flex-direction:column;gap:8px}.valt[hidden]{display:none}
+.av{position:absolute;right:4px;bottom:4px;z-index:2;font:600 9px/1 var(--disp);letter-spacing:.08em;background:rgba(15,25,38,.82);color:#9CD0FF;border-radius:3px;padding:3px 5px 2px;pointer-events:none}
+.asec{margin-top:6px}.asec-h{margin:14px 0 6px;font:600 17px var(--disp);letter-spacing:.06em;text-transform:uppercase}.asec .small{margin:6px 0}
+.ag-set{font:600 12px var(--mono);color:var(--mute);margin:12px 0 5px}
+.ag{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px}
+.ac{position:relative}.ab{all:unset;box-sizing:border-box;display:flex;flex-direction:column;width:100%;border:2px solid var(--line);border-radius:10px;background:var(--sheet);overflow:hidden;cursor:pointer}
+.ab:focus-visible{outline:3px solid var(--focus)}.ab[data-st="want"]{border-color:var(--amber)}.ab[data-st="ordered"]{border-color:var(--ord)}.ab[data-st="have"]{border-color:var(--own)}
+.ab .im{position:relative;aspect-ratio:63/88;background:var(--line)}.ab img{display:block;width:100%;height:100%;object-fit:cover}
+.ab .st{position:absolute;left:4px;top:4px;font:600 9px/1 var(--disp);letter-spacing:.06em;border-radius:3px;padding:3px 5px 2px;color:#fff;background:var(--amber)}
+.ab[data-st="ordered"] .st{background:var(--ord)}.ab[data-st="have"] .st{background:var(--own)}
+.ab .cp{padding:5px 6px 6px;font-size:11.5px;line-height:1.25}.ab .cp b{display:block;font:600 11px var(--mono)}.ab .cp span{display:block;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai{position:absolute;right:4px;top:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(15,25,38,.78);color:#fff;font-weight:700;font-size:13px;line-height:1;cursor:pointer;padding:0}
 .vnote{width:100%;min-height:44px;border:1.5px solid var(--ord);border-radius:10px;padding:0 12px;font:inherit;font-size:14px;background:var(--sheet);color:var(--ink)}.vnote[hidden]{display:none}
 .ob{position:absolute;left:4px;top:4px;z-index:2;font:600 9px/1 var(--disp);letter-spacing:.08em;background:var(--ord);color:#fff;border-radius:3px;padding:3px 5px 2px;pointer-events:none}
 .ol{display:grid;grid-template-columns:52px 1fr;gap:6px 12px;padding:10px 12px;border:1.5px solid var(--ord);background:var(--sheet);border-radius:12px;align-items:start}
@@ -220,9 +240,9 @@ dialog::backdrop{background:var(--scrim)}
 .vf .small{font-size:11.5px}
 @media (pointer:coarse){.i{display:none}}
 /* ---- what to buy ---- */
-#sumdlg,#donedlg,#orddlg{padding:0;overflow:hidden;width:min(760px,96vw);height:min(94dvh,920px);max-height:none}
-#sumdlg[open],#donedlg[open],#orddlg[open]{display:flex}
-@media (max-width:560px){#sumdlg,#donedlg,#orddlg{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0}}
+#sumdlg,#donedlg,#orddlg,#altdlg{padding:0;overflow:hidden;width:min(760px,96vw);height:min(94dvh,920px);max-height:none}
+#sumdlg[open],#donedlg[open],#orddlg[open],#altdlg[open]{display:flex}
+@media (max-width:560px){#sumdlg,#donedlg,#orddlg,#altdlg{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0}}
 .sm{display:flex;flex-direction:column;width:100%;height:100%;min-height:0}
 .sm-h{display:flex;align-items:center;gap:10px;padding:10px 10px 8px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
 .sm-h h3{flex:1;margin:0;font:600 20px/1.1 var(--disp);letter-spacing:.05em;text-transform:uppercase}
@@ -270,7 +290,7 @@ dialog::backdrop{background:var(--scrim)}
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -308,6 +328,7 @@ dialog::backdrop{background:var(--scrim)}
 <dialog id="sumdlg" aria-label="What to buy"></dialog>
 <dialog id="donedlg" aria-label="Completed sets"></dialog>
 <dialog id="orddlg" aria-label="Cards on order"></dialog>
+<dialog id="altdlg" aria-label="Alt art and Manga versions"></dialog>
 
 <script>
 (function () {
@@ -315,13 +336,19 @@ dialog::backdrop{background:var(--scrim)}
   var saveTimer = null, saving = false, dirty = false, openNum = null;
   var $ = function (id) { return document.getElementById(id); };
   var grid = $('grid'), dlg = $('dlg');
-  var KEYS = ['jp', 'foil', 'en', 'kr', 'manga', 'ordered'];
+  var KEYS = ['jp', 'foil', 'en', 'kr', 'ordered'];
+  var ALT_ST = ['want', 'ordered', 'have'];          // per alt-art / Manga version: collecting it, bought and on the way, in hand
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function has(n, k) { return !!(col[n] && col[n][k]); }
   function tagged(n, k) { return has(n, 'jp') && has(n, k); }        // foil / manga only count once the JP card is complete
   function ordered(n) { return has(n, 'ordered') && !has(n, 'jp'); }          // bought (e.g. by proxy), not received yet
   function noteOf(n) { return (col[n] && col[n].note) || ''; }
+  function altState(n, a) { return (col[n] && col[n].alt && col[n].alt[a]) || ''; }
+  function verLabel(c, a) {            // 'Manga', or 'Alt art' (numbered when the card has several versions)
+    var alts = c.alt || [];
+    return c.manga === a ? 'Manga' : (alts.length > 1 || c.manga) ? 'Alt art ' + (alts.indexOf(a) + 1) : 'Alt art';
+  }
   function phList(n) { var a = []; if (has(n, 'en')) a.push('EN'); if (has(n, 'kr')) a.push('KR'); return a; }
   function pageOf(i) { return Math.floor(i / PER) + 1; }
 
@@ -350,16 +377,53 @@ dialog::backdrop{background:var(--scrim)}
   function setArt(m) {
     if (m === artMode) return;
     artMode = m; try { localStorage.setItem('binderArt', m); } catch (e) {}
-    syncSegs(); render(0); if (openNum) vwUpdate(true, 0);
+    syncSegs(); render(0);
   }
-  function artSrc(n) { return showingJP(n) ? 'card_images_jp/' + n + '.png' : 'card_images/' + n + '.jpg'; }
-  function artImg(img, n) {
-    img.onerror = function () {
-      if (this.src.indexOf('card_images_jp/') >= 0) { jpArt[n] = false; this.src = 'card_images/' + n + '.jpg'; }
-      else if (jpArt[n] && !this.dataset.fb) { this.dataset.fb = '1'; this.src = 'card_images_jp/' + n + '.png'; }   // no English print (some promos): show the Japanese art
-      else this.remove();
-    };
-    img.src = artSrc(n);
+  /* ---------- picture loader: a few at a time, with retries ----------
+     The hosted site only serves about 10 requests at once, so a page of 16 pictures (plus the pages next to it) used to
+     lose some of them. A failed picture is retried; it never permanently flips a card to the other language. */
+  var imgQ = [], imgLow = [], imgBusy = 0, IMG_MAX = 4, pageGen = 0, byNum = {};
+  function loadImg(img, src, o) {       // o: { fail: called when every try failed, low: background priority, stale: () => true to drop the job }
+    var j = { img: img, src: src, tries: 0, o: o || {} };
+    (j.o.low ? imgLow : imgQ).push(j);
+    setTimeout(pumpImgs, 0);            // after the caller has put the picture on the page
+  }
+  function pumpImgs() {
+    while (imgBusy < IMG_MAX && (imgQ.length || imgLow.length)) {
+      var j = imgQ.length ? imgQ.shift() : imgLow.shift();
+      if (j.o.stale && j.o.stale()) continue;
+      imgBusy++;
+      (function (j) {
+        var over = false;
+        function fin(ok) {
+          if (over) return; over = true; imgBusy--;
+          if (!ok) {
+            if (j.tries < 5 && !(j.o.stale && j.o.stale())) { j.tries++; setTimeout(function () { imgQ.push(j); pumpImgs(); }, 350 * j.tries + Math.random() * 300); }
+            else if (j.o.fail) j.o.fail();
+          }
+          pumpImgs();
+        }
+        j.img.onload = function () { fin(true); }; j.img.onerror = function () { fin(false); };
+        setTimeout(function () { fin(false); }, 20000);          // never hold a slot forever
+        j.img.src = j.src + (j.tries ? '?r=' + j.tries : '');
+      })(j);
+    }
+  }
+  function artUrls(n, mode) {           // [first choice, fallback] for a card; mode 'en' | 'jp', default = the binder's setting
+    var jpU = 'card_images_jp/' + n + '.png', enU = 'card_images/' + n + '.jpg', c = byNum[n];
+    var wantJP = (mode ? mode === 'jp' : artMode === 'jp') && !!jpArt[n];
+    if (!wantJP && c && c.noen && jpArt[n]) wantJP = true;      // a few promos have no English print
+    return wantJP ? [jpU, enU] : [enU, jpArt[n] ? jpU : null];
+  }
+  function artImg(img, n, mode) {
+    var u = artUrls(n, mode), stale = function () { return !img.isConnected; };
+    loadImg(img, u[0], { stale: stale, fail: function () {
+      if (u[1]) loadImg(img, u[1], { stale: stale, fail: function () { img.remove(); } }); else img.remove();
+    } });
+  }
+  function preloadArt(n, mode) {        // warm the cache for a card we are about to show (low priority, dropped if the page changed)
+    var gen = pageGen;
+    loadImg(new Image(), artUrls(n, mode)[0], { low: true, stale: function () { return gen !== pageGen; } });
   }
 
   /* ---------- status text (one place, used by tile + panel) ---------- */
@@ -382,7 +446,9 @@ dialog::backdrop{background:var(--scrim)}
     art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (d ? 'not owned' : 'owned')) + '.');
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num);
     art.appendChild(img); art.appendChild(el('span', 'ok'));
-    if (c.manga) art.appendChild(el('span', 'mg', tagged(c.num, 'manga') ? 'MANGA ✓' : 'MANGA'));
+    if (c.manga) { var ms = altState(c.num, c.manga); art.appendChild(el('span', 'mg', 'MANGA' + (ms === 'have' ? ' ✓' : ms === 'ordered' ? ' …' : ms === 'want' ? ' ★' : ''))); }
+    var marked = (c.alt || []).filter(function (a) { return a !== c.manga && altState(c.num, a); });
+    if (marked.length) art.appendChild(el('span', 'av', 'ALT ' + marked.filter(function (a) { return altState(c.num, a) === 'have'; }).length + '/' + marked.length));
     if (o) art.appendChild(el('span', 'ob', 'ON ORDER'));
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
     art.addEventListener('click', function () {
@@ -404,6 +470,7 @@ dialog::backdrop{background:var(--scrim)}
     return card;
   }
   function render(dir) {
+    pageGen++;
     var pg = cards.slice((page - 1) * PER, page * PER), frag = document.createDocumentFragment(), sets = [];
     for (var i = 0; i < PER; i++) frag.appendChild(pg[i] ? tile(pg[i], i) : emptyTile(i));
     grid.replaceChildren(frag);
@@ -417,7 +484,7 @@ dialog::backdrop{background:var(--scrim)}
     preview(null);
     stats();
     // warm the neighbours so flipping is instant
-    [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) cards.slice((p - 1) * PER, p * PER).forEach(function (c) { new Image().src = artSrc(c.num); }); });
+    [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) cards.slice((p - 1) * PER, p * PER).forEach(function (c) { preloadArt(c.num); }); });
   }
   function stats() {
     var jp = 0, ph = 0, fo = 0, oo = 0;
@@ -445,6 +512,14 @@ dialog::backdrop{background:var(--scrim)}
     render(0); preview(n); if (openNum === n) fillInfo(n);
     scheduleSave();
   }
+  function setAlt(n, a, st) {          // st = 'want' | 'ordered' | 'have', or '' to clear
+    var e = col[n] || {}, m = e.alt || {};
+    if (st) m[a] = st; else delete m[a];
+    if (Object.keys(m).length) e.alt = m; else delete e.alt;
+    if (Object.keys(e).length) col[n] = e; else delete col[n];
+    render(0); if (openNum === n) { vwVariants(cards[vidx]); fillInfo(n); }
+    scheduleSave();
+  }
   function setNote(n, text) {          // free text about an order (where it was bought, order id ...)
     if (!ordered(n)) return;
     var e = col[n], v = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -469,6 +544,14 @@ dialog::backdrop{background:var(--scrim)}
       if (v === true) e.jp = true;
       else if (v && typeof v === 'object') { KEYS.forEach(function (k) { if (v[k] === true) e[k] = true; }); if (typeof v.note === 'string' && v.note) e.note = v.note.slice(0, 200); }
       if (!e.ordered) delete e.note;
+      if (v && v.alt && typeof v.alt === 'object') {
+        var m = {}; Object.keys(v.alt).forEach(function (a) { if (/^p\d{1,2}$/.test(a) && ALT_ST.indexOf(v.alt[a]) >= 0) m[a] = v.alt[a]; });
+        if (Object.keys(m).length) e.alt = m;
+      }
+      if (v && v.manga === true) {          // the old on/off Manga flag becomes a mark on the Manga version
+        var mc = cards.find(function (c) { return c.num === n; });
+        if (mc && mc.manga) { e.alt = e.alt || {}; if (!e.alt[mc.manga]) e.alt[mc.manga] = 'have'; }
+      }
       if (Object.keys(e).length) out[n] = e;
     });
     return out;
@@ -527,11 +610,23 @@ dialog::backdrop{background:var(--scrim)}
     m.forEach(function (i) {
       var c = cards[i], li = el('li'), b = el('button'); b.type = 'button';
       b.appendChild(el('span', '', c.name)); b.appendChild(el('small', '', c.num + ' · p.' + pageOf(i)));
-      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; go(pageOf(i), 0); flash(c.num); });
+      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; go(pageOf(i), 0); spotlight(c.num); });
       li.appendChild(b); hits.appendChild(li);
     });
     hits.hidden = false;
   }
+  var spotTimer = null;
+  function clearSpot() {
+    clearTimeout(spotTimer); grid.classList.remove('spot');
+    [].forEach.call(grid.querySelectorAll('.card.spot'), function (c) { c.classList.remove('spot'); });
+  }
+  function spotlight(n) {               // dim every other card and make the found one shine for a few seconds (any tap ends it)
+    var t = grid.querySelector('.card[data-n="' + n + '"]'); if (!t) return;
+    clearSpot(); grid.classList.add('spot'); t.classList.add('spot');
+    spotTimer = setTimeout(clearSpot, 4500);
+  }
+  document.addEventListener('pointerdown', function () { if (grid.classList.contains('spot')) clearSpot(); });
+  document.addEventListener('keydown', function () { if (grid.classList.contains('spot')) clearSpot(); });
   function flash(n) { var t = grid.querySelector('.card[data-n="' + n + '"]'); if (t) { t.classList.add('flash'); setTimeout(function () { t.classList.remove('flash'); }, 1700); } }
   q.addEventListener('input', search);
   q.addEventListener('keydown', function (e) { if (e.key === 'Escape') { hits.hidden = true; q.blur(); } });
@@ -547,7 +642,7 @@ dialog::backdrop{background:var(--scrim)}
     var root = el('div', 'vw'), r = {};
     var hd = el('header', 'vh'), tt = el('div', 'vt');
     r.name = el('b'); r.meta = el('span'); r.meta2 = el('span'); tt.appendChild(r.name); tt.appendChild(r.meta); tt.appendChild(r.meta2);
-    r.artseg = el('span', 'seg2'); makeArtSeg(r.artseg);
+    r.artseg = el('span', 'seg2'); buildVwSeg(r.artseg);
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close card viewer');
     x.addEventListener('click', function () { vwClose(); });
     hd.appendChild(tt); hd.appendChild(r.artseg); hd.appendChild(x);
@@ -572,27 +667,48 @@ dialog::backdrop{background:var(--scrim)}
     r.en = vbtn('ph', false, function () { toggle(cards[vidx].num, 'en'); });
     r.kr = vbtn('ph', false, function () { toggle(cards[vidx].num, 'kr'); });
     r.foil = vbtn('', false, function () { toggle(cards[vidx].num, 'foil'); });
-    r.manga = vbtn('', false, function () { toggle(cards[vidx].num, 'manga'); });
     r.ord = vbtn('ord', false, function () { toggle(cards[vidx].num, 'ordered'); });
     r.onote = el('input', 'vnote'); r.onote.type = 'text'; r.onote.maxLength = 200; r.onote.hidden = true;
     r.onote.placeholder = 'Where from? e.g. Buyee, order #1234'; r.onote.setAttribute('aria-label', 'Order note');
     r.onote.addEventListener('input', function () { setNote(cards[vidx].num, r.onote.value); });
     r.onote.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onote.blur(); });
     r.row = el('div', 'vrow');
-    r.row.appendChild(r.en); r.row.appendChild(r.kr); r.row.appendChild(r.foil); r.row.appendChild(r.manga);
+    r.row.appendChild(r.en); r.row.appendChild(r.kr); r.row.appendChild(r.foil);
     r.vv = el('div', 'vv'); r.vv.hidden = true;
+    r.altp = el('div', 'valt'); r.altp.hidden = true;                 // marks for the alt-art / Manga version being shown
+    r.altt = el('div', 'note');
+    var altMark = function (st) { return function () { var n = cards[vidx].num; setAlt(n, vwAlt, altState(n, vwAlt) === st ? '' : st); }; };
+    r.aw = vbtn('ph', false, altMark('want')); r.ao = vbtn('ord', false, altMark('ordered')); r.ah = vbtn('', false, altMark('have'));
+    r.altr = el('div', 'vrow'); r.altr.appendChild(r.aw); r.altr.appendChild(r.ao); r.altr.appendChild(r.ah);
+    r.altp.appendChild(r.altt); r.altp.appendChild(r.altr);
     r.art = el('div', 'small');
-    ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.ord); ft.appendChild(r.onote); ft.appendChild(r.row); ft.appendChild(r.art);
+    ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.ord); ft.appendChild(r.onote); ft.appendChild(r.row); ft.appendChild(r.altp); ft.appendChild(r.art);
 
     root.appendChild(hd); root.appendChild(stage); root.appendChild(r.vv); root.appendChild(ft);
     dlg.replaceChildren(root);
     vw = r;
   }
+  var vwMode = 'jp';                    // the viewer's own EN | JP choice: switching it here never touches the binder behind
+  function vwShowingJP(n) { return vwMode === 'jp' && !!jpArt[n]; }
+  function syncVwSeg() {
+    if (!vw) return;
+    vw.artseg.hidden = !hasJP();
+    [].forEach.call(vw.artseg.children, function (b) { b.setAttribute('aria-pressed', b.dataset.m === vwMode ? 'true' : 'false'); });
+  }
+  function buildVwSeg(host) {
+    host.setAttribute('role', 'group'); host.setAttribute('aria-label', 'Card art language (this viewer only)');
+    [['en', 'EN'], ['jp', 'JP']].forEach(function (o) {
+      var b = el('button', '', o[1]); b.type = 'button'; b.dataset.m = o[0];
+      b.setAttribute('aria-label', o[0] === 'jp' ? 'Show the Japanese card art here' : 'Show the English card art here');
+      b.addEventListener('click', function () { vwMode = o[0]; syncVwSeg(); vwShowArt(cards[vidx]); vwUpdate(false); });
+      host.appendChild(b);
+    });
+  }
   var vwAlt = null;                       // which alt-art / Manga picture the viewer is showing (null = the standard card)
   function vwShowArt(c) {
     var img = el('img'); img.alt = c.name;
-    if (vwAlt) { img.onerror = function () { this.remove(); }; img.src = 'card_images_jp/' + c.num + '_' + vwAlt + '.png'; }
-    else artImg(img, c.num);
+    if (vwAlt) loadImg(img, 'card_images_jp/' + c.num + '_' + vwAlt + '.png', { fail: function () { img.remove(); } });
+    else artImg(img, c.num, vwMode);
     vw.wrap.replaceChildren(img);
   }
   function vwVariants(c) {                // Standard / Alt art / Manga: Japanese pictures only, so only where we have JP art
@@ -600,7 +716,7 @@ dialog::backdrop{background:var(--scrim)}
     var alts = (c.alt || []).filter(function () { return !!jpArt[c.num]; });
     vw.vv.hidden = !alts.length;
     if (!alts.length) return;
-    var opts = [[null, 'Standard']].concat(alts.map(function (a, i) { return [a, c.manga === a ? 'Manga ★' : (alts.length > 1 || c.manga ? 'Alt art ' + (i + 1) : 'Alt art')]; }));
+    var opts = [[null, 'Standard']].concat(alts.map(function (a, i) { return [a, verLabel(c, a) + ({ want: ' ★', ordered: ' …', have: ' ✓' }[altState(c.num, a)] || '')]; }));
     opts.forEach(function (o) {
       var b = el('button', '', o[1]); b.type = 'button'; b.setAttribute('aria-pressed', vwAlt === o[0] ? 'true' : 'false');
       b.addEventListener('click', function () { vwAlt = o[0]; vwShowArt(c); vwVariants(c); vwUpdate(false); });
@@ -618,12 +734,11 @@ dialog::backdrop{background:var(--scrim)}
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
       vwShowArt(c); vwVariants(c);
       vw.prev.disabled = vidx <= 0; vw.next.disabled = vidx >= cards.length - 1;
-      [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) new Image().src = artSrc(cards[k].num); });
+      [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) preloadArt(cards[k].num, vwMode); });
     }
     var done = has(n, 'jp');
     vw.note.className = 'note' + (done ? ' done' : ordered(n) ? ' ord' : '');
-    vw.note.textContent = jpText(c, true) + (tagged(n, 'foil') ? ' · Foil in hand' : '')
-      + (c.manga ? (tagged(n, 'manga') ? ' · Manga version owned' : ' · Manga version is optional') : '') + '.';
+    vw.note.textContent = jpText(c, true) + (tagged(n, 'foil') ? ' · Foil in hand' : '') + '.';
     vw.jp.setAttribute('aria-pressed', done ? 'true' : 'false');
     vw.jp.textContent = done ? '✓  JP card complete' : ordered(n) ? 'Received: mark JP card complete' : 'Mark JP card complete';
     vw.ord.hidden = done; vw.ord.setAttribute('aria-pressed', ordered(n) ? 'true' : 'false');
@@ -633,18 +748,31 @@ dialog::backdrop{background:var(--scrim)}
     vw.en.setAttribute('aria-pressed', has(n, 'en') ? 'true' : 'false'); vw.en.textContent = 'EN copy';
     vw.kr.setAttribute('aria-pressed', has(n, 'kr') ? 'true' : 'false'); vw.kr.textContent = 'KR copy';
     vw.foil.disabled = !done; vw.foil.setAttribute('aria-pressed', tagged(n, 'foil') ? 'true' : 'false'); vw.foil.textContent = '★ Foil';
-    vw.manga.hidden = !c.manga; vw.manga.disabled = !done; vw.manga.setAttribute('aria-pressed', tagged(n, 'manga') ? 'true' : 'false'); vw.manga.textContent = '✎ Manga';
     vw.art.textContent = (vwAlt ? 'Showing the Japanese ' + (c.manga === vwAlt ? 'Manga' : 'alt-art') + ' version. '
-      : showingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + (done ? '' : 'Tick Foil / Manga after the JP card is complete. ') + 'Swipe or use ‹ › for the next card.';
+      : vwShowingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + (done ? '' : 'Tick Foil after the JP card is complete. ') + 'Swipe or use ‹ › for the next card.';
+    var isAlt = !!vwAlt;                 // an alt-art / Manga picture is showing: its own marks replace the standard-card controls
+    vw.note.hidden = vw.jp.hidden = vw.row.hidden = isAlt;
+    if (isAlt) { vw.ord.hidden = true; vw.onote.hidden = true; }
+    vw.altp.hidden = !isAlt;
+    if (isAlt) {
+      var ast = altState(n, vwAlt);
+      vw.altt.className = 'note' + (ast === 'have' ? ' done' : ast === 'ordered' ? ' ord' : '');
+      vw.altt.textContent = verLabel(c, vwAlt) + ': ' + (ast === 'have' ? 'in hand' : ast === 'ordered' ? 'on order' : ast === 'want' ? 'you want this one' : 'not marked') + '. Marks here never change whether the card counts as complete.';
+      vw.aw.setAttribute('aria-pressed', ast === 'want' ? 'true' : 'false'); vw.aw.textContent = '★ Want it';
+      vw.ao.setAttribute('aria-pressed', ast === 'ordered' ? 'true' : 'false'); vw.ao.textContent = 'On order';
+      vw.ah.setAttribute('aria-pressed', ast === 'have' ? 'true' : 'false'); vw.ah.textContent = '✓ Have it';
+    }
   }
   function vstep(d) {
     var k = vidx + d; if (k < 0 || k >= cards.length) return;
     vidx = k; vwUpdate(true, d);
   }
-  function openInfo(n) {
+  function openInfo(n, alt) {          // alt (optional): open straight on that alt-art / Manga version
     vidx = Math.max(0, cards.findIndex(function (c) { return c.num === n; }));
     if (!vw) vwBuild();
+    vwMode = artMode; syncVwSeg();      // starts from the binder's setting; changing it here stays here
     vwUpdate(true, 0);
+    if (alt) { var c0 = cards[vidx]; vwAlt = alt; vwShowArt(c0); vwVariants(c0); vwUpdate(false); }
     if (!dlg.open) dlg.showModal();
   }
   function fillInfo() { if (vw && dlg.open) vwUpdate(false); }
@@ -659,6 +787,7 @@ dialog::backdrop{background:var(--scrim)}
     if (typeof sumDlg !== 'undefined' && sumDlg.open) sumFill();   // the shopping list may have changed
     if (typeof doneDlg !== 'undefined' && doneDlg.open) doneFill();
     if (typeof ordDlg !== 'undefined' && ordDlg.open) ordFill();
+    if (typeof altDlg !== 'undefined' && altDlg.open) altFill();
   }
   function vwClose() { if (dlg.open) dlg.close(); vwAfterClose(); }
   dlg.addEventListener('close', vwAfterClose);
@@ -748,9 +877,6 @@ dialog::backdrop{background:var(--scrim)}
   /* ---------- share "what I'm looking for" with friends ---------- */
   var shBtn = $('shbtn'), shDlg = $('shdlg'), shCfg = null, shMsg = null;
   function missingList() { return cards.filter(function (c) { return !has(c.num, 'jp') && !ordered(c.num); }); }
-  function foilMissingList() {         // cards known to have a foil / alt-art printing that are not ticked as foil yet
-    return cards.filter(function (c) { return (c.foil || (c.alt || []).some(function (a) { return a !== c.manga; })) && !has(c.num, 'foil') && !ordered(c.num); });
-  }
   function wishText(withFoil) {
     var m = missingList(), out = ["Japanese One Piece Event cards I'm looking for (" + m.length + ' of ' + cards.length + '):', ''], cur = null;
     m.forEach(function (c) {
@@ -758,8 +884,8 @@ dialog::backdrop{background:var(--scrim)}
       var ph = phList(c.num);
       out.push('- ' + c.num + ' ' + c.name + ' (' + c.rar + ')' + (ph.length ? ' - I have the ' + ph.join('/') + ' copy, need the JP card' : ''));
     });
-    var f = withFoil ? foilMissingList() : [];
-    if (f.length) { out.push('', 'Also looking for the foil / alt-art versions of:'); f.forEach(function (c) { out.push('- ' + c.num + ' ' + c.name); }); }
+    var f = withFoil ? altWantList() : [];
+    if (f.length) { out.push('', 'Also collecting these alt-art / Manga versions:'); f.forEach(function (v) { out.push('- ' + v.c.num + ' ' + v.c.name + ' (' + verLabel(v.c, v.a) + ')'); }); }
     if (shCfg && shCfg.enabled && shCfg.url) out.push('', 'Pictures: ' + shCfg.url);
     return out.join('\n');
   }
@@ -782,11 +908,11 @@ dialog::backdrop{background:var(--scrim)}
       .catch(function (e) { shSay('Could not save' + (e && e.message ? ': ' + e.message : '.'), 'err'); });
   }
   function shFill() {
-    var root = el('div', 'dl'), miss = missingList(), fm = foilMissingList(), onN = orderedCards().length;
+    var root = el('div', 'dl'), miss = missingList(), fm = altWantList(), onN = orderedCards().length;
     root.appendChild(el('h3', '', 'Share what I’m looking for'));
     root.appendChild(el('div', 'small', 'Show your friends the Japanese cards you still need, with pictures, so they know what to look for.'));
     root.appendChild(el('div', 'note' + (miss.length ? '' : ' done'), miss.length
-      ? 'Still looking for ' + miss.length + ' of ' + cards.length + ' JP cards' + (fm.length ? ' (plus ' + fm.length + ' foil / alt-art versions)' : '') + (onN ? '. ' + onN + ' more already on order, not shown to friends' : '') + '.'
+      ? 'Still looking for ' + miss.length + ' of ' + cards.length + ' JP cards' + (fm.length ? ' (plus ' + fm.length + ' alt-art / Manga versions I want)' : '') + (onN ? '. ' + onN + ' more already on order, not shown to friends' : '') + '.'
       : (onN ? 'Nothing left to find: everything else is already on order.' : 'Nothing missing: the JP collection is complete!')));
     shMsg = el('div', 'sh-msg'); shMsg.setAttribute('role', 'status');
 
@@ -811,7 +937,7 @@ dialog::backdrop{background:var(--scrim)}
       var nm = el('input'); nm.type = 'text'; nm.maxLength = 40; nm.placeholder = 'Your name (shown at the top, optional)'; nm.value = shCfg.name || ''; nm.setAttribute('aria-label', 'Your name');
       var ms = el('textarea'); ms.maxLength = 300; ms.placeholder = 'A short message for your friends (optional)'; ms.value = shCfg.message || ''; ms.setAttribute('aria-label', 'Message for your friends');
       function ck(text, on) { var l = el('label', 'ck'), i = el('input'); i.type = 'checkbox'; i.checked = on; l.appendChild(i); l.appendChild(el('span', '', text)); return [l, i]; }
-      var c1 = ck('Show card pictures', shCfg.pics), c2 = ck('Also list the foil / alt-art versions I’m missing' + (fm.length ? ' (' + fm.length + ')' : ''), shCfg.foil);
+      var c1 = ck('Show card pictures', shCfg.pics), c2 = ck('Also show the alt-art / Manga versions I want' + (fm.length ? ' (' + fm.length + ')' : ''), shCfg.foil);
       f.appendChild(nm); f.appendChild(ms); f.appendChild(c1[0]); f.appendChild(c2[0]);
       var go = el('button', 'btn pri', shCfg.enabled ? 'Save changes' : 'Create share link'); go.type = 'button';
       go.addEventListener('click', function () { go.disabled = true; shPut({ enabled: true, name: nm.value, message: ms.value, pics: c1[1].checked, foil: c2[1].checked }, shCfg.enabled ? 'Saved.' : 'Link created. Copy it and send it to your friends.'); });
@@ -1133,13 +1259,105 @@ dialog::backdrop{background:var(--scrim)}
   $('ordbtn').addEventListener('click', function () { ordFill(); if (!ordDlg.open) ordDlg.showModal(); });
   ordDlg.addEventListener('click', function (e) { if (e.target === ordDlg) ordDlg.close(); });
 
+  /* ---------- alt art / Manga: what has alternate arts and a Manga, and which versions to collect ---------- */
+  var altDlg = $('altdlg'), altFilter = 'all', altGen = 0;
+  var ALT_NEXT = { '': 'want', want: 'ordered', ordered: 'have', have: '' };
+  var ALT_TXT = { want: '★ WANT', ordered: 'ON ORDER', have: '✓ HAVE' };
+  function allVersions() {
+    var out = [];
+    cards.forEach(function (c) { (c.alt || []).forEach(function (a) { out.push({ c: c, a: a, st: altState(c.num, a) }); }); });
+    return out;
+  }
+  function altWantList() { return allVersions().filter(function (v) { return v.st === 'want'; }); }
+  function altText(list) {
+    var out = ['Alt-art / Manga versions I am collecting (' + list.length + '):', ''];
+    list.forEach(function (v) { out.push('- ' + v.c.num + ' ' + v.c.name + ' (' + verLabel(v.c, v.a) + ')'); });
+    return out.join('\n');
+  }
+  function altCell(v, pending) {
+    var cell = el('div', 'ac'), main = el('button', 'ab'); main.type = 'button'; main.dataset.st = v.st;
+    main.setAttribute('aria-label', v.c.name + ', ' + verLabel(v.c, v.a) + ', ' + (v.st || 'not marked') + '. Press to change.');
+    var im = el('div', 'im'), img = el('img'); img.alt = ''; img.dataset.src = 'card_images_jp/' + v.c.num + '_' + v.a + '.png'; im.appendChild(img); pending.push(img);
+    if (v.st) im.appendChild(el('span', 'st', ALT_TXT[v.st]));
+    var cp = el('div', 'cp'); cp.appendChild(el('b', '', v.c.num)); cp.appendChild(el('span', '', verLabel(v.c, v.a) + ' · ' + v.c.name));
+    main.appendChild(im); main.appendChild(cp);
+    main.addEventListener('click', function () { setAlt(v.c.num, v.a, ALT_NEXT[v.st]); altFill(); });
+    var info = el('button', 'ai', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Open ' + v.c.name);
+    info.addEventListener('click', function () { openInfo(v.c.num, v.a); });
+    cell.appendChild(main); cell.appendChild(info);
+    return cell;
+  }
+  function altFill() {
+    var vs = allVersions(), cnt = { '': 0, want: 0, ordered: 0, have: 0 }, root = el('div', 'sm'), body = el('div', 'sm-b');
+    vs.forEach(function (v) { cnt[v.st]++; });
+    var prev = altDlg.querySelector('.sm-b'), prevScroll = prev ? prev.scrollTop : 0;
+    var hd = el('header', 'sm-h'); hd.appendChild(el('h3', '', 'Alt art'));
+    var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.addEventListener('click', function () { altDlg.close(); }); hd.appendChild(x);
+    var altV = vs.filter(function (v) { return v.c.manga !== v.a; }), mgV = vs.filter(function (v) { return v.c.manga === v.a; });
+    var altCards = {}; altV.forEach(function (v) { altCards[v.c.num] = 1; });
+    var s = el('div', 'sm-sum');
+    s.appendChild(document.createTextNode('Which cards have alternate arts and a Manga version, in two sections. '));
+    s.appendChild(el('b', '', 'Tap a picture to cycle: Want, On order, Have, clear.'));
+    s.appendChild(document.createTextNode(' Marks never change whether a card counts as complete.'));
+    body.appendChild(s);
+    body.appendChild(chipRow([['★ ' + cnt.want + ' wanted', cnt.want ? 'only' : ''], [cnt.ordered + ' on order', ''], ['✓ ' + cnt.have + ' have', cnt.have ? 'own' : ''], [cnt[''] + ' not marked', '']]));
+    var ctl = el('div', 'sm-ctl');
+    var seg = el('span', 'seg2'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Show');
+    [['all', 'All'], ['want', 'Wanted'], ['ordered', 'On order'], ['have', 'Have'], ['none', 'Not marked']].forEach(function (o) {
+      var b = el('button', '', o[1]); b.type = 'button'; b.setAttribute('aria-pressed', o[0] === altFilter ? 'true' : 'false');
+      b.addEventListener('click', function () { altFilter = o[0]; altFill(); }); seg.appendChild(b);
+    });
+    ctl.appendChild(seg); body.appendChild(ctl);
+    var pass = function (v) { return altFilter === 'all' || (altFilter === 'none' ? !v.st : v.st === altFilter); };
+    var pending = [], sections = [];
+    function section(id, title, blurb, list, bySet, cardsN) {
+      var sec = el('section', 'asec'); sec.id = id;
+      sec.appendChild(el('h4', 'asec-h', title));
+      var have = list.filter(function (v) { return v.st === 'have'; }).length, want = list.filter(function (v) { return v.st === 'want'; }).length;
+      sec.appendChild(chipRow([[cardsN + (cardsN === 1 ? ' card' : ' cards'), ''], [list.length + (list.length === 1 ? ' version' : ' versions'), ''], ['✓ ' + have + ' have', have ? 'own' : ''], ['★ ' + want + ' wanted', want ? 'only' : '']]));
+      sec.appendChild(el('div', 'small', blurb));
+      var shown = list.filter(pass), cur = null, grid = null;
+      if (!shown.length) sec.appendChild(el('div', 'sm-empty', 'Nothing to show here.'));
+      shown.forEach(function (v) {
+        if (bySet && v.c.set !== cur) { cur = v.c.set; sec.appendChild(el('div', 'ag-set', cur)); grid = el('div', 'ag'); sec.appendChild(grid); }
+        if (!grid) { grid = el('div', 'ag'); sec.appendChild(grid); }
+        grid.appendChild(altCell(v, pending));
+      });
+      sections.push([id, title, list.length]);
+      body.appendChild(sec);
+    }
+    var jump = el('div', 'sm-ctl'); body.appendChild(jump);
+    section('alt-sec-a', 'Alternate arts', 'Cards that also have an alternate-art (parallel) print, by set.', altV, true, Object.keys(altCards).length);
+    section('alt-sec-m', 'Manga', 'Cards with a Manga (special art) print.', mgV, false, mgV.length);
+    sections.forEach(function (sc) {
+      var b = el('button', 'btn', sc[1] + ' (' + sc[2] + ')'); b.type = 'button'; b.style.minHeight = '38px';
+      b.addEventListener('click', function () { var t = body.querySelector('#' + sc[0]); if (t) body.scrollTo({ top: t.offsetTop - 8, behavior: 'smooth' }); });
+      jump.appendChild(b);
+    });
+    if (cnt.want) {
+      var cp2 = el('button', 'btn', 'Copy my wanted list'); cp2.type = 'button';
+      cp2.addEventListener('click', function () { copyText(altText(altWantList())).then(function () { cp2.textContent = 'Copied ✓'; }, function () { cp2.textContent = 'Could not copy'; }); });
+      body.appendChild(cp2);
+    }
+    altGen++;
+    root.appendChild(hd); root.appendChild(body); altDlg.replaceChildren(root);
+    body.scrollTop = prevScroll;
+    var gen = altGen, job = function (img) { loadImg(img, img.dataset.src, { stale: function () { return gen !== altGen || !img.isConnected; } }); };
+    var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { io.unobserve(e.target); job(e.target); } });
+    }, { root: body, rootMargin: '500px' }) : null;
+    pending.forEach(function (img) { if (io) io.observe(img); else job(img); });
+  }
+  $('altbtn').addEventListener('click', function () { altFill(); if (!altDlg.open) altDlg.showModal(); });
+  altDlg.addEventListener('click', function (e) { if (e.target === altDlg) altDlg.close(); });
+
   /* ---------- boot ---------- */
   Promise.all([
     fetch('cards.json').then(function (r) { return r.json(); }),
     fetch('/api/collection', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }),
     fetch('card_images_jp/manifest.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
   ]).then(function (res) {
-    cards = res[0]; col = migrate(res[1]); N = Math.ceil(cards.length / PER);
+    cards = res[0]; cards.forEach(function (c) { byNum[c.num] = c; }); col = migrate(res[1]); N = Math.ceil(cards.length / PER);
     (Array.isArray(res[2]) ? res[2] : []).forEach(function (n) { jpArt[n] = true; });
     makeArtSeg($('artseg'));
     var ps = $('pagesel'), ss = $('setsel');

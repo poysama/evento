@@ -86,10 +86,23 @@ never the note) and is not counted in What to buy. The **On order** button lists
 note field, a **Received** button and a copy-as-text list. Marking the card JP complete (or **Received**) ends the order
 and clears the note. The Completed page and the binder progress still count only cards in hand.
 
-## Foil and Manga are optional extras
+## Alt art and Manga versions
 
-Foil and Manga are ticked *after* a card is marked JP complete (their buttons stay greyed out until then) and never
-affect completion. Any card can be marked foil; the built-in list of which cards have a foil is not treated as complete.
+The **Alt art** page has two sections, **Alternate arts** (by set) and **Manga**, so you can see which cards have them.
+The EN | JP switch inside the card viewer only changes the viewer; the switch at the top changes the binder. Searching for
+a card grays out the rest of the page and makes the found card shine for a few seconds. Pictures load a few at a time and
+are retried if the site is busy, so a page never gets stuck on the other language.
+
+Every alt-art (parallel) and Manga picture has its own mark: **Want it**, **On order** or **Have it**. The **Alt art**
+button opens a page with all of them: tap a picture to cycle Want, On order, Have, clear, filter by mark, or show only
+Manga. In the card viewer, pick a version under the picture and mark it there. Marks never change whether the card
+counts as complete. The share page's optional "alt-art / Manga versions I want" section lists only the versions marked
+Want (with pictures). The old on/off Manga flag is converted to a Have mark on the Manga version.
+
+## Foil is an optional extra
+
+Foil is ticked *after* a card is marked JP complete (its button stays greyed out until then) and never
+affects completion. Any card can be marked foil; the built-in list of which cards have a foil is not treated as complete.
 Un-ticking the JP card hides its foil / Manga marks but keeps them, so they come back if you tick it again.
 
 ## Promo-only Events

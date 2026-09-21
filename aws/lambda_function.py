@@ -43,6 +43,7 @@ CH_KEY = hmac.new(PASSCODE.encode(), b'evento-webauthn-challenge-v1', hashlib.sh
 CH_TTL = 180
 MAX_PASSKEYS = 10
 FIELDS = {'jp', 'foil', 'en', 'kr', 'manga', 'ordered'}   # ordered = bought, still on its way
+ALT_STATES = {'want', 'ordered', 'have'}              # per alt-art / Manga version: collecting it, bought and on the way, in hand
 NOTE_MAX = 200                                        # free-text note per card (where it was ordered from ...)
 CARD = r'(?:[A-Z]{2,3}\d{2}|P)-\d{3}'          # OP01-026, EB02-007, ST01-014 ... and promos such as P-057
 IMG_RE = re.compile(r'^' + CARD + r'\.jpg$')
@@ -100,6 +101,9 @@ def valid(owned):
         for f, x in v.items():
             if f == 'note':                      # free text for an order: where it was bought, order id ...
                 if not isinstance(x, str) or not 0 < len(x) <= NOTE_MAX:
+                    return False
+            elif f == 'alt':                     # per alt-art / Manga version: {"p2": "want" | "ordered" | "have"}
+                if not isinstance(x, dict) or not x or not all(re.fullmatch(r'p\d{1,2}', str(a)) and st in ALT_STATES for a, st in x.items()):
                     return False
             elif f not in FIELDS or x is not True:
                 return False
@@ -388,9 +392,16 @@ def _owned(max_age):
     return d
 
 
-def _foil_alts(c, info):
-    """Alt-art / parallel pictures of a card, leaving out the optional Manga version (that is not a foil)."""
-    return [a for a in (info.get(c['num'], {}).get('alt') or []) if a != c.get('manga')]
+def _alt_versions(c, info):
+    """All alt-art / Manga picture ids of a card, in Bandai's order (p1, p2 ...)."""
+    return list(info.get(c['num'], {}).get('alt') or [])
+
+
+def _alt_label(c, alts, a):
+    """'Manga' for the Manga version, else 'Alt art' (numbered when the card has several versions) - the same wording as the app."""
+    if c.get('manga') == a:
+        return 'Manga'
+    return f'Alt art {alts.index(a) + 1}' if (len(alts) > 1 or c.get('manga')) else 'Alt art'
 
 
 def _wishlist(cfg, max_age=0):
@@ -399,10 +410,13 @@ def _wishlist(cfg, max_age=0):
     have = lambda c, k: (owned.get(c['num']) or {}).get(k)
     on_way = [c for c in cards if have(c, 'ordered') and not have(c, 'jp')]           # bought, waiting for delivery
     missing = [c for c in cards if not have(c, 'jp') and not have(c, 'ordered')]      # still looking for
-    # foil is an optional extra tag: any card known to have a foil / alt-art printing that has not been ticked as foil
-    foil_missing = ([c for c in cards if (c['foil'] or _foil_alts(c, info)) and not have(c, 'foil') and not have(c, 'ordered')]
-                    if cfg.get('foil') else [])
-    return cards, info, missing, foil_missing, on_way
+    # alt-art / Manga versions I marked "want" (never the ones on order or in hand); only when the share option is on
+    alt_wants = []
+    if cfg.get('foil'):
+        for c in cards:
+            marks = have(c, 'alt') or {}
+            alt_wants += [(c, a) for a in _alt_versions(c, info) if marks.get(a) == 'want']
+    return cards, info, missing, alt_wants, on_way
 
 
 _HEAD = {'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer'}
@@ -426,10 +440,9 @@ def share_image(token, name):
     if not cfg or not m or cfg.get('pics', True) is False:
         return js(404, {'error': 'not found'})
     num, alt = m.group(1), m.group(2)
-    _, info, missing, foil_missing, _ = _wishlist(cfg, max_age=20)
+    _, info, missing, alt_wants, _ = _wishlist(cfg, max_age=20)
     if alt:
-        card = next((c for c in foil_missing if c['num'] == num), None)
-        ok = bool(card) and alt in _foil_alts(card, info)
+        ok = (num, alt) in {(c['num'], a) for c, a in alt_wants}
     else:
         ok = num in {c['num'] for c in missing}
     if not ok:                                   # only what is on the list: never reveals what you already own
@@ -453,14 +466,12 @@ def _placeholders(owned, num):
     return [k.upper() for k in ('en', 'kr') if e.get(k)]
 
 
-def _figure(c, info, foil, token, pics, ph=()):
-    n, alts = c['num'], [a for a in (info.get('alt') or []) if a != c.get('manga')]
-    pid = f'{n}_{alts[0]}' if (foil and alts) else n
+def _figure(c, info, alt, token, pics, ph=()):
+    """One card. alt = None for the standard card, or an alt-art / Manga id such as 'p2'."""
+    n, alts = c['num'], list(info.get('alt') or [])
+    pid = f'{n}_{alt}' if alt else n
     jp = info.get('jp', '')
-    tag = ''
-    if foil:
-        tag = f'<span class="tag">{len(alts)} alt-art version{"s" if len(alts) != 1 else ""}</span>' if alts \
-            else '<span class="tag">foil / parallel</span>'
+    tag = f'<span class="tag">{_e(_alt_label(c, alts, alt))}</span>' if alt else ''
     pic = ''
     if pics:
         src = f'/w/{token}/img/{pid}.png'          # always-fresh route: the link target and the fallback
@@ -484,7 +495,7 @@ def _need(n, total):
     return 'need it' if total == 1 else f'need all {total}' if n == total else f'need {n} of {total}'
 
 
-def _sections(items, info, prefix, foil, token, pics, totals, owned=None):
+def _sections(items, info, prefix, token, pics, totals, owned=None):
     """Sections by set; each pill and heading says how many of the set's cards are still missing."""
     groups = []
     for c in items:
@@ -494,9 +505,24 @@ def _sections(items, info, prefix, foil, token, pics, totals, owned=None):
     nav = ''.join(f'<a href="#{prefix}-{_e(s)}">{_e(s)} <i>{_need(len(cs), totals.get(s, len(cs)))}</i></a>' for s, cs in groups)
     body = ''.join(f'<section id="{prefix}-{_e(s)}"><h2>{_e(s)} <small>{len(cs)} of {totals.get(s, len(cs))} missing</small></h2>'
                    f'<div class="g{"" if pics else " t"}">'
-                   + ''.join(_figure(c, info.get(c['num'], {}), foil, token, pics, () if foil else _placeholders(owned or {}, c['num']))
+                   + ''.join(_figure(c, info.get(c['num'], {}), None, token, pics, _placeholders(owned or {}, c['num']))
                              for c in cs) + '</div></section>'
                    for s, cs in groups)
+    return nav, body
+
+
+def _alt_sections(pairs, info, token, pics):
+    """The alt-art / Manga versions I want, by set (a card can appear more than once, once per version)."""
+    groups = []
+    for c, a in pairs:
+        if not groups or groups[-1][0] != c['set']:
+            groups.append((c['set'], []))
+        groups[-1][1].append((c, a))
+    nav = ''.join(f'<a href="#f-{_e(s)}">{_e(s)} <i>{len(ps)} wanted</i></a>' for s, ps in groups)
+    body = ''.join(f'<section id="f-{_e(s)}"><h2>{_e(s)} <small>{len(ps)} wanted</small></h2>'
+                   f'<div class="g{"" if pics else " t"}">'
+                   + ''.join(_figure(c, info.get(c['num'], {}), a, token, pics) for c, a in ps) + '</div></section>'
+                   for s, ps in groups)
     return nav, body
 
 
@@ -542,8 +568,8 @@ SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i|
             "q('figure.c').forEach(function(f){f.hidden=any&&!on[f.dataset.c]});"
             "q('section').forEach(function(s){var n=s.querySelectorAll('figure.c:not([hidden])').length,h=s.querySelector('h2 small'),"
             "a=document.querySelector('nav.chips a[href=\"#'+s.id+'\"]');"
-            "s.hidden=!n;if(s.id.charAt(0)==='m')shown+=n;if(h)h.textContent=any?n+' missing':h.dataset.t;"
-            "if(a){a.hidden=!n;var i=a.querySelector('i');i.textContent=any?'need '+n:i.dataset.t}});"
+            "s.hidden=!n;if(s.id.charAt(0)==='m')shown+=n;if(h)h.textContent=any?n+(s.id.charAt(0)==='m'?' missing':' wanted'):h.dataset.t;"
+            "if(a){a.hidden=!n;var i=a.querySelector('i');i.textContent=any?(s.id.charAt(0)==='m'?'need '+n:n+' wanted'):i.dataset.t}});"
             "fs.textContent=any?'Showing '+shown+' missing '+names.join(' + ')+' card'+(shown===1?'':'s')+'. Tap a colour again to clear it.':''}"
             "q('.cf button').forEach(function(b){b.addEventListener('click',function(){var c=b.dataset.c;if(on[c]){delete on[c]}else{on[c]=1}"
             "b.setAttribute('aria-pressed',on[c]?'true':'false');run()})})})();")
@@ -553,7 +579,7 @@ def share_page(token):
     cfg = share_gate(token)
     if not cfg:
         return _share_not_found()
-    cards, info, missing, foil_missing, on_way = _wishlist(cfg)
+    cards, info, missing, alt_wants, on_way = _wishlist(cfg)
     pics = cfg.get('pics', True) is not False
     name, message = cfg.get('name', ''), cfg.get('message', '')
     def per_set(cs):
@@ -561,7 +587,6 @@ def share_page(token):
         for c in cs:
             t[c['set']] = t.get(c['set'], 0) + 1
         return t
-    foil_all = [c for c in cards if c['foil'] or _foil_alts(c, info)]
     owned = _owned(0)
     holding = sum(1 for c in missing if _placeholders(owned, c['num']))
     by_col = {}
@@ -571,8 +596,8 @@ def share_page(token):
                   + ''.join(f'<button type="button" data-c="{n}" aria-pressed="false"><i style="background:{hx}"></i>{n} <b>{by_col.get(n, 0)}</b></button>'
                             for n, hx in COLOURS if by_col.get(n))
                   + '<span class="fs" aria-live="polite"></span></div>')
-    nav1, body1 = _sections(missing, info, 'm', False, token, pics, per_set(cards), owned)
-    nav2, body2 = _sections(foil_missing, info, 'f', True, token, pics, per_set(foil_all))
+    nav1, body1 = _sections(missing, info, 'm', token, pics, per_set(cards), owned)
+    nav2, body2 = _alt_sections(alt_wants, info, token, pics)
     who = f'from {_e(name)}' if name else ''
     title = f"{name + chr(39) + 's' if name else 'My'} Japanese One Piece Event card wishlist"
     desc = f"{len(missing)} Japanese Event cards I'm still looking for"
@@ -581,7 +606,7 @@ def share_page(token):
              f'<div class="msg">{_e(message)}</div>' if message else '',
              f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still looking for'
              + (f' &middot; <b>{len(on_way)}</b> more already bought and on the way' if on_way else '')
-             + (f' &middot; <b>{len(foil_missing)}</b> of {len(foil_all)} foil / alt-art versions wanted' if foil_missing else '') + '</p>',
+             + (f' &middot; <b>{len(alt_wants)}</b> alt-art / Manga version{"s" if len(alt_wants) != 1 else ""} wanted' if alt_wants else '') + '</p>',
              '<p class="stat">Each set below says how many of its cards I still need.'
              + (f' For <b>{holding}</b> of them I already have the EN or KR copy, so they are tagged &mdash; only the Japanese card is missing.' if holding else '')
              + '</p>']
@@ -590,8 +615,8 @@ def share_page(token):
     else:
         parts.append('<div class="done">Nothing left to find &mdash; everything I still need is already on its way!</div>' if on_way
                      else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
-    if foil_missing:
-        parts += ['<h2 style="margin-top:40px">Also looking for the foil / alt-art versions</h2>',
+    if alt_wants:
+        parts += ['<h2 style="margin-top:40px">Also collecting these alt-art / Manga versions</h2>',
                   f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
     if pics:
         note = ('Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample '

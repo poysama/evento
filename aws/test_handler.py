@@ -122,6 +122,12 @@ for _label, _bad in (('an empty note', {'OP01-027': {'ordered': True, 'note': ''
                      ('a too-long note', {'OP01-027': {'ordered': True, 'note': 'x' * 201}}), ('ordered = false', {'OP01-027': {'ordered': False}}),
                      ('an unknown field', {'OP01-027': {'ordered': True, 'shipped': True}})):
     check('saving rejects ' + _label, h(ev('PUT', '/api/collection', json.dumps(_bad), cookies=ck), None)['statusCode'] == 400)
+_alt = {'OP01-029': {'alt': {'p3': 'want', 'p4': 'have'}}, 'OP09-020': {'jp': True, 'alt': {'p2': 'ordered'}}}
+check('alt-art / Manga marks are accepted', h(ev('PUT', '/api/collection', json.dumps(_alt), cookies=ck), None)['statusCode'] == 200
+      and json.loads(h(ev('GET', '/api/collection', cookies=ck), None)['body']) == _alt)
+for _label, _bad in (('an unknown alt state', {'OP01-029': {'alt': {'p3': 'maybe'}}}), ('a bad alt id', {'OP01-029': {'alt': {'x3': 'want'}}}),
+                     ('an empty alt map', {'OP01-029': {'alt': {}}}), ('a non-object alt', {'OP01-029': {'alt': 'want'}})):
+    check('saving rejects ' + _label, h(ev('PUT', '/api/collection', json.dumps(_bad), cookies=ck), None)['statusCode'] == 400)
 check('valid save is accepted', h(ev('PUT', '/api/collection', json.dumps(good), cookies=ck), None)['statusCode'] == 200)
 check('the optional Manga flag is accepted and read back',
       h(ev('PUT', '/api/collection', json.dumps({'OP09-057': {'manga': True}}), cookies=ck), None)['statusCode'] == 200
@@ -188,7 +194,10 @@ check('a link that was never created is 404', page_of('/w/' + 'a' * 22)['statusC
 
 # owned cards must NOT appear on the page; everything else must
 store['data/collection.json'] = json.dumps({'ST01-014': {'jp': True}, 'OP01-026': {'jp': True, 'foil': True},
-                                            'OP01-027': {'kr': True}}).encode()
+                                            'OP01-027': {'kr': True},
+                                            'OP01-029': {'alt': {'p3': 'want', 'p4': 'have'}},       # two alt arts: one wanted, one in hand
+                                            'OP09-020': {'alt': {'p2': 'want'}},                     # the Manga version, wanted
+                                            'OP01-030': {'alt': {'p1': 'ordered'}}}).encode()        # an alt art already on order
 sh = json.loads(put_share({'enabled': True, 'name': 'Poy', 'message': 'Any condition is fine!'})['body'])
 check('turning sharing on gives an unguessable link', sh['enabled'] and _re.fullmatch(r'https://evento\.peonbox\.xyz/w/[A-Za-z0-9_-]{22}', sh['url']))
 pg = page_of(sh['url'])
@@ -248,15 +257,19 @@ check('a card I only hold as a KR copy says so, and nothing else is tagged', bod
 check('the header counts the cards held as placeholders', 'For <b>1</b> of them I already have the EN or KR copy' in body)
 check('cards owned in JP or with no placeholder are not tagged', 'Have the' not in body.split('OP01-028 &middot;')[1].split('</figure>')[0])
 
-# foil option: only foil-capable cards without a JP foil; uses the alt-art picture when Bandai has one
+# alt-art / Manga option: only the versions I marked "want" (not those in hand or already on order)
 sh2 = json.loads(put_share({'foil': True})['body'])
 body2 = page_of(sh2['url'])['body']
-check('turning on foil adds a foil / alt-art section', 'Also looking for the foil / alt-art versions' in body2 and 'foil / alt-art versions wanted' in body2 and _re.search(r'<b>\d+</b> of \d+ foil / alt-art versions wanted', body2))
-foil_part = body2.split('Also looking for the foil')[1]
-check('foil section skips the foil I already own', 'OP01-026 &middot;' not in foil_part and 'OP01-029 &middot;' in foil_part)
-check('cards known to have a parallel are offered even when the English site lists no foil', 'OP11-114 &middot;' in foil_part)
-check('alt-art pictures are used', '_p' in body2.split('Also looking for the foil')[1])
+check('turning the option on adds an alt-art / Manga section', 'Also collecting these alt-art / Manga versions' in body2 and _re.search(r'<b>2</b> alt-art / Manga versions wanted', body2))
+alt_part = body2.split('Also collecting these alt-art')[1]
+check('it lists the wanted versions with their labels (OP01-029 has 2 alt arts: p3 is "Alt art 1"; OP09-020 p2 is the Manga)',
+      'OP01-029 &middot;' in alt_part and '<span class="tag">Alt art 1</span>' in alt_part and '<span class="tag">Manga</span>' in alt_part and 'OP09-020 &middot;' in alt_part)
+check('versions in hand or on order are not listed', 'OP01-030 &middot;' not in alt_part and alt_part.count('<figure class="c"') == 2)
+check('the alt-art pictures are used', 'OP01-029_p3' in alt_part and 'OP09-020_p2' in alt_part and 'OP01-029_p4' not in alt_part)
 check('settings persist in the bucket', json.loads(store['data/share.json'])['foil'] is True and sh2['url'] == sh['url'])
+put_share({'foil': False})
+check('with the option off there is no alt-art section', 'Also collecting these' not in page_of(sh['url'])['body'])
+put_share({'foil': True})
 
 # the picture route: token-gated, only cards on the list, never a way to probe what you own
 def pic(path_tok, name):
@@ -276,7 +289,8 @@ check('picture responses are private, uncrawlable and leak no referrer',
 check('a card you already own cannot be fetched (nothing to learn about your collection)', pic(tok, 'OP01-026.png')['statusCode'] == 404)
 check('a card you own looks exactly like a card that does not exist', pic(tok, 'OP01-026.png')['body'] == pic(tok, 'ZZZ99-999.png')['body'])
 check('the page retries a picture that fails to load', "addEventListener('error'" in body and body.count('<script>') == 1)
-check('alt-art is served only for foil cards still missing, with the foil option on', pic(tok, 'OP01-029_p3.png')['statusCode'] == 302)
+check('a wanted alt art is served (option on); one in hand or on order is not', pic(tok, 'OP01-029_p3.png')['statusCode'] == 302 and pic(tok, 'OP09-020_p2.png')['statusCode'] == 302
+      and pic(tok, 'OP01-029_p4.png')['statusCode'] == 404 and pic(tok, 'OP01-030_p1.png')['statusCode'] == 404)
 check('alt-art that is not on the list is refused', pic(tok, 'OP01-029_p9.png')['statusCode'] == 404 and pic(tok, 'OP01-027_p1.png')['statusCode'] == 404)
 check('pictures need the right link', pic('b' * 22, 'OP01-027.png')['statusCode'] == 404 and pic('short', 'OP01-027.png')['statusCode'] == 404)
 check('picture names are strictly validated',

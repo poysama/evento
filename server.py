@@ -4,6 +4,7 @@ Serves the page and card images, and saves your collection to collection.json
 next to this file. Listens on 127.0.0.1 only (this computer, nobody else).
 """
 import json
+import re
 import os
 import sys
 import threading
@@ -24,6 +25,7 @@ LOCK = threading.Lock()
 #   ordered = bought (e.g. through a proxy) but not received yet; note = free text about that order
 FIELDS = {'jp', 'foil', 'en', 'kr', 'manga', 'ordered'}
 NOTE_MAX = 200
+ALT_STATES = {'want', 'ordered', 'have'}      # per alt-art / Manga version: collecting it, bought and on the way, in hand
 
 
 def valid(owned):
@@ -35,6 +37,9 @@ def valid(owned):
         for f, x in v.items():
             if f == 'note':                      # free text for an order: where it was bought, order id ...
                 if not isinstance(x, str) or not 0 < len(x) <= NOTE_MAX:
+                    return False
+            elif f == 'alt':                     # per alt-art / Manga version: {"p2": "want" | "ordered" | "have"}
+                if not isinstance(x, dict) or not x or not all(re.fullmatch(r'p\d{1,2}', str(a)) and st in ALT_STATES for a, st in x.items()):
                     return False
             elif f not in FIELDS or x is not True:
                 return False
