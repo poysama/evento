@@ -102,6 +102,9 @@ def valid(owned):
             if f == 'note':                      # free text for an order: where it was bought, order id ...
                 if not isinstance(x, str) or not 0 < len(x) <= NOTE_MAX:
                     return False
+            elif f == 'show':                    # which version sits in the binder slot: 'std' (the regular card) or an alt id
+                if not (isinstance(x, str) and re.fullmatch(r'std|p\d{1,2}', x)):
+                    return False
             elif f == 'alt':                     # per alt-art / Manga version: {"p2": "want" | "ordered" | "have"}
                 if not isinstance(x, dict) or not x or not all(re.fullmatch(r'p\d{1,2}', str(a)) and st in ALT_STATES for a, st in x.items()):
                     return False
@@ -398,10 +401,21 @@ def _alt_versions(c, info):
 
 
 def _alt_label(c, alts, a):
-    """'Manga' for the Manga version, else 'Alt art' (numbered when the card has several versions) - the same wording as the app."""
+    """'Manga', or 'Alt art' (numbered when there are several) plus where it came from and a star for the special foil finish -
+    the same wording as the app."""
     if c.get('manga') == a:
         return 'Manga'
-    return f'Alt art {alts.index(a) + 1}' if (len(alts) > 1 or c.get('manga')) else 'Alt art'
+    plain = [x for x in alts if x != c.get('manga')]
+    base = 'Alt art' + (f' {plain.index(a) + 1}' if len(plain) > 1 else '')
+    src = (c.get('altsrc') or {}).get(a)
+    return base + (f' \u00b7 {src}' if src else '') + (' \u2605' if a in (c.get('altstar') or []) else '')
+
+
+def _alt_note(c, a):
+    """Bandai's illustration type, and whether the drawing is the regular card's (a foil / parallel finish of the same art)."""
+    kind = {'Comic': 'Comic art', 'Original': 'Original illustration', 'Animation': 'Animation art', 'Other': 'Other art'}.get((c.get('alttype') or {}).get(a), '')
+    same = a in (c.get('altsame') or [])
+    return ' \u00b7 '.join(x for x in (kind, 'same drawing as the regular card' if same else '') if x)
 
 
 def _wishlist(cfg, max_age=0):
@@ -472,6 +486,8 @@ def _figure(c, info, alt, token, pics, ph=()):
     pid = f'{n}_{alt}' if alt else n
     jp = info.get('jp', '')
     tag = f'<span class="tag">{_e(_alt_label(c, alts, alt))}</span>' if alt else ''
+    if alt and _alt_note(c, alt):
+        tag += f'<span class="jp">{_e(_alt_note(c, alt))}</span>'
     pic = ''
     if pics:
         src = f'/w/{token}/img/{pid}.png'          # always-fresh route: the link target and the fallback

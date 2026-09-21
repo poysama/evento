@@ -88,6 +88,14 @@ and clears the note. The Completed page and the binder progress still count only
 
 ## Alt art and Manga versions
 
+The alt-art data now covers every one of Bandai's 62 card lists (boosters, decks, Premium Card Collection / Best Selection,
+anniversary sets, promos, prize cards): 156 prints on 103 Events, each with where it came from, Bandai's own illustration type
+(Comic / Original / Animation) and whether it only repeats the regular card's drawing in a foil finish. A ★ next to the
+rarity marks the special foil print. 17 cards have a Manga version (your list). The Alt art page hides the repeat-drawing prints
+by default ("Different drawings only"). When you own an alt art or the Manga (mark **Have it**), it replaces the regular card
+in the 4x4 grid (Japanese art mode), like the real binder; use **Show this in my binder** / **Show the regular card** in the
+viewer to choose which one sits in the slot.
+
 The **Alt art** page has two sections, **Alternate arts** (by set) and **Manga**, so you can see which cards have them.
 The EN | JP switch inside the card viewer only changes the viewer; the switch at the top changes the binder. Searching for
 a card grays out the rest of the page and makes the found card shine for a few seconds. Pictures load a few at a time and

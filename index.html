@@ -50,7 +50,7 @@ h1{font:600 18px/1 var(--disp);letter-spacing:.06em;text-transform:uppercase;mar
 .art{all:unset;box-sizing:border-box;position:relative;display:block;aspect-ratio:63/88;border:2px solid var(--line);border-radius:7px;overflow:hidden;cursor:pointer;background:var(--line);-webkit-tap-highlight-color:transparent}
 .art:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:grayscale(.9) brightness(.85);transition:filter .15s}
-.card.done .art{border-color:var(--own)}.card.done .art img{filter:none}
+.card.done .art{border-color:var(--own)}.card.done .art img{filter:none}.card.shown .art img{filter:none}
 .card.hasph:not(.done) .art{border-color:var(--amber)}
 .card.ord:not(.done) .art{border-color:var(--ord)}
 @media (hover:hover){.card:not(.done) .art:hover img{filter:none}}
@@ -228,6 +228,8 @@ dialog::backdrop{background:var(--scrim)}
 .ab .im{position:relative;aspect-ratio:63/88;background:var(--line)}.ab img{display:block;width:100%;height:100%;object-fit:cover}
 .ab .st{position:absolute;left:4px;top:4px;font:600 9px/1 var(--disp);letter-spacing:.06em;border-radius:3px;padding:3px 5px 2px;color:#fff;background:var(--amber)}
 .ab[data-st="ordered"] .st{background:var(--ord)}.ab[data-st="have"] .st{background:var(--own)}
+.ab .sf{position:absolute;left:4px;bottom:4px;font:700 12px/1 var(--body);color:#FFD24D;background:rgba(15,25,38,.82);border-radius:3px;padding:2px 4px}
+.ab .cp .lb{color:var(--ink);font-weight:600}.ab .cp .ty{font-size:10.5px}
 .ab .cp{padding:5px 6px 6px;font-size:11.5px;line-height:1.25}.ab .cp b{display:block;font:600 11px var(--mono)}.ab .cp span{display:block;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ai{position:absolute;right:4px;top:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(15,25,38,.78);color:#fff;font-weight:700;font-size:13px;line-height:1;cursor:pointer;padding:0}
 .vnote{width:100%;min-height:44px;border:1.5px solid var(--ord);border-radius:10px;padding:0 12px;font:inherit;font-size:14px;background:var(--sheet);color:var(--ink)}.vnote[hidden]{display:none}
@@ -345,10 +347,33 @@ dialog::backdrop{background:var(--scrim)}
   function ordered(n) { return has(n, 'ordered') && !has(n, 'jp'); }          // bought (e.g. by proxy), not received yet
   function noteOf(n) { return (col[n] && col[n].note) || ''; }
   function altState(n, a) { return (col[n] && col[n].alt && col[n].alt[a]) || ''; }
-  function verLabel(c, a) {            // 'Manga', or 'Alt art' (numbered when the card has several versions)
-    var alts = c.alt || [];
-    return c.manga === a ? 'Manga' : (alts.length > 1 || c.manga) ? 'Alt art ' + (alts.indexOf(a) + 1) : 'Alt art';
+  var TYPE_TXT = { Comic: 'Comic art', Original: 'Original illustration', Animation: 'Animation art', Other: 'Other art' };
+  function verBase(c, a) {             // 'Manga', or 'Alt art' (numbered when the card has several)
+    if (c.manga === a) return 'Manga';
+    var plain = (c.alt || []).filter(function (x) { return x !== c.manga; });
+    return 'Alt art' + (plain.length > 1 ? ' ' + (plain.indexOf(a) + 1) : '');
   }
+  function verLabel(c, a) {            // plus where the print came from and a star for the special foil finish
+    var src = c.altsrc && c.altsrc[a], star = c.altstar && c.altstar.indexOf(a) >= 0 && c.manga !== a;
+    return verBase(c, a) + (src ? ' · ' + src : '') + (star ? ' ★' : '');
+  }
+  function verSame(c, a) { return !!(c.altsame && c.altsame.indexOf(a) >= 0); }       // uses the regular card's drawing
+  function verNote(c, a) {             // one sentence: Bandai's illustration type and whether the drawing is a repeat
+    var parts = [];
+    if (c.alttype && TYPE_TXT[c.alttype[a]]) parts.push(TYPE_TXT[c.alttype[a]]);
+    if (verSame(c, a)) parts.push('same drawing as the regular card');
+    else if (c.altdup && c.altdup[a]) parts.push('same drawing as ' + verBase(c, c.altdup[a]));
+    if (c.altstar && c.altstar.indexOf(a) >= 0 && c.manga !== a) parts.push('★ = special foil finish');
+    return parts.join(' · ');
+  }
+  function shownVer(n) {               // the alt-art / Manga version that sits in this binder slot ('' = the regular card)
+    var e = col[n], c = byNum[n]; if (!e || !e.alt || !c || e.show === 'std') return '';
+    if (e.show && e.alt[e.show] === 'have') return e.show;
+    if (c.manga && e.alt[c.manga] === 'have') return c.manga;              // otherwise: the Manga if I have it, else the first alt I have
+    var alts = c.alt || []; for (var i = 0; i < alts.length; i++) if (e.alt[alts[i]] === 'have') return alts[i];
+    return '';
+  }
+  function anyHave(n) { var e = col[n]; return !!(e && e.alt && Object.keys(e.alt).some(function (a) { return e.alt[a] === 'have'; })); }
   function phList(n) { var a = []; if (has(n, 'en')) a.push('EN'); if (has(n, 'kr')) a.push('KR'); return a; }
   function pageOf(i) { return Math.floor(i / PER) + 1; }
 
@@ -409,17 +434,18 @@ dialog::backdrop{background:var(--scrim)}
       })(j);
     }
   }
-  function artUrls(n, mode) {           // [first choice, fallback] for a card; mode 'en' | 'jp', default = the binder's setting
+  function artUrls(n, mode, ver) {     // picture URLs to try in order; mode 'en' | 'jp' (default = the binder's setting); ver = an alt id to show
     var jpU = 'card_images_jp/' + n + '.png', enU = 'card_images/' + n + '.jpg', c = byNum[n];
     var wantJP = (mode ? mode === 'jp' : artMode === 'jp') && !!jpArt[n];
     if (!wantJP && c && c.noen && jpArt[n]) wantJP = true;      // a few promos have no English print
-    return wantJP ? [jpU, enU] : [enU, jpArt[n] ? jpU : null];
+    return wantJP ? (ver ? ['card_images_jp/' + n + '_' + ver + '.png'] : []).concat([jpU, enU]) : [enU].concat(jpArt[n] ? [jpU] : []);
   }
-  function artImg(img, n, mode) {
-    var u = artUrls(n, mode), stale = function () { return !img.isConnected; };
-    loadImg(img, u[0], { stale: stale, fail: function () {
-      if (u[1]) loadImg(img, u[1], { stale: stale, fail: function () { img.remove(); } }); else img.remove();
-    } });
+  function artImg(img, n, mode, ver) {
+    var u = artUrls(n, mode, ver), stale = function () { return !img.isConnected; };
+    (function next(i) {
+      if (i >= u.length) { img.remove(); return; }
+      loadImg(img, u[i], { stale: stale, fail: function () { next(i + 1); } });
+    })(0);
   }
   function preloadArt(n, mode) {        // warm the cache for a card we are about to show (low priority, dropped if the page changed)
     var gen = pageGen;
@@ -444,7 +470,9 @@ dialog::backdrop{background:var(--scrim)}
     card.dataset.n = c.num;
     var art = el('button', 'art'); art.type = 'button'; art.setAttribute('aria-pressed', d);
     art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (d ? 'not owned' : 'owned')) + '.');
-    var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num);
+    var sv = artMode === 'jp' ? shownVer(c.num) : '';            // an alt art / Manga I own takes the slot, as in the real binder
+    if (sv) card.classList.add('shown');
+    var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num, null, sv);
     art.appendChild(img); art.appendChild(el('span', 'ok'));
     if (c.manga) { var ms = altState(c.num, c.manga); art.appendChild(el('span', 'mg', 'MANGA' + (ms === 'have' ? ' ✓' : ms === 'ordered' ? ' …' : ms === 'want' ? ' ★' : ''))); }
     var marked = (c.alt || []).filter(function (a) { return a !== c.manga && altState(c.num, a); });
@@ -516,8 +544,16 @@ dialog::backdrop{background:var(--scrim)}
     var e = col[n] || {}, m = e.alt || {};
     if (st) m[a] = st; else delete m[a];
     if (Object.keys(m).length) e.alt = m; else delete e.alt;
+    if (e.show && e.show !== 'std' && !(e.alt && e.alt[e.show] === 'have')) delete e.show;      // the version left the binder
     if (Object.keys(e).length) col[n] = e; else delete col[n];
     render(0); if (openNum === n) { vwVariants(cards[vidx]); fillInfo(n); }
+    scheduleSave();
+  }
+  function setShow(n, v) {             // v = an alt id, 'std' (the regular card) or '' (automatic)
+    var e = col[n] || {};
+    if (v) e.show = v; else delete e.show;
+    if (Object.keys(e).length) col[n] = e; else delete col[n];
+    render(0); if (openNum === n) fillInfo(n);
     scheduleSave();
   }
   function setNote(n, text) {          // free text about an order (where it was bought, order id ...)
@@ -548,6 +584,7 @@ dialog::backdrop{background:var(--scrim)}
         var m = {}; Object.keys(v.alt).forEach(function (a) { if (/^p\d{1,2}$/.test(a) && ALT_ST.indexOf(v.alt[a]) >= 0) m[a] = v.alt[a]; });
         if (Object.keys(m).length) e.alt = m;
       }
+      if (e.alt && typeof v.show === 'string' && /^(std|p\d{1,2})$/.test(v.show)) e.show = v.show;
       if (v && v.manga === true) {          // the old on/off Manga flag becomes a mark on the Manga version
         var mc = cards.find(function (c) { return c.num === n; });
         if (mc && mc.manga) { e.alt = e.alt || {}; if (!e.alt[mc.manga]) e.alt[mc.manga] = 'have'; }
@@ -591,7 +628,7 @@ dialog::backdrop{background:var(--scrim)}
     var c = n && cards.find(function (x) { return x.num === n; });
     if (!c) { pvEl.appendChild(el('div', 'hint', 'Hover a card to see it here. Click a card to mark the JP copy as owned; use the “i” for placeholders, foil and Manga.')); return; }
     var i = cards.indexOf(c), j = i % PER;
-    var img = el('img'); img.alt = c.name; artImg(img, c.num); pvEl.appendChild(img);
+    var img = el('img'); img.alt = c.name; artImg(img, c.num, null, artMode === 'jp' ? shownVer(c.num) : ''); pvEl.appendChild(img);
     pvEl.appendChild(el('h3', '', c.name));
     pvEl.appendChild(el('div', 'meta', c.num + ' · ' + c.set + ' · ' + c.rar + ' · R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1)));
     pvEl.appendChild(el('div', 'note' + (has(c.num, 'jp') ? ' done' : ordered(c.num) ? ' ord' : ''), jpText(c, true) + '.' + (ordered(c.num) && noteOf(c.num) ? ' ' + noteOf(c.num) : '')));
@@ -680,9 +717,13 @@ dialog::backdrop{background:var(--scrim)}
     var altMark = function (st) { return function () { var n = cards[vidx].num; setAlt(n, vwAlt, altState(n, vwAlt) === st ? '' : st); }; };
     r.aw = vbtn('ph', false, altMark('want')); r.ao = vbtn('ord', false, altMark('ordered')); r.ah = vbtn('', false, altMark('have'));
     r.altr = el('div', 'vrow'); r.altr.appendChild(r.aw); r.altr.appendChild(r.ao); r.altr.appendChild(r.ah);
-    r.altp.appendChild(r.altt); r.altp.appendChild(r.altr);
+    r.altd = el('div', 'small');                                  // what kind of print this is
+    r.asb = vbtn('', false, function () { var n = cards[vidx].num; setShow(n, shownVer(n) === vwAlt ? 'std' : vwAlt); });
+    r.altp.appendChild(r.altt); r.altp.appendChild(r.altd); r.altp.appendChild(r.altr); r.altp.appendChild(r.asb);
+    r.ssb = vbtn('', false, function () { var n = cards[vidx].num; setShow(n, shownVer(n) === '' ? '' : 'std'); });   // regular card back in the slot
+    r.ssb.hidden = true;
     r.art = el('div', 'small');
-    ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.ord); ft.appendChild(r.onote); ft.appendChild(r.row); ft.appendChild(r.altp); ft.appendChild(r.art);
+    ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.ord); ft.appendChild(r.onote); ft.appendChild(r.row); ft.appendChild(r.ssb); ft.appendChild(r.altp); ft.appendChild(r.art);
 
     root.appendChild(hd); root.appendChild(stage); root.appendChild(r.vv); root.appendChild(ft);
     dlg.replaceChildren(root);
@@ -716,7 +757,7 @@ dialog::backdrop{background:var(--scrim)}
     var alts = (c.alt || []).filter(function () { return !!jpArt[c.num]; });
     vw.vv.hidden = !alts.length;
     if (!alts.length) return;
-    var opts = [[null, 'Standard']].concat(alts.map(function (a, i) { return [a, verLabel(c, a) + ({ want: ' ★', ordered: ' …', have: ' ✓' }[altState(c.num, a)] || '')]; }));
+    var opts = [[null, 'Standard']].concat(alts.map(function (a, i) { return [a, verLabel(c, a) + ({ want: ' (want)', ordered: ' (on order)', have: ' ✓' }[altState(c.num, a)] || '')]; }));
     opts.forEach(function (o) {
       var b = el('button', '', o[1]); b.type = 'button'; b.setAttribute('aria-pressed', vwAlt === o[0] ? 'true' : 'false');
       b.addEventListener('click', function () { vwAlt = o[0]; vwShowArt(c); vwVariants(c); vwUpdate(false); });
@@ -754,10 +795,15 @@ dialog::backdrop{background:var(--scrim)}
     vw.note.hidden = vw.jp.hidden = vw.row.hidden = isAlt;
     if (isAlt) { vw.ord.hidden = true; vw.onote.hidden = true; }
     vw.altp.hidden = !isAlt;
+    vw.ssb.hidden = isAlt || !anyHave(n);
+    vw.ssb.setAttribute('aria-pressed', shownVer(n) === '' ? 'true' : 'false'); vw.ssb.textContent = shownVer(n) === '' ? '▣ Regular card shown in my binder' : '▣ Show the regular card in my binder';
     if (isAlt) {
       var ast = altState(n, vwAlt);
       vw.altt.className = 'note' + (ast === 'have' ? ' done' : ast === 'ordered' ? ' ord' : '');
       vw.altt.textContent = verLabel(c, vwAlt) + ': ' + (ast === 'have' ? 'in hand' : ast === 'ordered' ? 'on order' : ast === 'want' ? 'you want this one' : 'not marked') + '. Marks here never change whether the card counts as complete.';
+      vw.altd.textContent = verNote(c, vwAlt);
+      vw.asb.hidden = ast !== 'have'; vw.asb.setAttribute('aria-pressed', shownVer(n) === vwAlt ? 'true' : 'false');
+      vw.asb.textContent = shownVer(n) === vwAlt ? '▣ Shown in my binder' : '▣ Show this in my binder';
       vw.aw.setAttribute('aria-pressed', ast === 'want' ? 'true' : 'false'); vw.aw.textContent = '★ Want it';
       vw.ao.setAttribute('aria-pressed', ast === 'ordered' ? 'true' : 'false'); vw.ao.textContent = 'On order';
       vw.ah.setAttribute('aria-pressed', ast === 'have' ? 'true' : 'false'); vw.ah.textContent = '✓ Have it';
@@ -1260,7 +1306,7 @@ dialog::backdrop{background:var(--scrim)}
   ordDlg.addEventListener('click', function (e) { if (e.target === ordDlg) ordDlg.close(); });
 
   /* ---------- alt art / Manga: what has alternate arts and a Manga, and which versions to collect ---------- */
-  var altDlg = $('altdlg'), altFilter = 'all', altGen = 0;
+  var altDlg = $('altdlg'), altFilter = 'all', altGen = 0, altUnique = true;      // altUnique: hide prints that only repeat a drawing already listed
   var ALT_NEXT = { '': 'want', want: 'ordered', ordered: 'have', have: '' };
   var ALT_TXT = { want: '★ WANT', ordered: 'ON ORDER', have: '✓ HAVE' };
   function allVersions() {
@@ -1279,7 +1325,11 @@ dialog::backdrop{background:var(--scrim)}
     main.setAttribute('aria-label', v.c.name + ', ' + verLabel(v.c, v.a) + ', ' + (v.st || 'not marked') + '. Press to change.');
     var im = el('div', 'im'), img = el('img'); img.alt = ''; img.dataset.src = 'card_images_jp/' + v.c.num + '_' + v.a + '.png'; im.appendChild(img); pending.push(img);
     if (v.st) im.appendChild(el('span', 'st', ALT_TXT[v.st]));
-    var cp = el('div', 'cp'); cp.appendChild(el('b', '', v.c.num)); cp.appendChild(el('span', '', verLabel(v.c, v.a) + ' · ' + v.c.name));
+    if (v.c.altstar && v.c.altstar.indexOf(v.a) >= 0 && v.c.manga !== v.a) im.appendChild(el('span', 'sf', '★'));
+    main.title = v.c.name + ' · ' + verLabel(v.c, v.a) + (verNote(v.c, v.a) ? ' · ' + verNote(v.c, v.a) : '');
+    var cp = el('div', 'cp'); cp.appendChild(el('b', '', v.c.num)); cp.appendChild(el('span', '', v.c.name)); cp.appendChild(el('span', 'lb', verLabel(v.c, v.a)));
+    var ty = (v.c.alttype && v.c.alttype[v.a] || '') + (verSame(v.c, v.a) ? ' · same art as the regular card' : (v.c.altdup && v.c.altdup[v.a]) ? ' · same art as ' + verBase(v.c, v.c.altdup[v.a]) : '');
+    if (ty) cp.appendChild(el('span', 'ty', ty));
     main.appendChild(im); main.appendChild(cp);
     main.addEventListener('click', function () { setAlt(v.c.num, v.a, ALT_NEXT[v.st]); altFill(); });
     var info = el('button', 'ai', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Open ' + v.c.name);
@@ -1307,8 +1357,15 @@ dialog::backdrop{background:var(--scrim)}
       var b = el('button', '', o[1]); b.type = 'button'; b.setAttribute('aria-pressed', o[0] === altFilter ? 'true' : 'false');
       b.addEventListener('click', function () { altFilter = o[0]; altFill(); }); seg.appendChild(b);
     });
-    ctl.appendChild(seg); body.appendChild(ctl);
-    var pass = function (v) { return altFilter === 'all' || (altFilter === 'none' ? !v.st : v.st === altFilter); };
+    ctl.appendChild(seg);
+    var repeat = function (v) { return v.c.manga !== v.a && (verSame(v.c, v.a) || !!(v.c.altdup && v.c.altdup[v.a])); };     // same drawing as the regular card or as another print
+    var lab = el('label', 'ck'), cb = el('input'); cb.type = 'checkbox'; cb.checked = altUnique;
+    cb.addEventListener('change', function () { altUnique = cb.checked; altFill(); });
+    lab.appendChild(cb); lab.appendChild(el('span', '', 'Different drawings only')); ctl.appendChild(lab);
+    body.appendChild(ctl);
+    var hiddenN = altUnique ? vs.filter(function (v) { return repeat(v) && !v.st; }).length : 0;
+    if (altUnique) body.appendChild(el('div', 'small', hiddenN + ' prints are hidden because they only repeat the regular card’s drawing (or another print’s) in a foil / parallel finish, often with a ★. Untick the box to see them; anything you have marked stays visible.'));
+    var pass = function (v) { if (altUnique && repeat(v) && !v.st) return false; return altFilter === 'all' || (altFilter === 'none' ? !v.st : v.st === altFilter); };
     var pending = [], sections = [];
     function section(id, title, blurb, list, bySet, cardsN) {
       var sec = el('section', 'asec'); sec.id = id;

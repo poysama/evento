@@ -95,8 +95,9 @@ cards = json.loads(h(ev('GET', '/cards.json', cookies=ck), None)['body'])
 check('login page has a favicon', 'rel="icon"' in h(ev('GET', '/'), None)['body'])
 check('the app page has a favicon', 'rel="icon"' in page['body'])
 check('cards.json has 410 cards (404 set Events + 6 promo-only Events)', len(cards) == 410)
-check('the four Manga Events are marked, each with a real alt-art id',
-      sorted(c['num'] for c in cards if c.get('manga')) == ['OP09-020', 'OP09-057', 'OP09-078', 'OP09-096']
+check('the 17 Manga Events are marked, each with a real alt-art id',
+      sorted(c['num'] for c in cards if c.get('manga')) == sorted(['OP09-020', 'OP09-057', 'OP09-078', 'OP09-096', 'OP10-019', 'OP11-018', 'OP11-080', 'OP11-114',
+                                                                   'OP12-037', 'OP12-060', 'OP13-076', 'OP14-096', 'OP14-118', 'OP15-077', 'OP15-116', 'OP16-116', 'OP17-037'])
       and all(c['manga'] in c['alt'] for c in cards if c.get('manga')))
 check('cards have the fields the UI needs', all({'slot', 'name', 'num', 'rar', 'set', 'foil'} <= set(c) for c in cards))
 
@@ -128,6 +129,18 @@ check('alt-art / Manga marks are accepted', h(ev('PUT', '/api/collection', json.
 for _label, _bad in (('an unknown alt state', {'OP01-029': {'alt': {'p3': 'maybe'}}}), ('a bad alt id', {'OP01-029': {'alt': {'x3': 'want'}}}),
                      ('an empty alt map', {'OP01-029': {'alt': {}}}), ('a non-object alt', {'OP01-029': {'alt': 'want'}})):
     check('saving rejects ' + _label, h(ev('PUT', '/api/collection', json.dumps(_bad), cookies=ck), None)['statusCode'] == 400)
+_show = {'OP01-029': {'alt': {'p3': 'have'}, 'show': 'p3'}, 'OP09-020': {'show': 'std'}}
+check('the version shown in the binder can be saved', h(ev('PUT', '/api/collection', json.dumps(_show), cookies=ck), None)['statusCode'] == 200
+      and json.loads(h(ev('GET', '/api/collection', cookies=ck), None)['body']) == _show)
+for _label, _bad in (('a bad show value', {'OP01-029': {'show': 'p'}}), ('a non-text show value', {'OP01-029': {'show': 3}}), ('show = true', {'OP01-029': {'show': True}})):
+    check('saving rejects ' + _label, h(ev('PUT', '/api/collection', json.dumps(_bad), cookies=ck), None)['statusCode'] == 400)
+_cj = json.loads((L.HERE / 'cards.json').read_text(encoding='utf-8'))
+_mg = [c['num'] for c in _cj if c.get('manga')]
+check('all 17 Manga versions are in the data', len(_mg) == 17 and 'OP17-037' in _mg and 'OP10-019' in _mg and 'OP09-096' in _mg)
+check('OP01-030 has its 2nd Anniversary alt art', next(c for c in _cj if c['num'] == 'OP01-030')['altsrc'] == {'p1': '2nd Anniversary Set'})
+check('every alt print has a source and a Bandai illustration type', all(set(c['altsrc']) == set(c['alt']) == set(c['alttype']) for c in _cj if c.get('alt'))
+      and all(v in ('Comic', 'Original', 'Animation', 'Other') for c in _cj for v in (c.get('alttype') or {}).values()))
+check('the Manga id is one of the card\'s alt ids', all(c['manga'] in c['alt'] for c in _cj if c.get('manga')))
 check('valid save is accepted', h(ev('PUT', '/api/collection', json.dumps(good), cookies=ck), None)['statusCode'] == 200)
 check('the optional Manga flag is accepted and read back',
       h(ev('PUT', '/api/collection', json.dumps({'OP09-057': {'manga': True}}), cookies=ck), None)['statusCode'] == 200
@@ -262,8 +275,9 @@ sh2 = json.loads(put_share({'foil': True})['body'])
 body2 = page_of(sh2['url'])['body']
 check('turning the option on adds an alt-art / Manga section', 'Also collecting these alt-art / Manga versions' in body2 and _re.search(r'<b>2</b> alt-art / Manga versions wanted', body2))
 alt_part = body2.split('Also collecting these alt-art')[1]
-check('it lists the wanted versions with their labels (OP01-029 has 2 alt arts: p3 is "Alt art 1"; OP09-020 p2 is the Manga)',
-      'OP01-029 &middot;' in alt_part and '<span class="tag">Alt art 1</span>' in alt_part and '<span class="tag">Manga</span>' in alt_part and 'OP09-020 &middot;' in alt_part)
+check('it lists the wanted versions with product, illustration type and labels (OP01-029 has 3 alt arts: p3 is "Alt art 2 \u00b7 PRB-01"; OP09-020 p2 is the Manga)',
+      'OP01-029 &middot;' in alt_part and '<span class="tag">Alt art 2 \u00b7 PRB-01</span>' in alt_part and '<span class="tag">Manga</span>' in alt_part and 'OP09-020 &middot;' in alt_part
+      and 'same drawing as the regular card' in alt_part)
 check('versions in hand or on order are not listed', 'OP01-030 &middot;' not in alt_part and alt_part.count('<figure class="c"') == 2)
 check('the alt-art pictures are used', 'OP01-029_p3' in alt_part and 'OP09-020_p2' in alt_part and 'OP01-029_p4' not in alt_part)
 check('settings persist in the bucket', json.loads(store['data/share.json'])['foil'] is True and sh2['url'] == sh['url'])

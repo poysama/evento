@@ -38,6 +38,9 @@ def valid(owned):
             if f == 'note':                      # free text for an order: where it was bought, order id ...
                 if not isinstance(x, str) or not 0 < len(x) <= NOTE_MAX:
                     return False
+            elif f == 'show':                    # which version sits in the binder slot: 'std' (the regular card) or an alt id
+                if not (isinstance(x, str) and re.fullmatch(r'std|p\d{1,2}', x)):
+                    return False
             elif f == 'alt':                     # per alt-art / Manga version: {"p2": "want" | "ordered" | "have"}
                 if not isinstance(x, dict) or not x or not all(re.fullmatch(r'p\d{1,2}', str(a)) and st in ALT_STATES for a, st in x.items()):
                     return False
