@@ -78,15 +78,18 @@ Get-ChildItem $stage -Recurse -Directory -Filter __pycache__ | Remove-Item -Recu
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
 
 # --- function
+# 30s timeout: the wishlist price check (POST /w/<token>/price) fetches Yuyu-tei for each distinct wanted card,
+# a few in parallel - API Gateway's own integration timeout caps a response at ~29s regardless, so this just
+# gives Lambda itself the same ceiling instead of killing the invocation early at the old 10s.
 if (-not (Exists { aws lambda get-function --function-name $Fn })) {
   Run lambda create-function --function-name $Fn --runtime python3.12 --handler lambda_function.handler `
-    --role $RoleArn --zip-file "fileb://$zip" --timeout 10 --memory-size 256 `
+    --role $RoleArn --zip-file "fileb://$zip" --timeout 30 --memory-size 256 `
     --environment "Variables={BUCKET=$Bucket,PASSCODE=$Pass}" | Out-Null
   Run lambda wait function-active-v2 --function-name $Fn
 } else {
   Run lambda update-function-code --function-name $Fn --zip-file "fileb://$zip" | Out-Null
   Run lambda wait function-updated-v2 --function-name $Fn
-  Run lambda update-function-configuration --function-name $Fn --environment "Variables={BUCKET=$Bucket,PASSCODE=$Pass}" | Out-Null
+  Run lambda update-function-configuration --function-name $Fn --timeout 30 --environment "Variables={BUCKET=$Bucket,PASSCODE=$Pass}" | Out-Null
   Run lambda wait function-updated-v2 --function-name $Fn
 }
 
