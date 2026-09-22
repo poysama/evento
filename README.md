@@ -96,6 +96,12 @@ by default ("Different drawings only"). When you own an alt art or the Manga (ma
 in the 4x4 grid (Japanese art mode), like the real binder; use **Show this in my binder** / **Show the regular card** in the
 viewer to choose which one sits in the slot.
 
+The share page shows an estimated cost for the alt-art / Manga versions marked Want, from Yuyu-tei's sell prices. Yuyu-tei
+returns 403 Forbidden to requests from AWS's IP ranges, so the Lambda cannot fetch this itself; the total is instead checked
+from elsewhere from time to time and written to `data/price_cache.json` in the bucket, and the page only ever reads that
+cache (no live "refresh" - one would be misleading, since it couldn't actually refresh). It flags itself as out of date if
+the wishlist has changed since the price was last checked.
+
 The **Alt art** page has two sections, **Alternate arts** (by set) and **Manga**, so you can see which cards have them.
 The EN | JP switch inside the card viewer only changes the viewer; the switch at the top changes the binder. Searching for
 a card grays out the rest of the page and makes the found card shine for a few seconds. Pictures load a few at a time and
