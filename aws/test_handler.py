@@ -288,11 +288,12 @@ put_share({'foil': True})
 # wishlist price estimate: read-only, checked by hand from elsewhere (Yuyu-tei blocks this Lambda's IP outright) and
 # cached in the bucket; the page never tries to fetch it itself, so there is no live "refresh"
 check('no price panel before anything has been checked', 'class="price"' not in page_of(sh['url'])['body'])
-store['data/price_cache.json'] = json.dumps({'total': 25120, 'in_stock_total': 25120, 'sold_out_total': 0, 'in_stock_count': 2,
-                                             'sold_out_count': 0, 'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z'}).encode()
+store['data/price_cache.json'] = json.dumps({'total': 25120, 'in_stock_total': 24800, 'sold_out_total': 320, 'in_stock_count': 1,
+                                             'sold_out_count': 1, 'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z'}).encode()
 _priced_body = page_of(sh['url'])['body']
 check('the cached total is shown, with when it was checked and no refresh control', '¥25,120' in _priced_body and 'matched 2 of 2' in _priced_body
       and '22 Sep 2026' in _priced_body and 'id="prbtn"' not in _priced_body and 'fetch(' not in _priced_body)
+check('sold-out count is noted and the middot separators are not double-escaped', '1 sold out' in _priced_body and '&amp;middot;' not in _priced_body)
 check('there is no route that fetches Yuyu-tei from this Lambda', h(ev('POST', f'/w/{tok}/price'), None)['statusCode'] != 200)
 store['data/collection.json'] = json.dumps(json.loads(store['data/collection.json']) | {'OP01-030': {'alt': {'p1': 'want'}}}).encode()
 check('a wishlist that grew since the cache was checked is flagged as out of date', 'the list has changed since this estimate' in page_of(sh['url'])['body'])

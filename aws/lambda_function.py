@@ -475,7 +475,7 @@ def _price_panel(cache, wanted_n):
     return (
         '<div class="price">'
         f'<div class="pv">{_price_yen(cache["total"])}</div>'
-        f'<div class="pd"><span>Estimated cost (Yuyu-tei) &middot; {_e(sub)}</span>'
+        f'<div class="pd"><span>Estimated cost (Yuyu-tei) &middot; {sub}</span>'
         f'<span>{"Checked " + when if when else "Not checked yet"} &mdash; not a live price, refreshed by hand from time to time.</span>{stale_html}</div>'
         '</div>'
     )
