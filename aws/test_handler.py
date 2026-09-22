@@ -304,6 +304,23 @@ store['data/collection.json'] = _saved
 L._CACHE['own'] = (0.0, {})   # force the 20s owned-cache to refetch: it was just warmed with the temporary OP01-030 edit above
 del store['data/price_cache.json']
 
+# /mine: the same layout as the share page, but private (no token, needs login) and independent of share settings
+check('/mine needs a login', h(ev('GET', '/mine'), None)['statusCode'] == 401)
+put_share({'enabled': False, 'foil': False})   # sharing switched off entirely - /mine must not care
+_mine = h(ev('GET', '/mine', cookies=ck), None)
+check('/mine works while sharing is off, and lists what you still need', _mine['statusCode'] == 200
+      and 'My Japanese Event card wishlist' in _mine['body'] and 'Private' in _mine['body'] and 'Round Table' in _mine['body'])
+check('owned cards are left off, same as the share page', 'Guard Point' not in _mine['body'] and 'ST01-014' not in _mine['body'])
+check('the alt-art / Manga section shows regardless of the share link’s own foil setting', 'Alt-art / Manga versions you want' in _mine['body']
+      and 'OP01-029' in _mine['body'].split('you want')[1] and 'OP09-020' in _mine['body'].split('you want')[1])
+check('private pictures use the ordinary authenticated route, not a share link', '/card_images_jp/OP01-027.png' in _mine['body']
+      and '/w/' not in _mine['body'])
+store['data/price_cache.json'] = json.dumps({'total': 25120, 'in_stock_total': 25120, 'sold_out_total': 0, 'in_stock_count': 2,
+                                             'sold_out_count': 0, 'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z'}).encode()
+check('the price estimate is included on /mine', '¥25,120' in h(ev('GET', '/mine', cookies=ck), None)['body'])
+del store['data/price_cache.json']
+put_share({'enabled': True, 'foil': True})
+
 # the picture route: token-gated, only cards on the list, never a way to probe what you own
 def pic(path_tok, name):
     return h(ev('GET', f'/w/{path_tok}/img/{name}'), None)

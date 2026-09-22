@@ -162,6 +162,7 @@ dialog::backdrop{background:var(--scrim)}
 }
 /* ---- passkeys ---- */
 .mini{font-size:12px;padding:5px 10px;min-height:32px;border:1px solid var(--line);border-radius:8px;background:var(--sheet);cursor:pointer;font-weight:600}
+a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit;box-sizing:border-box}
 .mini[hidden]{display:none}
 .ban{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;justify-content:center;background:var(--ownbg);color:var(--own);padding:9px 12px;margin:0 -12px;font-weight:600;font-size:13.5px}
 .ban[hidden]{display:none}.ban button{border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;min-height:36px}
@@ -294,7 +295,7 @@ dialog::backdrop{background:var(--scrim)}
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -871,10 +872,10 @@ dialog::backdrop{background:var(--scrim)}
   function pkDismissed() { try { return localStorage.getItem('pkNo') === '1'; } catch (e) { return false; } }
   function pkRefresh() {
     return pkFetch('/webauthn/passkeys').then(function (list) {
-      pkList = list; pkBtn.hidden = false;
+      pkList = list; pkBtn.hidden = false; $('minebtn').hidden = false;   // hosted only: local server.py has neither route
       pkBan.hidden = !(canPK && !list.length && !pkDismissed());
       if (pkDlg.open) pkFill();
-    }).catch(function () { pkList = null; pkBtn.hidden = true; pkBan.hidden = true; });
+    }).catch(function () { pkList = null; pkBtn.hidden = true; pkBan.hidden = true; $('minebtn').hidden = true; });
   }
   function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'never'; }
   function pkSay(t, cls) { if (pkMsg) { pkMsg.textContent = t; pkMsg.className = 'pk-msg ' + (cls || ''); } }

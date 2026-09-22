@@ -510,7 +510,8 @@ def _placeholders(owned, num):
 
 
 def _figure(c, info, alt, token, pics, ph=()):
-    """One card. alt = None for the standard card, or an alt-art / Manga id such as 'p2'."""
+    """One card. alt = None for the standard card, or an alt-art / Manga id such as 'p2'. token = None means the
+    private "/mine" view: the fallback route is the ordinary authenticated image route instead of a share link."""
     n, alts = c['num'], list(info.get('alt') or [])
     pid = f'{n}_{alt}' if alt else n
     jp = info.get('jp', '')
@@ -519,7 +520,7 @@ def _figure(c, info, alt, token, pics, ph=()):
         tag += f'<span class="jp">{_e(_alt_note(c, alt))}</span>'
     pic = ''
     if pics:
-        src = f'/w/{token}/img/{pid}.png'          # always-fresh route: the link target and the fallback
+        src = f'/w/{token}/img/{pid}.png' if token else f'/card_images_jp/{pid}.png'     # the link target and the retry fallback
         # the page itself carries a 1-hour direct link, so the pictures load from S3 without touching the function
         pic = (f'<a class="p" href="{_e(src)}" target="_blank" rel="noopener noreferrer"><img src="{_e(_sign_image(pid + ".png", 3600))}" '
                f'data-s="{_e(src)}" alt="{_e(c["name"])}" width="300" height="420" loading="lazy" decoding="async"></a>')
@@ -597,6 +598,10 @@ a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decor
 .cf button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}.cf button[aria-pressed="true"] b{color:var(--bg)}
 .cf .fs{flex-basis:100%;font-size:13px;color:var(--mute)}
 [hidden]{display:none!important}
+.price{border:1.5px solid var(--line);background:var(--card);border-radius:12px;padding:14px 16px;margin:14px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
+.price .pv{font:700 26px system-ui,sans-serif;letter-spacing:-.01em}
+.price .pd{display:flex;flex-direction:column;gap:2px;flex:1 1 200px;min-width:0;font-size:12.5px;color:var(--mute)}
+.price .stale{color:var(--acc);font-weight:600}
 .done{padding:28px 0;text-align:center;font-size:18px;font-weight:600}
 footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 
@@ -618,6 +623,75 @@ SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i|
             "fs.textContent=any?'Showing '+shown+' missing '+names.join(' + ')+' card'+(shown===1?'':'s')+'. Tap a colour again to clear it.':''}"
             "q('.cf button').forEach(function(b){b.addEventListener('click',function(){var c=b.dataset.c;if(on[c]){delete on[c]}else{on[c]=1}"
             "b.setAttribute('aria-pressed',on[c]?'true':'false');run()})})})();")
+
+
+def _price_html(cache, wanted_n):
+    if not cache or cache.get('total') is None:
+        return ''
+    stale = cache.get('wanted') != wanted_n
+    sub = f'matched {cache["matched"]} of {cache.get("wanted", wanted_n)}'
+    if cache.get('sold_out_count'):
+        sub += f' &middot; {cache["sold_out_count"]} sold out (price likely higher now)'
+    when = ''
+    try:
+        when = datetime.fromisoformat(cache['fetched'].replace('Z', '+00:00')).strftime('%d %b %Y')
+    except Exception:
+        pass
+    stale_html = '<span class="stale">the list has changed since this estimate</span>' if stale else ''
+    return (f'<div class="price"><div class="pv">¥{cache["total"]:,}</div>'
+            f'<div class="pd"><span>Estimated cost (Yuyu-tei) &middot; {sub}</span>'
+            f'<span>{"Checked " + when if when else "Not checked yet"} &mdash; not a live price, refreshed by hand from time to time.</span>{stale_html}</div></div>')
+
+
+def mine_page():
+    """The same layout as the public share page (missing cards + alt-art / Manga wanted, with pictures), but
+    private: only reachable while logged in, always shows everything regardless of the share link's settings,
+    and includes the price estimate. Images use the ordinary authenticated routes, not a share token."""
+    cards, info, missing, alt_wants, on_way = _wishlist({'foil': True})
+    owned = _owned(0)
+    holding = sum(1 for c in missing if _placeholders(owned, c['num']))
+    by_col = {}
+    for c in missing:
+        by_col[c.get('col', '')] = by_col.get(c.get('col', ''), 0) + 1
+    colour_bar = ('<div class="cf" role="group" aria-label="Filter by colour" hidden><span>Colour</span>'
+                  + ''.join(f'<button type="button" data-c="{n}" aria-pressed="false"><i style="background:{hx}"></i>{n} <b>{by_col.get(n, 0)}</b></button>'
+                            for n, hx in COLOURS if by_col.get(n))
+                  + '<span class="fs" aria-live="polite"></span></div>')
+
+    def per_set(cs):
+        t = {}
+        for c in cs:
+            t[c['set']] = t.get(c['set'], 0) + 1
+        return t
+
+    nav1, body1 = _sections(missing, info, 'm', None, True, per_set(cards), owned)
+    nav2, body2 = _alt_sections(alt_wants, info, None, True)
+    parts = ['<h1>My Japanese Event card wishlist</h1>',
+             '<p class="sub">Private - only visible while you are logged in.</p>',
+             f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still looking for'
+             + (f' &middot; <b>{len(on_way)}</b> more already bought and on the way' if on_way else '')
+             + (f' &middot; <b>{len(alt_wants)}</b> alt-art / Manga version{"s" if len(alt_wants) != 1 else ""} wanted' if alt_wants else '') + '</p>',
+             '<p class="stat">Each set below says how many of its cards you still need.'
+             + (f' For <b>{holding}</b> of them you already have the EN or KR copy, so they are tagged &mdash; only the Japanese card is missing.' if holding else '')
+             + '</p>']
+    if missing:
+        parts += [colour_bar, f'<nav class="chips" aria-label="Jump to a set">{nav1}</nav>', body1]
+    else:
+        parts.append('<div class="done">Nothing left to find &mdash; everything you still need is already on its way!</div>' if on_way
+                     else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
+    if alt_wants:
+        parts += ['<h2 style="margin-top:40px">Alt-art / Manga versions you want</h2>', _price_html(_load_price_cache(), len(alt_wants)),
+                  f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
+    parts.append('<footer>Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample watermark). '
+                 'Not affiliated with Bandai. &copy; Eiichiro Oda / Shueisha / Toei Animation / Bandai.</footer>')
+    fav = re.search(r'<link rel="icon"[^>]*>', LOGIN_HTML)
+    page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">'
+            '<title>My wishlist</title>'
+            f'{fav.group(0) if fav else ""}<style>{SHARE_CSS}</style></head><body><main>{"".join(parts)}</main>'
+            f'<script>{SHARE_JS}</script></body></html>')
+    return resp(200, page, 'text/html; charset=utf-8', extra=_HEAD)
 
 
 def share_page(token):
@@ -708,6 +782,8 @@ def handler(event, context):
 
     if method == 'GET' and path in ('/', '/index.html'):
         return resp(200, (HERE / 'index.html').read_text(encoding='utf-8'), 'text/html; charset=utf-8')
+    if method == 'GET' and path == '/mine':
+        return mine_page()
     if method == 'GET' and path == '/cards.json':
         return resp(200, (HERE / 'cards.json').read_text(encoding='utf-8'), 'application/json')
     if method == 'GET' and path == '/products.json':

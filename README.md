@@ -103,6 +103,11 @@ time and written to `data/price_cache.json` in the bucket, and `GET /api/price` 
 "refresh" - one would be misleading, since it couldn't actually refresh). It flags itself as out of date if the
 wishlist has changed since the price was last checked.
 
+**My list** (`GET /mine`, needs login) is a private mirror of the share page - the same layout, with pictures, but
+always shows everything you still need (missing cards and alt-art / Manga wants) regardless of the share link's own
+settings, plus the price estimate. Pictures go through the ordinary authenticated image routes instead of a share
+token, so nothing about it is reachable without logging in.
+
 The **Alt art** page has two sections, **Alternate arts** (by set) and **Manga**, so you can see which cards have them.
 The EN | JP switch inside the card viewer only changes the viewer; the switch at the top changes the binder. Searching for
 a card grays out the rest of the page and makes the found card shine for a few seconds. Pictures load a few at a time and
