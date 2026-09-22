@@ -232,6 +232,7 @@ dialog::backdrop{background:var(--scrim)}
 .ab .cp .lb{color:var(--ink);font-weight:600}.ab .cp .ty{font-size:10.5px}
 .ab .cp{padding:5px 6px 6px;font-size:11.5px;line-height:1.25}.ab .cp b{display:block;font:600 11px var(--mono)}.ab .cp span{display:block;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ai{position:absolute;right:4px;top:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(15,25,38,.78);color:#fff;font-weight:700;font-size:13px;line-height:1;cursor:pointer;padding:0}
+.ax{position:absolute;right:4px;bottom:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(15,25,38,.78);color:#fff;font-weight:700;font-size:12px;line-height:1;cursor:pointer;padding:0;z-index:1}
 .vnote{width:100%;min-height:44px;border:1.5px solid var(--ord);border-radius:10px;padding:0 12px;font:inherit;font-size:14px;background:var(--sheet);color:var(--ink)}.vnote[hidden]{display:none}
 .ob{position:absolute;left:4px;top:4px;z-index:2;font:600 9px/1 var(--disp);letter-spacing:.08em;background:var(--ord);color:#fff;border-radius:3px;padding:3px 5px 2px;pointer-events:none}
 .ol{display:grid;grid-template-columns:52px 1fr;gap:6px 12px;padding:10px 12px;border:1.5px solid var(--ord);background:var(--sheet);border-radius:12px;align-items:start}
@@ -1307,7 +1308,7 @@ dialog::backdrop{background:var(--scrim)}
 
   /* ---------- alt art / Manga: what has alternate arts and a Manga, and which versions to collect ---------- */
   var altDlg = $('altdlg'), altFilter = 'all', altGen = 0, altUnique = true;      // altUnique: hide prints that only repeat a drawing already listed
-  var ALT_NEXT = { '': 'want', want: 'ordered', ordered: 'have', have: '' };
+  var ALT_NEXT = { '': 'want', want: 'ordered', ordered: 'have', have: 'want' };   // loops Want → On order → Have → Want; never silently blanks a mark
   var ALT_TXT = { want: '★ WANT', ordered: 'ON ORDER', have: '✓ HAVE' };
   function allVersions() {
     var out = [];
@@ -1335,6 +1336,11 @@ dialog::backdrop{background:var(--scrim)}
     var info = el('button', 'ai', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Open ' + v.c.name);
     info.addEventListener('click', function () { openInfo(v.c.num, v.a); });
     cell.appendChild(main); cell.appendChild(info);
+    if (v.st) {          // clearing a mark is its own deliberate tap, never a side effect of cycling through the picture
+      var cl = el('button', 'ax', '✕'); cl.type = 'button'; cl.setAttribute('aria-label', 'Clear the mark on ' + v.c.name);
+      cl.addEventListener('click', function (e) { e.stopPropagation(); setAlt(v.c.num, v.a, ''); altFill(); });
+      im.appendChild(cl);
+    }
     return cell;
   }
   function altFill() {
