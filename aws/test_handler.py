@@ -285,42 +285,6 @@ put_share({'foil': False})
 check('with the option off there is no alt-art section', 'Also collecting these' not in page_of(sh['url'])['body'])
 put_share({'foil': True})
 
-# wishlist pricing (Yuyu-tei): fetched on demand only, cached, cooldown on repeated refreshes
-check('a bad token gets a plain 404, not a price', h(ev('GET', '/w/' + 'b' * 22 + '/price'), None)['statusCode'] == 404
-      and h(ev('POST', '/w/' + 'b' * 22 + '/price'), None)['statusCode'] == 404)
-check('another method on the price route is refused', h(ev('PUT', f'/w/{tok}/price'), None)['statusCode'] == 404)
-check('before any fetch, the price is empty', json.loads(h(ev('GET', f'/w/{tok}/price'), None)['body']) == {'total': None, 'fetched': None, 'stale': False})
-
-_calls = []
-
-
-def _fake_search(num):
-    _calls.append(num)
-    if num == 'OP01-029':
-        return [{'path': 'prb01', 'id': '999', 'title': 'OP01-029 P-UC ラディカルビ～～～ム！！！！(パラレル)', 'yen': 320, 'stock': '○'}]
-    if num == 'OP09-020':
-        return [{'path': 'prb02', 'id': '888', 'title': 'OP09-020 P-R 来い…!!!おれ達が相手をしてやる!!!(パラレル)(PRB2)', 'yen': 24800, 'stock': '×'}]
-    return []
-
-
-L._yuyu_search = _fake_search
-p1 = json.loads(h(ev('POST', f'/w/{tok}/price'), None)['body'])
-check('a refresh fetches once per distinct card and totals the cheapest match', sorted(_calls) == ['OP01-029', 'OP09-020']
-      and p1['total'] == 25120 and p1['matched'] == 2 and p1['wanted'] == 2 and p1['in_stock_count'] == 1 and p1['sold_out_count'] == 1 and p1['stale'] is False)
-check('the result is cached in the bucket', json.loads(store['data/price_cache.json'])['total'] == 25120)
-p2 = json.loads(h(ev('POST', f'/w/{tok}/price'), None)['body'])
-check('a refresh inside the cooldown reuses the cache instead of fetching again', len(_calls) == 2 and p2['cooldown'] is True and p2['total'] == 25120 and p2['retry_after'] > 0)
-check('a plain GET always returns the cache without fetching', len(_calls) == 2 and json.loads(h(ev('GET', f'/w/{tok}/price'), None)['body'])['total'] == 25120)
-_page_with_price = page_of(sh['url'])['body']
-check('the share page bakes in the cached total and a refresh button', '¥25,120' in _page_with_price and 'id="prbtn"' in _page_with_price and 'Refresh price' in _page_with_price)
-
-# the wishlist changed since the last fetch: the page flags the total as stale
-store['data/collection.json'] = json.dumps({'OP01-029': {'alt': {'p3': 'want'}}, 'OP09-020': {'alt': {'p2': 'want'}}, 'OP01-055': {'alt': {'p2': 'want'}}}).encode()
-_stale_body = page_of(sh['url'])['body']
-check('a wishlist that grew since the cached price is flagged as stale', 'the list has changed since this price' in _stale_body)
-store['data/collection.json'] = _saved
-L._CACHE['own'] = (0.0, {})   # force the 20s owned-cache to refetch: it was just warmed with the temporary stale-test fixture
-
 # the picture route: token-gated, only cards on the list, never a way to probe what you own
 def pic(path_tok, name):
     return h(ev('GET', f'/w/{path_tok}/img/{name}'), None)

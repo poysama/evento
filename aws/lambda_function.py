@@ -11,7 +11,6 @@ Env vars: BUCKET (private S3 bucket), PASSCODE (fallback passcode),
 Bucket layout: data/share.json (friends' wishlist link), images/<CODE>.jpg (English art), images_jp/<CODE>.png + manifest.json (Japanese art), data/collection.json, data/passkeys.json, used/<challenge-id> (1-day lifecycle).
 """
 import base64
-import concurrent.futures as cf
 import hashlib
 import hmac
 import json
@@ -20,9 +19,6 @@ import html as htmllib
 import re
 import secrets
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -437,144 +433,6 @@ def _wishlist(cfg, max_age=0):
     return cards, info, missing, alt_wants, on_way
 
 
-
-# ---------------------------------------------------------------- wishlist pricing (Yuyu-tei)
-# Looks up current sell prices for the alt-art / Manga versions marked "want", so the share page can show an estimate.
-# A price only makes sense read live - so it is fetched on demand (the Refresh button), never on an ordinary page view,
-# and cached in the bucket with a cooldown so a public link cannot be used to hammer Yuyu-tei with repeated fetches.
-PRICE_KEY = 'data/price_cache.json'
-PRICE_COOLDOWN = 300           # seconds between forced refreshes
-YUYU_UA = {'User-Agent': 'Mozilla/5.0 (compatible; evento-personal-binder/1.0; price check)'}
-YUYU_OTHER_PRODUCT = ('\u30d7\u30ec\u30df\u30a2\u30e0', '\u30d9\u30b9\u30c8\u30bb\u30ec\u30af\u30b7\u30e7\u30f3', '3\u5468\u5e74', 'ANNIVERSARY', '\u30d7\u30ed\u30e2\u30fc\u30b7\u30e7\u30f3\u30ab\u30fc\u30c9\u30bb\u30c3\u30c8', '\u30b9\u30bf\u30f3\u30c0\u30fc\u30c9\u30d0\u30c8\u30eb', '(PRB')
-
-
-def _yuyu_parse(html_text, num):
-    """Product blocks on a Yuyu-tei search results page -> [{path, id, title, yen, stock}] for this card number."""
-    rows = []
-    for blk in re.split(r'<div\s+class="card-product', html_text)[1:]:
-        m = re.search(r'sell/opc/card/([^/"]+)/(\d+)"', blk)
-        alt = re.search(r'<img\s+src="https://card\.yuyu-tei\.jp[^"]*"\s+alt="([^"]*)"', blk)
-        yen = re.search(r'text-end[^"]*">\s*([\d,]+)\s*\u5186', blk)
-        stk = re.search(r'\u5728\u5eab\s*:\s*(\S+)', blk)
-        if not (m and alt and yen):
-            continue
-        t = htmllib.unescape(alt.group(1))
-        if not t.startswith(num + ' '):
-            continue
-        rows.append({'path': m.group(1), 'id': m.group(2), 'title': t, 'yen': int(yen.group(1).replace(',', '')), 'stock': stk.group(1) if stk else '?'})
-    return rows
-
-
-def _yuyu_search(num):
-    q = urllib.parse.urlencode({'search_word': num})
-    req = urllib.request.Request('https://yuyu-tei.jp/sell/opc/s/search?' + q, headers=YUYU_UA)
-    with urllib.request.urlopen(req, timeout=6) as r:
-        return _yuyu_parse(r.read().decode('utf-8', 'replace'), num)
-
-
-def _yuyu_candidates(c, a, rows):
-    """Which of a card's listings match the specific alt-art / Manga print, by where it was printed."""
-    src = (c.get('altsrc') or {}).get(a, '')
-    par = lambda r: bool(re.match(r'\S+ P-', r['title'])) or '\u30d1\u30e9\u30ec\u30eb' in r['title']
-    if src == 'PRB-01':
-        return [r for r in rows if r['path'] == 'prb01' and re.match(r'\S+ P-', r['title'])]
-    if src == 'PRB-02':
-        return [r for r in rows if r['path'] == 'prb02']
-    m = re.match(r'Best Selection Vol\.(\d)', src)
-    if m:
-        d = m.group(1)
-        out = [r for r in rows if '\u30d9\u30b9\u30c8\u30bb\u30ec\u30af\u30b7\u30e7\u30f3' in r['title'] and re.search(r'vol\.?\s*' + d + r'\b', r['title'], re.I)]
-        if out:
-            return out
-        return [r for r in rows if r['path'].startswith('promo-') and par(r) and not any(k in r['title'] for k in YUYU_OTHER_PRODUCT)]
-    keymap = {'2nd Anniversary Set': '2nd ANNIVERSARY', '3rd Anniversary Set': '3rd ANNIVERSARY',
-              '3rd Anniv. Campaign': '3\u5468\u5e74', 'Promo Set 2026': '\u30d7\u30ed\u30e2\u30fc\u30b7\u30e7\u30f3\u30ab\u30fc\u30c9\u30bb\u30c3\u30c82026'}
-    if src in keymap:
-        return [r for r in rows if keymap[src] in r['title']]
-    if src.startswith('Standard Battle'):
-        return [r for r in rows if '\u30b9\u30bf\u30f3\u30c0\u30fc\u30c9\u30d0\u30c8\u30eb' in r['title'] or (r['path'] == 'promo-st10' and par(r))]
-    if re.fullmatch(r'(OP|EB|ST)-\d+', src):
-        p = src.replace('-', '').lower()
-        return [r for r in rows if r['path'] == p and par(r)]
-    return []
-
-
-def _price_wanted(alt_wants):
-    """Fetch Yuyu-tei once per distinct card (in parallel) and total the cheapest matching listing for each wanted version."""
-    nums = sorted({c['num'] for c, a in alt_wants})
-
-    def fetch(n):
-        try:
-            return n, _yuyu_search(n)
-        except Exception:
-            return n, []
-
-    results = {}
-    if nums:
-        with cf.ThreadPoolExecutor(max_workers=16) as ex:
-            for n, rows in ex.map(fetch, nums):
-                results[n] = rows
-    total = in_stock_total = sold_out_total = in_stock_n = sold_out_n = matched = 0
-    for c, a in alt_wants:
-        rows = results.get(c['num'], [])
-        cs = _yuyu_candidates(c, a, rows) or [r for r in rows if '\u30d1\u30e9\u30ec\u30eb' in r['title'] or re.match(r'\S+ P-', r['title'])]
-        if not cs:
-            continue
-        live = [r for r in cs if r['stock'] != '\u00d7']
-        cheap = min(live or cs, key=lambda r: r['yen'])
-        total += cheap['yen']; matched += 1
-        if live:
-            in_stock_total += cheap['yen']; in_stock_n += 1
-        else:
-            sold_out_total += cheap['yen']; sold_out_n += 1
-    return {'total': total, 'in_stock_total': in_stock_total, 'sold_out_total': sold_out_total,
-            'in_stock_count': in_stock_n, 'sold_out_count': sold_out_n, 'matched': matched, 'wanted': len(alt_wants),
-            'fetched': now_iso()}
-
-
-def _load_price_cache():
-    try:
-        d = json.loads(s3.get_object(Bucket=BUCKET, Key=PRICE_KEY)['Body'].read())
-        return d if isinstance(d, dict) else None
-    except (ClientError, ValueError):
-        return None
-
-
-def _save_price_cache(data):
-    s3.put_object(Bucket=BUCKET, Key=PRICE_KEY, Body=json.dumps(data).encode(), ContentType='application/json')
-
-
-def _iso_age(iso):
-    try:
-        return (datetime.now(timezone.utc) - datetime.fromisoformat(iso.replace('Z', '+00:00'))).total_seconds()
-    except Exception:
-        return 1e9
-
-
-def share_price(token, method):
-    cfg = share_gate(token)
-    if not cfg:
-        return js(404, {'error': 'not found'})
-    cards, info, missing, alt_wants, on_way = _wishlist(cfg)
-    if not cfg.get('foil') or not alt_wants:
-        return js(200, {'total': None})
-    cache = _load_price_cache()
-    if method == 'GET':
-        out = dict(cache) if cache else {'total': None, 'fetched': None}
-        out['stale'] = bool(cache) and cache.get('wanted') != len(alt_wants)
-        return js(200, out)
-    # POST: refresh, unless the last fetch was too recent
-    if cache and _iso_age(cache.get('fetched')) < PRICE_COOLDOWN:
-        out = dict(cache); out['cooldown'] = True
-        out['retry_after'] = int(PRICE_COOLDOWN - _iso_age(cache.get('fetched')))
-        out['stale'] = cache.get('wanted') != len(alt_wants)
-        return js(200, out)
-    fresh = _price_wanted(alt_wants)
-    _save_price_cache(fresh)
-    fresh['stale'] = False
-    return js(200, fresh)
-
-
 _HEAD = {'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer'}
 
 
@@ -710,13 +568,6 @@ a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decor
 .cf button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}.cf button[aria-pressed="true"] b{color:var(--bg)}
 .cf .fs{flex-basis:100%;font-size:13px;color:var(--mute)}
 [hidden]{display:none!important}
-.price{border:1.5px solid var(--line);background:var(--card);border-radius:12px;padding:14px 16px;margin:14px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
-.price .pv{font:700 26px system-ui,sans-serif;letter-spacing:-.01em}
-.price .pd{display:flex;flex-direction:column;gap:2px;flex:1 1 160px;min-width:0;font-size:12.5px;color:var(--mute)}
-.price .stale{color:var(--acc)}.price .stale[hidden]{display:none}
-.price #prbtn{border:1.5px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px 14px;font:600 13.5px inherit;cursor:pointer}
-.price #prbtn:disabled{opacity:.6;cursor:default}
-.price .pn{flex-basis:100%;font-size:11.5px;color:var(--mute);margin-top:2px}
 .done{padding:28px 0;text-align:center;font-size:18px;font-weight:600}
 footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 
@@ -725,18 +576,6 @@ footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i||i.tagName!=='IMG'||!i.dataset.s)return;"
             "var n=+i.dataset.r||0;if(n>=3)return;i.dataset.r=n+1;"
             "setTimeout(function(){i.src=i.dataset.s+'?r='+(n+1)},500*(n+1)+Math.random()*1500)},true);"
-            "(function(){var btn=document.getElementById('prbtn');if(!btn)return;var val=document.getElementById('prv'),fEl=document.getElementById('prf'),sEl=document.getElementById('prs');"
-            "function yen(n){return '\u00a5'+n.toLocaleString('en-US')}"
-            "function when(iso){if(!iso)return 'not fetched yet';var d=new Date(iso);return 'fetched '+d.toLocaleString(undefined,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}"
-            "btn.addEventListener('click',function(){btn.disabled=true;var old=btn.textContent;btn.textContent='Fetching\u2026';"
-            "fetch(location.pathname.replace(/\\/$/,'')+'/price',{method:'POST'}).then(function(r){return r.json()}).then(function(d){"
-            "if(d.total!=null)val.textContent=yen(d.total);"
-            "var sub='';if(d.matched!=null){sub=' \u00b7 matched '+d.matched+' of '+d.wanted;if(d.sold_out_count)sub+=' \u00b7 '+d.sold_out_count+' sold out (price may be higher now)'}"
-            "fEl.textContent=when(d.fetched)+sub+(d.cooldown?' \u00b7 just refreshed \u2014 try again in a few minutes':'');"
-            "sEl.hidden=!d.stale;"
-            "}).catch(function(){fEl.textContent='Could not fetch prices. Try again.'})"
-            ".then(function(){btn.disabled=false;btn.textContent=old})});"
-            "})();"
             # colour filter: toggle one or more colours; sets with nothing left in those colours are hidden
             "(function(){var bar=document.querySelector('.cf');if(!bar)return;bar.hidden=false;var on={},fs=bar.querySelector('.fs'),"
             "q=function(s){return[].slice.call(document.querySelectorAll(s))};"
@@ -750,41 +589,6 @@ SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i|
             "fs.textContent=any?'Showing '+shown+' missing '+names.join(' + ')+' card'+(shown===1?'':'s')+'. Tap a colour again to clear it.':''}"
             "q('.cf button').forEach(function(b){b.addEventListener('click',function(){var c=b.dataset.c;if(on[c]){delete on[c]}else{on[c]=1}"
             "b.setAttribute('aria-pressed',on[c]?'true':'false');run()})})})();")
-
-
-def _price_yen(n):
-    return f'\u00a5{n:,}'
-
-
-def _price_when(iso):
-    if not iso:
-        return 'not fetched yet'
-    try:
-        d = datetime.fromisoformat(iso.replace('Z', '+00:00'))
-        return 'fetched ' + d.strftime('%d %b, %H:%M UTC')
-    except Exception:
-        return 'fetched'
-
-
-def _price_panel(cache, wanted_n):
-    stale = bool(cache) and cache.get('wanted') != wanted_n
-    total = cache.get('total') if cache else None
-    total_txt = _price_yen(total) if total is not None else '\u2014'
-    sub = ''
-    if cache and cache.get('matched') is not None:
-        sub = f' &middot; matched {cache["matched"]} of {cache.get("wanted", wanted_n)}'
-        if cache.get('sold_out_count'):
-            sub += f' &middot; {cache["sold_out_count"]} sold out (price may be higher now)'
-    stale_html = ('<span class="stale" id="prs">the list has changed since this price &mdash; refresh for a current total</span>'
-                  if stale else '<span class="stale" id="prs" hidden></span>')
-    return (
-        f'<div class="price" id="pr">'
-        f'<div class="pv" id="prv">{total_txt}</div>'
-        f'<div class="pd"><span id="prf">{_e(_price_when(cache.get("fetched") if cache else None))}{sub}</span>{stale_html}</div>'
-        f'<button type="button" id="prbtn">Refresh price</button>'
-        f'<div class="pn">Yuyu-tei sell prices, matched to each version. Proxy fees, shipping and exchange rate are not included.</div>'
-        f'</div>'
-    )
 
 
 def share_page(token):
@@ -810,7 +614,6 @@ def share_page(token):
                   + '<span class="fs" aria-live="polite"></span></div>')
     nav1, body1 = _sections(missing, info, 'm', token, pics, per_set(cards), owned)
     nav2, body2 = _alt_sections(alt_wants, info, token, pics)
-    price_panel = _price_panel(_load_price_cache(), len(alt_wants)) if alt_wants else ''
     who = f'from {_e(name)}' if name else ''
     title = f"{name + chr(39) + 's' if name else 'My'} Japanese One Piece Event card wishlist"
     desc = f"{len(missing)} Japanese Event cards I'm still looking for"
@@ -829,7 +632,7 @@ def share_page(token):
         parts.append('<div class="done">Nothing left to find &mdash; everything I still need is already on its way!</div>' if on_way
                      else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
     if alt_wants:
-        parts += ['<h2 style="margin-top:40px">Also collecting these alt-art / Manga versions</h2>', price_panel,
+        parts += ['<h2 style="margin-top:40px">Also collecting these alt-art / Manga versions</h2>',
                   f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
     if pics:
         note = ('Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample '
@@ -865,12 +668,8 @@ def handler(event, context):
     if path.startswith('/webauthn/'):
         return webauthn_route(method, path, event)
 
-    if path.startswith('/w/'):
+    if method == 'GET' and path.startswith('/w/'):
         tok, _, sub = path[3:].partition('/')
-        if sub == 'price' and method in ('GET', 'POST'):
-            return share_price(tok, method)
-        if method != 'GET':
-            return js(404, {'error': 'not found'})
         return share_image(tok, sub[4:]) if sub.startswith('img/') else (share_page(tok) if not sub else _share_not_found())
 
     if not authed(event):
