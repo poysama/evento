@@ -243,6 +243,7 @@ dialog::backdrop{background:var(--scrim)}
 .vf .small{font-size:11.5px}
 @media (pointer:coarse){.i{display:none}}
 /* ---- what to buy ---- */
+.pr-v{font:700 30px system-ui,sans-serif;letter-spacing:-.01em;margin-bottom:2px}
 #sumdlg,#donedlg,#orddlg,#altdlg{padding:0;overflow:hidden;width:min(760px,96vw);height:min(94dvh,920px);max-height:none}
 #sumdlg[open],#donedlg[open],#orddlg[open],#altdlg[open]{display:flex}
 @media (max-width:560px){#sumdlg,#donedlg,#orddlg,#altdlg{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0}}
@@ -293,7 +294,7 @@ dialog::backdrop{background:var(--scrim)}
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -332,6 +333,7 @@ dialog::backdrop{background:var(--scrim)}
 <dialog id="donedlg" aria-label="Completed sets"></dialog>
 <dialog id="orddlg" aria-label="Cards on order"></dialog>
 <dialog id="altdlg" aria-label="Alt art and Manga versions"></dialog>
+<dialog id="pricedlg" aria-label="Wishlist price"></dialog>
 
 <script>
 (function () {
@@ -1413,6 +1415,47 @@ dialog::backdrop{background:var(--scrim)}
   }
   $('altbtn').addEventListener('click', function () { altFill(); if (!altDlg.open) altDlg.showModal(); });
   altDlg.addEventListener('click', function (e) { if (e.target === altDlg) altDlg.close(); });
+
+  /* ---------- wishlist price: a private view of the last-checked Yuyu-tei estimate. AWS's own IP range gets
+     403 Forbidden from Yuyu-tei, so this Lambda cannot fetch it itself; the number is checked from elsewhere
+     and cached, and this dialog only ever reads that cache - no "refresh" button, since one couldn't refresh. */
+  var priceDlg = $('pricedlg');
+  function priceYen(n) { return '¥' + n.toLocaleString('en-US'); }
+  function priceWhen(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) : ''; }
+  function priceShell() {
+    var root = el('div', 'dl'); root.appendChild(el('h3', '', 'Wishlist price'));
+    root.appendChild(el('div', 'small', 'An estimate for the alt-art / Manga versions marked Want, from Yuyu-tei’s sell prices. Not live — I check it by hand from time to time; ask me to refresh it.'));
+    return root;
+  }
+  function priceClose(root) { var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { priceDlg.close(); }); root.appendChild(cl); return root; }
+  function priceFill(d) {
+    var root = priceShell();
+    if (d.total == null) {
+      root.appendChild(el('div', 'sm-empty', 'Not checked yet.'));
+    } else {
+      var sec = el('div', 'sec');
+      sec.appendChild(el('div', 'pr-v', priceYen(d.total)));
+      var sub = 'matched ' + d.matched + ' of ' + d.wanted;
+      if (d.sold_out_count) sub += ' · ' + d.sold_out_count + ' sold out (price likely higher now)';
+      sec.appendChild(el('div', 'small', sub));
+      var when = priceWhen(d.fetched);
+      sec.appendChild(el('div', 'small', when ? 'Checked ' + when : 'Not checked yet'));
+      root.appendChild(sec);
+      if (d.stale) root.appendChild(el('div', 'note', 'The wishlist has changed since this was checked (now ' + d.wanted_now + ' wanted) — ask me to refresh it.'));
+    }
+    priceDlg.replaceChildren(priceClose(root));
+  }
+  function priceOpen() {
+    var loading = priceShell(); loading.appendChild(el('div', 'small', 'Loading…'));
+    priceDlg.replaceChildren(priceClose(loading));
+    if (!priceDlg.open) priceDlg.showModal();
+    pkFetch('/api/price').then(priceFill).catch(function () {
+      var err = priceShell(); err.appendChild(el('div', 'sm-empty', 'This works on the hosted site (evento.peonbox.xyz).'));
+      priceDlg.replaceChildren(priceClose(err));
+    });
+  }
+  $('pricebtn').addEventListener('click', priceOpen);
+  priceDlg.addEventListener('click', function (e) { if (e.target === priceDlg) priceDlg.close(); });
 
   /* ---------- boot ---------- */
   Promise.all([

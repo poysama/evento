@@ -434,10 +434,10 @@ def _wishlist(cfg, max_age=0):
 
 
 # ---------------------------------------------------------------- wishlist price estimate (Yuyu-tei)
-# Yuyu-tei returns 403 Forbidden to requests from AWS's IP ranges (confirmed - not something to route around),
-# so this Lambda cannot fetch prices itself. Instead the total is checked from elsewhere from time to time and
-# written to this one cached file; the share page only ever reads it. No live "refresh" is offered here because
-# a button that cannot actually refresh would be misleading.
+# Yuyu-tei returns 403 Forbidden to requests from AWS's IP ranges (confirmed - not something to route around), so
+# this Lambda cannot fetch prices itself. The total is instead checked from elsewhere from time to time and written
+# to this one cached file; a private, logged-in-only view (/api/price) just reads it. Never shown on the public
+# share page - no "refresh" is offered anywhere here, since a button that cannot actually refresh would be misleading.
 PRICE_KEY = 'data/price_cache.json'
 
 
@@ -449,36 +449,17 @@ def _load_price_cache():
         return None
 
 
-def _price_yen(n):
-    return f'¥{n:,}'
-
-
-def _price_when(iso):
-    if not iso:
-        return ''
-    try:
-        d = datetime.fromisoformat(iso.replace('Z', '+00:00'))
-        return d.strftime('%d %b %Y')
-    except Exception:
-        return ''
-
-
-def _price_panel(cache, wanted_n):
-    if not cache or cache.get('total') is None:
-        return ''
-    stale = cache.get('wanted') != wanted_n
-    sub = f'matched {cache["matched"]} of {cache.get("wanted", wanted_n)}'
-    if cache.get('sold_out_count'):
-        sub += f' &middot; {cache["sold_out_count"]} sold out (price likely higher now)'
-    stale_html = ('<span class="stale">the list has changed since this estimate</span>' if stale else '')
-    when = _price_when(cache.get('fetched'))
-    return (
-        '<div class="price">'
-        f'<div class="pv">{_price_yen(cache["total"])}</div>'
-        f'<div class="pd"><span>Estimated cost (Yuyu-tei) &middot; {sub}</span>'
-        f'<span>{"Checked " + when if when else "Not checked yet"} &mdash; not a live price, refreshed by hand from time to time.</span>{stale_html}</div>'
-        '</div>'
-    )
+def _all_alt_wants():
+    """Every alt-art / Manga version currently marked "want", regardless of share settings."""
+    cards, _ = _catalog()
+    owned = _owned(0)
+    out = []
+    for c in cards:
+        marks = (owned.get(c['num']) or {}).get('alt') or {}
+        for a in (c.get('alt') or []):
+            if marks.get(a) == 'want':
+                out.append((c, a))
+    return out
 
 
 _HEAD = {'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer'}
@@ -616,10 +597,6 @@ a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decor
 .cf button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}.cf button[aria-pressed="true"] b{color:var(--bg)}
 .cf .fs{flex-basis:100%;font-size:13px;color:var(--mute)}
 [hidden]{display:none!important}
-.price{border:1.5px solid var(--line);background:var(--card);border-radius:12px;padding:14px 16px;margin:14px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
-.price .pv{font:700 26px system-ui,sans-serif;letter-spacing:-.01em}
-.price .pd{display:flex;flex-direction:column;gap:2px;flex:1 1 200px;min-width:0;font-size:12.5px;color:var(--mute)}
-.price .stale{color:var(--acc);font-weight:600}
 .done{padding:28px 0;text-align:center;font-size:18px;font-weight:600}
 footer{margin:34px 0 8px;color:var(--mute);font-size:12.5px;max-width:70ch}"""
 
@@ -666,7 +643,6 @@ def share_page(token):
                   + '<span class="fs" aria-live="polite"></span></div>')
     nav1, body1 = _sections(missing, info, 'm', token, pics, per_set(cards), owned)
     nav2, body2 = _alt_sections(alt_wants, info, token, pics)
-    price_panel = _price_panel(_load_price_cache(), len(alt_wants)) if alt_wants else ''
     who = f'from {_e(name)}' if name else ''
     title = f"{name + chr(39) + 's' if name else 'My'} Japanese One Piece Event card wishlist"
     desc = f"{len(missing)} Japanese Event cards I'm still looking for"
@@ -685,7 +661,7 @@ def share_page(token):
         parts.append('<div class="done">Nothing left to find &mdash; everything I still need is already on its way!</div>' if on_way
                      else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
     if alt_wants:
-        parts += ['<h2 style="margin-top:40px">Also collecting these alt-art / Manga versions</h2>', price_panel,
+        parts += ['<h2 style="margin-top:40px">Also collecting these alt-art / Manga versions</h2>',
                   f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
     if pics:
         note = ('Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample '
@@ -768,6 +744,16 @@ def handler(event, context):
 
     if path == '/api/share':
         return share_api(method, event)
+
+    if path == '/api/price':
+        if method != 'GET':
+            return js(404, {'error': 'not found'})
+        cache = _load_price_cache()
+        wanted_now = len(_all_alt_wants())
+        out = dict(cache) if cache else {'total': None, 'fetched': None}
+        out['stale'] = bool(cache) and cache.get('wanted') != wanted_now
+        out['wanted_now'] = wanted_now
+        return js(200, out)
 
     if path == '/api/collection':
         if method == 'GET':

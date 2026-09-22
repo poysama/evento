@@ -285,20 +285,23 @@ put_share({'foil': False})
 check('with the option off there is no alt-art section', 'Also collecting these' not in page_of(sh['url'])['body'])
 put_share({'foil': True})
 
-# wishlist price estimate: read-only, checked by hand from elsewhere (Yuyu-tei blocks this Lambda's IP outright) and
-# cached in the bucket; the page never tries to fetch it itself, so there is no live "refresh"
-check('no price panel before anything has been checked', 'class="price"' not in page_of(sh['url'])['body'])
+# wishlist price estimate: a private, logged-in-only view (Yuyu-tei blocks this Lambda's IP outright, so the total
+# is checked from elsewhere and written to the bucket by hand; this route only ever reads that cache)
+check('the price view needs a login', h(ev('GET', '/api/price'), None)['statusCode'] == 401)
+check('another method is refused', h(ev('POST', '/api/price', cookies=ck), None)['statusCode'] == 404)
+check('never shown on the public share page, checked or not', 'class="price"' not in page_of(sh['url'])['body']
+      and '/api/price' not in page_of(sh['url'])['body'] and 'Yuyu-tei' not in page_of(sh['url'])['body'])
+check('before anything has been checked, the view says so', json.loads(h(ev('GET', '/api/price', cookies=ck), None)['body'])
+      == {'total': None, 'fetched': None, 'stale': False, 'wanted_now': 2})
 store['data/price_cache.json'] = json.dumps({'total': 25120, 'in_stock_total': 24800, 'sold_out_total': 320, 'in_stock_count': 1,
                                              'sold_out_count': 1, 'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z'}).encode()
-_priced_body = page_of(sh['url'])['body']
-check('the cached total is shown, with when it was checked and no refresh control', '¥25,120' in _priced_body and 'matched 2 of 2' in _priced_body
-      and '22 Sep 2026' in _priced_body and 'id="prbtn"' not in _priced_body and 'fetch(' not in _priced_body)
-check('sold-out count is noted and the middot separators are not double-escaped', '1 sold out' in _priced_body and '&amp;middot;' not in _priced_body)
-check('there is no route that fetches Yuyu-tei from this Lambda', h(ev('POST', f'/w/{tok}/price'), None)['statusCode'] != 200)
+check('the cached total is returned as-is, plus how many are wanted right now', json.loads(h(ev('GET', '/api/price', cookies=ck), None)['body'])
+      == {'total': 25120, 'in_stock_total': 24800, 'sold_out_total': 320, 'in_stock_count': 1, 'sold_out_count': 1,
+          'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z', 'stale': False, 'wanted_now': 2})
 store['data/collection.json'] = json.dumps(json.loads(store['data/collection.json']) | {'OP01-030': {'alt': {'p1': 'want'}}}).encode()
-check('a wishlist that grew since the cache was checked is flagged as out of date', 'the list has changed since this estimate' in page_of(sh['url'])['body'])
+check('a wishlist that grew since the cache was checked is flagged stale', json.loads(h(ev('GET', '/api/price', cookies=ck), None)['body'])['stale'] is True)
 store['data/collection.json'] = _saved
-L._CACHE['own'] = (0.0, {})   # force the 20s owned-cache to refetch after the temporary edit above
+L._CACHE['own'] = (0.0, {})   # force the 20s owned-cache to refetch: it was just warmed with the temporary OP01-030 edit above
 del store['data/price_cache.json']
 
 # the picture route: token-gated, only cards on the list, never a way to probe what you own
