@@ -323,6 +323,9 @@ check('the price estimate is included on /mine', '¥25,120' in _m)
 check('each alt-art card is labelled with its own price, sold-out ones marked', '<span class="pc">¥4,800</span>' in _m
       and '<span class="pc oos">¥20,320 <small>sold out</small></span>' in _m)
 check('the public share page still carries no price', 'class="pc' not in page_of(sh['url'])['body'])
+check('/mine can regroup the alt-art wants by collection (Best Selection, PRB, prizes...) as well as by card set', 'id="alt-src"' in _m
+      and 'data-g="src"' in _m and 'id="k-' in _m and 'id="f-' in _m)
+check('the public share page has no such switch', 'Group by' not in page_of(sh['url'])['body'])
 del store['data/price_cache.json']
 put_share({'enabled': True, 'foil': True})
 

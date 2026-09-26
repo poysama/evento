@@ -561,17 +561,30 @@ def _sections(items, info, prefix, token, pics, totals, owned=None):
     return nav, body
 
 
-def _alt_sections(pairs, info, token, pics, prices=None):
-    """The alt-art / Manga versions I want, by set (a card can appear more than once, once per version).
+def _src_key(label):
+    """Natural order for collection names: 'Best Selection Vol.2' before 'Vol.10'."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', label)]
+
+
+def _alt_sections(pairs, info, token, pics, prices=None, by='set'):
+    """The alt-art / Manga versions I want, by card set (a card can appear more than once, once per version).
+    by='src' (private view): grouped by the collection the print came from instead - Best Selection, PRB-01, an
+    anniversary set, a tournament prize... - each group in card-number order.
     prices (private view only): {(num, alt): {'lo': yen, 'oos': bool}}."""
     prices = prices or {}
+    pre = 'f' if by == 'set' else 'k'
+    if by == 'src':
+        gk = lambda c, a: (c.get('altsrc') or {}).get(a) or 'Other'
+        pairs = sorted(pairs, key=lambda ca: (_src_key(gk(*ca)), ca[0]['num'], ca[1]))
+    else:
+        gk = lambda c, a: c['set']
     groups = []
     for c, a in pairs:
-        if not groups or groups[-1][0] != c['set']:
-            groups.append((c['set'], []))
+        if not groups or groups[-1][0] != gk(c, a):
+            groups.append((gk(c, a), []))
         groups[-1][1].append((c, a))
-    nav = ''.join(f'<a href="#f-{_e(s)}">{_e(s)} <i>{len(ps)} wanted</i></a>' for s, ps in groups)
-    body = ''.join(f'<section id="f-{_e(s)}"><h2>{_e(s)} <small>{len(ps)} wanted</small></h2>'
+    nav = ''.join(f'<a href="#{pre}-{_e(s)}">{_e(s)} <i>{len(ps)} wanted</i></a>' for s, ps in groups)
+    body = ''.join(f'<section id="{pre}-{_e(s)}"><h2>{_e(s)} <small>{len(ps)} wanted</small></h2>'
                    f'<div class="g{"" if pics else " t"}">'
                    + ''.join(_figure(c, info.get(c['num'], {}), a, token, pics, price=prices.get((c['num'], a))) for c, a in ps) + '</div></section>'
                    for s, ps in groups)
@@ -596,6 +609,9 @@ figcaption{display:flex;flex-direction:column;gap:1px;padding-top:6px;font-size:
 .tag{align-self:flex-start;margin-top:3px;background:var(--accbg);color:var(--acc);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
 a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decoration:none}a.bl:hover{text-decoration:underline}
 .tag.ph{background:var(--amberbg);color:var(--amber)}
+.gb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0 0}.gb span{color:var(--mute);font-size:14px}
+.gb button{border:1.5px solid var(--line);border-radius:999px;padding:6px 12px;background:var(--card);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+.gb button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .pc{align-self:flex-start;margin-top:3px;font-size:12.5px;font-weight:700;color:var(--ink)}
 .pc.oos{color:var(--mute);text-decoration:line-through}.pc small{font-weight:500;color:var(--mute);text-decoration:none;margin-left:4px}
 .cf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0 0;padding:8px 0}
@@ -631,6 +647,14 @@ SHARE_JS = ("document.addEventListener('error',function(e){var i=e.target;if(!i|
             "fs.textContent=any?'Showing '+shown+' missing '+names.join(' + ')+' card'+(shown===1?'':'s')+'. Tap a colour again to clear it.':''}"
             "q('.cf button').forEach(function(b){b.addEventListener('click',function(){var c=b.dataset.c;if(on[c]){delete on[c]}else{on[c]=1}"
             "b.setAttribute('aria-pressed',on[c]?'true':'false');run()})})})();")
+
+
+GROUP_JS = ("<script>(function(){var bs=document.querySelectorAll('.gb button');if(!bs.length)return;"
+            "function go(g){bs.forEach(function(b){b.setAttribute('aria-pressed',b.dataset.g===g?'true':'false')});"
+            "document.getElementById('alt-set').hidden=g!=='set';document.getElementById('alt-src').hidden=g!=='src';"
+            "try{localStorage.setItem('minegroup',g)}catch(e){}}"
+            "bs.forEach(function(b){b.addEventListener('click',function(){go(b.dataset.g)})});"
+            "try{var g=localStorage.getItem('minegroup');if(g==='src')go(g)}catch(e){}})();</script>")
 
 
 def _price_html(cache, wanted_n):
@@ -676,6 +700,7 @@ def mine_page():
     prices = {(it['num'], it['ver']): {'lo': it['lo'], 'oos': it['oos']} for it in (price_cache or {}).get('items') or []}
     nav1, body1 = _sections(missing, info, 'm', None, True, per_set(cards), owned)
     nav2, body2 = _alt_sections(alt_wants, info, None, True, prices)
+    nav3, body3 = _alt_sections(alt_wants, info, None, True, prices, by='src')      # the same versions, grouped by the collection they came from
     parts = ['<h1>My Japanese Event card wishlist</h1>',
              '<p class="sub">Private - only visible while you are logged in.</p>',
              f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still looking for'
@@ -691,7 +716,11 @@ def mine_page():
                      else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
     if alt_wants:
         parts += ['<h2 style="margin-top:40px">Alt-art / Manga versions you want</h2>', _price_html(price_cache, len(alt_wants)),
-                  f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
+                  '<div class="gb" role="group" aria-label="Group by"><span>Group by</span>'
+                  '<button type="button" data-g="set" aria-pressed="true">Card set</button>'
+                  '<button type="button" data-g="src" aria-pressed="false">Collection</button></div>',
+                  f'<div id="alt-set"><nav class="chips" aria-label="Jump to a set">{nav2}</nav>{body2}</div>',
+                  f'<div id="alt-src" hidden><nav class="chips" aria-label="Jump to a collection">{nav3}</nav>{body3}</div>']
     parts.append('<footer>Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample watermark). '
                  'Not affiliated with Bandai. &copy; Eiichiro Oda / Shueisha / Toei Animation / Bandai.</footer>')
     fav = re.search(r'<link rel="icon"[^>]*>', LOGIN_HTML)
@@ -700,7 +729,7 @@ def mine_page():
             '<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">'
             '<title>My wishlist</title>'
             f'{fav.group(0) if fav else ""}<style>{SHARE_CSS}</style></head><body><main>{"".join(parts)}</main>'
-            f'<script>{SHARE_JS}</script></body></html>')
+            f'<script>{SHARE_JS}</script>{GROUP_JS}</body></html>')
     return resp(200, page, 'text/html; charset=utf-8', extra=_HEAD)
 
 
