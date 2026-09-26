@@ -509,15 +509,19 @@ def _placeholders(owned, num):
     return [k.upper() for k in ('en', 'kr') if e.get(k)]
 
 
-def _figure(c, info, alt, token, pics, ph=()):
+def _figure(c, info, alt, token, pics, ph=(), price=None):
     """One card. alt = None for the standard card, or an alt-art / Manga id such as 'p2'. token = None means the
-    private "/mine" view: the fallback route is the ordinary authenticated image route instead of a share link."""
+    private "/mine" view: the fallback route is the ordinary authenticated image route instead of a share link.
+    price (private view only): {'lo': yen, 'oos': bool} for this exact alt-art / Manga version, if checked."""
     n, alts = c['num'], list(info.get('alt') or [])
     pid = f'{n}_{alt}' if alt else n
     jp = info.get('jp', '')
     tag = f'<span class="tag">{_e(_alt_label(c, alts, alt))}</span>' if alt else ''
     if alt and _alt_note(c, alt):
         tag += f'<span class="jp">{_e(_alt_note(c, alt))}</span>'
+    if price:
+        tag += (f'<span class="pc{" oos" if price["oos"] else ""}">¥{price["lo"]:,}'
+                + (' <small>sold out</small>' if price['oos'] else '') + '</span>')
     pic = ''
     if pics:
         src = f'/w/{token}/img/{pid}.png' if token else f'/card_images_jp/{pid}.png'     # the link target and the retry fallback
@@ -557,8 +561,10 @@ def _sections(items, info, prefix, token, pics, totals, owned=None):
     return nav, body
 
 
-def _alt_sections(pairs, info, token, pics):
-    """The alt-art / Manga versions I want, by set (a card can appear more than once, once per version)."""
+def _alt_sections(pairs, info, token, pics, prices=None):
+    """The alt-art / Manga versions I want, by set (a card can appear more than once, once per version).
+    prices (private view only): {(num, alt): {'lo': yen, 'oos': bool}}."""
+    prices = prices or {}
     groups = []
     for c, a in pairs:
         if not groups or groups[-1][0] != c['set']:
@@ -567,7 +573,7 @@ def _alt_sections(pairs, info, token, pics):
     nav = ''.join(f'<a href="#f-{_e(s)}">{_e(s)} <i>{len(ps)} wanted</i></a>' for s, ps in groups)
     body = ''.join(f'<section id="f-{_e(s)}"><h2>{_e(s)} <small>{len(ps)} wanted</small></h2>'
                    f'<div class="g{"" if pics else " t"}">'
-                   + ''.join(_figure(c, info.get(c['num'], {}), a, token, pics) for c, a in ps) + '</div></section>'
+                   + ''.join(_figure(c, info.get(c['num'], {}), a, token, pics, price=prices.get((c['num'], a))) for c, a in ps) + '</div></section>'
                    for s, ps in groups)
     return nav, body
 
@@ -590,6 +596,8 @@ figcaption{display:flex;flex-direction:column;gap:1px;padding-top:6px;font-size:
 .tag{align-self:flex-start;margin-top:3px;background:var(--accbg);color:var(--acc);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
 a.bl{margin-top:4px;color:var(--acc);font-size:12.5px;font-weight:600;text-decoration:none}a.bl:hover{text-decoration:underline}
 .tag.ph{background:var(--amberbg);color:var(--amber)}
+.pc{align-self:flex-start;margin-top:3px;font-size:12.5px;font-weight:700;color:var(--ink)}
+.pc.oos{color:var(--mute);text-decoration:line-through}.pc small{font-weight:500;color:var(--mute);text-decoration:none;margin-left:4px}
 .cf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0 0;padding:8px 0}
 @media(min-width:700px){.cf{position:sticky;top:0;z-index:3;background:var(--bg)}}
 .cf[hidden]{display:none}.cf>span:first-child{font-size:13px;color:var(--mute);font-weight:600;margin-right:2px}
@@ -664,8 +672,10 @@ def mine_page():
             t[c['set']] = t.get(c['set'], 0) + 1
         return t
 
+    price_cache = _load_price_cache()
+    prices = {(it['num'], it['ver']): {'lo': it['lo'], 'oos': it['oos']} for it in (price_cache or {}).get('items') or []}
     nav1, body1 = _sections(missing, info, 'm', None, True, per_set(cards), owned)
-    nav2, body2 = _alt_sections(alt_wants, info, None, True)
+    nav2, body2 = _alt_sections(alt_wants, info, None, True, prices)
     parts = ['<h1>My Japanese Event card wishlist</h1>',
              '<p class="sub">Private - only visible while you are logged in.</p>',
              f'<p class="stat"><b>{len(missing)}</b> of {len(cards)} still looking for'
@@ -680,7 +690,7 @@ def mine_page():
         parts.append('<div class="done">Nothing left to find &mdash; everything you still need is already on its way!</div>' if on_way
                      else '<div class="done">Nothing missing right now &mdash; the collection is complete!</div>')
     if alt_wants:
-        parts += ['<h2 style="margin-top:40px">Alt-art / Manga versions you want</h2>', _price_html(_load_price_cache(), len(alt_wants)),
+        parts += ['<h2 style="margin-top:40px">Alt-art / Manga versions you want</h2>', _price_html(price_cache, len(alt_wants)),
                   f'<nav class="chips" aria-label="Jump to a set">{nav2}</nav>', body2]
     parts.append('<footer>Pictures are the official Japanese card images from Bandai&rsquo;s card list (with their sample watermark). '
                  'Not affiliated with Bandai. &copy; Eiichiro Oda / Shueisha / Toei Animation / Bandai.</footer>')

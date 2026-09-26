@@ -316,8 +316,13 @@ check('the alt-art / Manga section shows regardless of the share link’s own fo
 check('private pictures use the ordinary authenticated route, not a share link', '/card_images_jp/OP01-027.png' in _mine['body']
       and '/w/' not in _mine['body'])
 store['data/price_cache.json'] = json.dumps({'total': 25120, 'in_stock_total': 25120, 'sold_out_total': 0, 'in_stock_count': 2,
-                                             'sold_out_count': 0, 'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z'}).encode()
-check('the price estimate is included on /mine', '¥25,120' in h(ev('GET', '/mine', cookies=ck), None)['body'])
+                                             'sold_out_count': 1, 'matched': 2, 'wanted': 2, 'fetched': '2026-09-22T14:19:00Z',
+                                             'items': [{'num': 'OP01-029', 'ver': 'p3', 'lo': 4800, 'oos': False}, {'num': 'OP09-020', 'ver': 'p2', 'lo': 20320, 'oos': True}]}).encode()
+_m = h(ev('GET', '/mine', cookies=ck), None)['body']
+check('the price estimate is included on /mine', '¥25,120' in _m)
+check('each alt-art card is labelled with its own price, sold-out ones marked', '<span class="pc">¥4,800</span>' in _m
+      and '<span class="pc oos">¥20,320 <small>sold out</small></span>' in _m)
+check('the public share page still carries no price', 'class="pc' not in page_of(sh['url'])['body'])
 del store['data/price_cache.json']
 put_share({'enabled': True, 'foil': True})
 
