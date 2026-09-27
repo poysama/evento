@@ -132,16 +132,17 @@ dialog::backdrop{background:var(--scrim)}
 .bm[hidden]{display:none}
 .bmstage{position:relative;width:min(88vw,calc(90dvh*63/88));aspect-ratio:63/88;perspective:1800px;-webkit-perspective:1800px}
 .bmgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(6px,1.6vw,18px);transform-style:preserve-3d;will-change:transform}
-.bmcard{position:relative;aspect-ratio:63/88;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.03);box-shadow:0 10px 24px rgba(0,0,0,.55);transform:perspective(900px) rotateX(0) rotateY(0) scale(1)}
-.bmcard img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;filter:grayscale(.9) brightness(.85);transition:filter .3s ease}
+.bmcard{position:relative;aspect-ratio:63/88;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.03);box-shadow:0 10px 24px rgba(0,0,0,.55);transition:box-shadow .3s ease}
+.bmart{position:absolute;inset:0;transform:perspective(900px) rotateX(0) rotateY(0) scale(1)}
+.bmart img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;filter:grayscale(.9) brightness(.85);transition:filter .3s ease}
 .bmcard.done img{filter:none}
 .bmcard.empty{background:repeating-linear-gradient(135deg,transparent,transparent 8px,rgba(255,255,255,.035) 8px,rgba(255,255,255,.035) 9px);border:1.5px dashed rgba(255,255,255,.15);box-shadow:none}
-@keyframes bmFloat{0%,100%{transform:perspective(900px) rotateX(0) rotateY(0) scale(1)}20%{transform:perspective(900px) rotateX(1deg) rotateY(0) scale(1.035)}45%{transform:perspective(900px) rotateX(-6deg) rotateY(8deg) scale(1.05)}70%{transform:perspective(900px) rotateX(6deg) rotateY(-7deg) scale(1.05)}88%{transform:perspective(900px) rotateX(-2deg) rotateY(2deg) scale(1.02)}}
-@keyframes bmHolo{0%,100%{opacity:0;background-position:15% 15%,15% 15%}20%{opacity:.7}45%{opacity:.85;background-position:85% 15%,85% 15%}70%{opacity:.85;background-position:15% 85%,15% 85%}88%{opacity:.5}}
-@media (hover:hover){.bmcard:not(.empty):hover{box-shadow:0 22px 44px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.18);animation:bmFloat 2.8s ease-in-out infinite}.bmcard:not(.empty):hover .holo{animation:bmHolo 2.8s ease-in-out infinite}}
-.bmcard.flicked{animation:bmFloat 1.3s ease-out 1}
-.bmcard.flicked .holo{animation:bmHolo 1.3s ease-out 1}
-.bmcard .holo{position:absolute;inset:0;pointer-events:none;opacity:0;mix-blend-mode:overlay;
+@keyframes bmFloat{0%{transform:perspective(900px) rotateX(0) rotateY(0) scale(1.02)}25%{transform:perspective(900px) rotateX(-7deg) rotateY(8deg) scale(1.06)}50%{transform:perspective(900px) rotateX(6deg) rotateY(3deg) scale(1.04)}75%{transform:perspective(900px) rotateX(2deg) rotateY(-8deg) scale(1.06)}100%{transform:perspective(900px) rotateX(0) rotateY(0) scale(1.02)}}
+@keyframes bmHolo{0%{opacity:.35;background-position:20% 80%,20% 80%}25%{opacity:.85;background-position:85% 15%,85% 15%}50%{opacity:.6;background-position:50% 90%,50% 90%}75%{opacity:.85;background-position:15% 20%,15% 20%}100%{opacity:.35;background-position:20% 80%,20% 80%}}
+@media (hover:hover){.bmcard:not(.empty):hover{box-shadow:0 22px 44px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.18)}.bmcard:not(.empty):hover .bmart{animation:bmFloat 4s linear infinite}.bmcard:not(.empty):hover .holo{animation:bmHolo 4s linear infinite}}
+.bmcard.flicked .bmart{animation:bmFloat 1.6s ease-out 1}
+.bmcard.flicked .holo{animation:bmHolo 1.6s ease-out 1}
+.holo{position:absolute;inset:0;pointer-events:none;opacity:0;mix-blend-mode:overlay;
   background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.9),transparent 45%),
              linear-gradient(115deg,transparent 28%,rgba(255,80,170,.55) 38%,rgba(255,225,110,.6) 46%,rgba(120,255,190,.55) 54%,rgba(110,180,255,.6) 62%,transparent 74%);
   background-size:180% 180%,240% 240%}
@@ -667,9 +668,10 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     var d = el('div', 'bmcard');
     if (!c) { d.classList.add('empty'); return d; }
     if (complete(c.num)) d.classList.add('done');          // same grayscale-until-owned treatment as the binder grid; on order stays gray
-    var sv = artMode === 'jp' ? shownVer(c.num) : '';
+    var art = el('div', 'bmart');                          // the hover hit-box (.bmcard) never itself transforms, or tilting it would
+    var sv = artMode === 'jp' ? shownVer(c.num) : '';       // move it out from under the cursor and keep restarting the animation
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num, null, sv);
-    d.appendChild(img); d.appendChild(el('div', 'holo'));
+    art.appendChild(img); art.appendChild(el('div', 'holo')); d.appendChild(art);
     d.addEventListener('touchstart', bmFlick, { passive: true });      // no hover on touch: a tap plays the same wobble once
     d.addEventListener('animationend', function () { d.classList.remove('flicked'); });
     return d;
