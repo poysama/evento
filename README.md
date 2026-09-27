@@ -115,9 +115,11 @@ are retried if the site is busy, so a page never gets stuck on the other languag
 
 Every alt-art (parallel) and Manga picture has its own mark: **Want it**, **On order** or **Have it**. The **Alt art**
 button opens a page with all of them: tap a picture to cycle Want, On order, Have, clear, filter by mark, or show only
-Manga. In the card viewer, pick a version under the picture and mark it there. Marks never change whether the card
-counts as complete. The share page's optional "alt-art / Manga versions I want" section lists only the versions marked
-Want (with pictures). The old on/off Manga flag is converted to a Have mark on the Manga version.
+Manga. In the card viewer, pick a version under the picture and mark it there. Marking a version **Have it** counts
+the whole card as collected, even without the standard JP print - it already takes the card's slot in the binder,
+so it counts the same way. Want and On order marks do not. The share page's optional "alt-art / Manga versions I want"
+section lists only the versions marked Want (with pictures). The old on/off Manga flag is converted to a Have mark on
+the Manga version.
 
 ## Foil is an optional extra
 
@@ -145,4 +147,5 @@ with as few products as possible. The Boosters / Starter decks / Promos filter l
 ## Manga and alt-art
 
 Cards with a Japanese alt-art printing get Standard / Alt art buttons in the card viewer; the four Manga Events
-(OP09-020, -057, -078, -096) are marked and have an optional "Manga" owned flag that never affects completion.
+(OP09-020, -057, -078, -096) are marked and have an optional "Manga" owned flag - a Have mark on it counts the
+card as complete, same as any other alt-art version.
