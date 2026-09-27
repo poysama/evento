@@ -208,7 +208,7 @@ check('a link that was never created is 404', page_of('/w/' + 'a' * 22)['statusC
 # owned cards must NOT appear on the page; everything else must
 store['data/collection.json'] = json.dumps({'ST01-014': {'jp': True}, 'OP01-026': {'jp': True, 'foil': True},
                                             'OP01-027': {'kr': True},
-                                            'OP01-029': {'alt': {'p3': 'want', 'p4': 'have'}},       # two alt arts: one wanted, one in hand
+                                            'OP01-029': {'alt': {'p3': 'want', 'p4': 'have'}},       # two alt arts: one wanted, one in hand - the "have" completes the card on its own
                                             'OP09-020': {'alt': {'p2': 'want'}},                     # the Manga version, wanted
                                             'OP01-030': {'alt': {'p1': 'ordered'}}}).encode()        # an alt art already on order
 sh = json.loads(put_share({'enabled': True, 'name': 'Poy', 'message': 'Any condition is fine!'})['body'])
@@ -218,22 +218,23 @@ body = pg['body']
 check('the public page needs no login', pg['statusCode'] == 200 and 'looking for' in body)
 check('it lists what is missing, with name and code', 'Round Table' in body and 'OP01-027' in body and 'Punk Gibson' in body)
 check('cards already owned in JP are left off', 'Guard Point' not in body and 'ST01-014' not in body and 'OP01-026' not in body)
+check('a card completed by an alt-art / Manga "have" mark is left off too, even without the standard JP print', 'Radical Beam' not in body and 'OP01-029 &middot;' not in body)
 check('a card held only as a KR/EN placeholder still counts as missing', 'OP01-027' in body)
 check('it shows the header, name and message', 'Poy' in body and 'Any condition is fine!' in body and '</b> of 410 still looking for' in body)
 check('pills and headings say how many are missing per set', 'ST-01 <i>need 2 of 3</i>' in body and 'ST-01 <small>2 of 3 missing</small>' in body
       and 'ST-02 <i>need all 3</i>' in body and 'P-2207 <i>need it</i>' in body and '/3<' not in body.split('<nav')[1].split('</nav>')[0])
-check('missing count is right', f'<b>{410 - 2}</b> of 410 still looking for' in body)
+check('missing count is right', f'<b>{410 - 3}</b> of 410 still looking for' in body)
 check('Japanese names are included for finding cards in shops', 'lang="ja"' in body)
 tok = sh['url'].rsplit('/', 1)[1]
 imgs = _re.findall(r'data-s="([^"]+)"', body)
 direct = _re.findall(r'<img src="([^"]+)"', body)
 check('every picture has a fallback through this same secret link',
-      len(imgs) == 408 and all(_re.fullmatch(r'/w/' + tok + r'/img/(?:[A-Z]{2,3}\d{2}|P)-\d{3}\.png', u) for u in imgs) and 'card_images' not in body)
+      len(imgs) == 407 and all(_re.fullmatch(r'/w/' + tok + r'/img/(?:[A-Z]{2,3}\d{2}|P)-\d{3}\.png', u) for u in imgs) and 'card_images' not in body)
 check('pictures load directly from the private bucket (never through the function), from no other site',
-      len(direct) == 408 and all(u.startswith('https://fake-bucket.s3.ap-southeast-1.amazonaws.com/images_jp/') and 'Expires=3600' in u for u in direct)
+      len(direct) == 407 and all(u.startswith('https://fake-bucket.s3.ap-southeast-1.amazonaws.com/images_jp/') and 'Expires=3600' in u for u in direct)
       and not _re.search(r'src="https?://(?!fake-bucket\.s3)', body))
 check('each card links out to its page on Bandai\'s official list',
-      body.count('href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55') == 408 and 'rel="noopener noreferrer"' in body)
+      body.count('href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55') == 407 and 'rel="noopener noreferrer"' in body)
 check('the secret link is never sent to other sites as a referrer',
       pg['headers']['Referrer-Policy'] == 'no-referrer' and 'name="referrer" content="no-referrer"' in body)
 check('the page is kept out of search engines', 'noindex' in pg['headers']['X-Robots-Tag'] and 'noindex' in body)
@@ -259,10 +260,10 @@ store['data/collection.json'] = _saved
 
 # colour filter + "have a non-JP copy" tag
 _figs = _re.findall(r'<figure class="c" data-c="([^"]*)"', body)
-check('every card carries its colour', len(_figs) == 408 and set(_figs) <= {'Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'})
+check('every card carries its colour', len(_figs) == 407 and set(_figs) <= {'Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'})
 _btns = _re.findall(r'<button type="button" data-c="(\w+)" aria-pressed="false"><i [^>]*></i>\w+ <b>(\d+)</b></button>', body)
 check('there is a filter button per colour, with the number still missing', [b[0] for b in _btns] == ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow']
-      and sum(int(b[1]) for b in _btns) == 408 and all(int(b[1]) == _figs.count(b[0]) for b in _btns))
+      and sum(int(b[1]) for b in _btns) == 407 and all(int(b[1]) == _figs.count(b[0]) for b in _btns))
 check('the filter starts hidden until the script runs (page still works without it)', '<div class="cf" role="group" aria-label="Filter by colour" hidden>' in body)
 check('each caption names the colour', 'OP01-027 &middot; ' in body and _re.search(r'<code>OP01-027 &middot; \w+ &middot; (Red|Green|Blue|Purple|Black|Yellow)</code>', body))
 check('a card I only hold as a KR copy says so, and nothing else is tagged', body.count('class="tag ph"') == 1
@@ -399,7 +400,7 @@ ntok = np['url'].rsplit('/', 1)[1]
 nbody = page_of(np['url'])['body']
 check('with pictures off the page has no images at all', np['pics'] is False and '<img' not in nbody and 'class="p"' not in nbody)
 check('with pictures off it still lists the cards and links to Bandai',
-      'Round Table' in nbody and 'OP01-027' in nbody and nbody.count('Bandai card list &rarr;') == 408 and 'Pictures are not included' in nbody)
+      'Round Table' in nbody and 'OP01-027' in nbody and nbody.count('Bandai card list &rarr;') == 407 and 'Pictures are not included' in nbody)
 check('with pictures off the picture route serves nothing', pic(ntok, 'OP01-027.png')['statusCode'] == 404)
 check('pictures can be turned back on', json.loads(put_share({'pics': True})['body'])['pics'] is True and pic(ntok, 'OP01-027.png')['statusCode'] == 302)
 check('the pictures switch must be true or false', put_share({'pics': 'no'})['statusCode'] == 400)

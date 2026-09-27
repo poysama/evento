@@ -422,8 +422,13 @@ def _wishlist(cfg, max_age=0):
     cards, info = _catalog()
     owned = _owned(max_age)
     have = lambda c, k: (owned.get(c['num']) or {}).get(k)
-    on_way = [c for c in cards if have(c, 'ordered') and not have(c, 'jp')]           # bought, waiting for delivery
-    missing = [c for c in cards if not have(c, 'jp') and not have(c, 'ordered')]      # still looking for
+    def complete(c):        # a Manga / alt-art "have" mark counts the whole card, even without the standard JP print
+        if have(c, 'jp'):
+            return True
+        alt = have(c, 'alt') or {}
+        return any(v == 'have' for v in alt.values())
+    on_way = [c for c in cards if have(c, 'ordered') and not complete(c)]           # bought, waiting for delivery
+    missing = [c for c in cards if not complete(c) and not have(c, 'ordered')]      # still looking for
     # alt-art / Manga versions I marked "want" (never the ones on order or in hand); only when the share option is on
     alt_wants = []
     if cfg.get('foil'):
