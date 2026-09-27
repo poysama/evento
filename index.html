@@ -127,6 +127,27 @@ dialog::backdrop{background:var(--scrim)}
 
 @media print{.top,.pg,.warn,.i,.hov{display:none}body{padding:0;background:#fff}}
 
+/* ---- Binder Mode: fullscreen, distraction-free flip-through ---- */
+.bm{position:fixed;inset:0;z-index:100;background:radial-gradient(120% 120% at 50% 0%,#1c2734,#05070b 70%);display:flex;align-items:center;justify-content:center;touch-action:none}
+.bm[hidden]{display:none}
+.bmstage{position:relative;width:min(88vw,calc(90dvh*63/88));aspect-ratio:63/88;perspective:1800px;-webkit-perspective:1800px}
+.bmgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(6px,1.6vw,18px);transform-style:preserve-3d;will-change:transform}
+.bmcard{position:relative;aspect-ratio:63/88;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.03);box-shadow:0 10px 24px rgba(0,0,0,.55);transition:transform .18s ease,box-shadow .18s ease;transform:perspective(700px) rotateX(0) rotateY(0) scale(1)}
+.bmcard img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.bmcard.empty{background:repeating-linear-gradient(135deg,transparent,transparent 8px,rgba(255,255,255,.035) 8px,rgba(255,255,255,.035) 9px);border:1.5px dashed rgba(255,255,255,.15);box-shadow:none}
+@media (hover:hover){.bmcard:not(.empty):hover{box-shadow:0 20px 40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.18)}}
+.bmcard .sheen{position:absolute;inset:0;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.35) 50%,transparent 60%);transform:translateX(-120%);pointer-events:none;opacity:0;transition:opacity .2s,transform .5s}
+.bmcard:hover .sheen{opacity:1;transform:translateX(120%)}
+.bmx,.bmnav{all:unset;position:fixed;box-sizing:border-box;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);border-radius:50%;cursor:pointer}
+.bmx{top:calc(14px + env(safe-area-inset-top,0px));right:14px;width:42px;height:42px;font-size:16px}
+.bmnav{top:50%;transform:translateY(-50%);width:52px;height:52px;font-size:24px;opacity:.5;transition:opacity .2s}
+@media (hover:hover){.bmx:hover,.bmnav:hover{opacity:1;background:rgba(255,255,255,.16)}}
+.bmnav:focus-visible,.bmx:focus-visible{opacity:1}
+.bmnav:disabled{opacity:.12;cursor:default}
+.bml{left:14px}.bmr{right:14px}
+@media (max-width:680px){.bmnav{width:40px;height:40px;font-size:19px;opacity:.65}.bml{left:6px}.bmr{right:6px}.bmx{width:36px;height:36px;top:10px;right:10px}}
+@media (prefers-reduced-motion:reduce){.bmcard{transition:none}.bmcard .sheen{display:none}}
+
 /* ---- wide desktop: sidebar + full-height 4x4, no vertical scrolling ---- */
 .app,.side{display:contents}
 .fl,.pv{display:none}
@@ -295,7 +316,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="bmbtn">Binder Mode</button><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
@@ -327,6 +348,13 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 </main>
 </div>
 
+<div class="bm" id="bm" role="dialog" aria-modal="true" aria-label="Binder mode" tabindex="-1" hidden>
+  <button type="button" class="bmx" id="bmclose" aria-label="Exit binder mode">✕</button>
+  <button type="button" class="bmnav bml" id="bmprev" aria-label="Previous page">‹</button>
+  <div class="bmstage"><div class="bmgrid" id="bmgrid"></div></div>
+  <button type="button" class="bmnav bmr" id="bmnext" aria-label="Next page">›</button>
+</div>
+
 <dialog id="dlg" aria-label="Card viewer"></dialog>
 <dialog id="pkdlg" aria-label="Passkeys"></dialog>
 <dialog id="shdlg" aria-label="Share what I am looking for"></dialog>
@@ -341,7 +369,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   var PER = 16, cards = [], col = {}, page = 1, N = 1, firstPage = {};
   var saveTimer = null, saving = false, dirty = false, openNum = null;
   var $ = function (id) { return document.getElementById(id); };
-  var grid = $('grid'), dlg = $('dlg');
+  var grid = $('grid'), dlg = $('dlg'), bm = $('bm');
   var KEYS = ['jp', 'foil', 'en', 'kr', 'ordered'];
   var ALT_ST = ['want', 'ordered', 'have'];          // per alt-art / Manga version: collecting it, bought and on the way, in hand
 
@@ -378,6 +406,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     return '';
   }
   function anyHave(n) { var e = col[n]; return !!(e && e.alt && Object.keys(e.alt).some(function (a) { return e.alt[a] === 'have'; })); }
+  function complete(n) { return has(n, 'jp') || anyHave(n); }     // owning an alt-art / Manga "have" counts the whole card, even without the standard JP print
   function phList(n) { var a = []; if (has(n, 'en')) a.push('EN'); if (has(n, 'kr')) a.push('KR'); return a; }
   function pageOf(i) { return Math.floor(i / PER) + 1; }
 
@@ -458,7 +487,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 
   /* ---------- status text (one place, used by tile + panel) ---------- */
   function jpText(c, long) {
-    if (has(c.num, 'jp')) return long ? 'JP card complete' : 'JP ✓ Complete';
+    if (complete(c.num)) return long ? 'JP card complete' : 'JP ✓ Complete';
     if (ordered(c.num)) return long ? 'On order (bought by proxy), waiting for delivery' : 'On order';
     var p = phList(c.num);
     if (p.length) return long ? 'No JP card yet — has ' + p.join('/') + ' as a placeholder' : 'No JP yet · ' + p.join('/');
@@ -469,11 +498,11 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   /* ---------- rendering ---------- */
   function tile(c, i) {
     var pos = 'R' + (Math.floor(i / 4) + 1) + 'C' + (i % 4 + 1);
-    var d = has(c.num, 'jp'), p = phList(c.num).length > 0, o = ordered(c.num);
+    var jpOwned = has(c.num, 'jp'), d = complete(c.num), p = phList(c.num).length > 0, o = ordered(c.num);
     var card = el('div', 'card' + (d ? ' done' : '') + (p ? ' hasph' : '') + (o ? ' ord' : ''));
     card.dataset.n = c.num;
     var art = el('button', 'art'); art.type = 'button'; art.setAttribute('aria-pressed', d);
-    art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (d ? 'not owned' : 'owned')) + '.');
+    art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (jpOwned ? 'not owned' : 'owned')) + '.');
     var sv = artMode === 'jp' ? shownVer(c.num) : '';            // an alt art / Manga I own takes the slot, as in the real binder
     if (sv) card.classList.add('shown');
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num, null, sv);
@@ -521,7 +550,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   function stats() {
     var jp = 0, ph = 0, fo = 0, oo = 0;
     cards.forEach(function (c) {
-      if (has(c.num, 'jp')) jp++; else { if (ordered(c.num)) oo++; if (phList(c.num).length) ph++; }
+      if (complete(c.num)) jp++; else { if (ordered(c.num)) oo++; if (phList(c.num).length) ph++; }
       if (tagged(c.num, 'foil')) fo++;
     });
     $('fill').style.width = (jp / cards.length * 100) + '%';
@@ -614,7 +643,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   $('pagesel').addEventListener('change', function () { go(+this.value); });
   $('setsel').addEventListener('change', function () { if (this.value) go(+this.value); this.value = ''; });
   document.addEventListener('keydown', function (e) {
-    if (dlg.open || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (dlg.open || !bm.hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
     if (e.key === 'ArrowLeft') go(page - 1, -1); else if (e.key === 'ArrowRight') go(page + 1, 1);
   });
   var sx = 0, sy = 0, st = 0;
@@ -624,6 +653,64 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     if (Date.now() - st < 700 && Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 2) go(page + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1);
   }, { passive: true });
 
+  /* ---------- binder mode: fullscreen, no codes, no text — just the cards ---------- */
+  var bmg = $('bmgrid'), bmPrev = $('bmprev'), bmNext = $('bmnext'), bmStage = bm.querySelector('.bmstage'), bmOn = false;
+  function bmTile(c) {
+    var d = el('div', 'bmcard');
+    if (!c) { d.classList.add('empty'); return d; }
+    var sv = artMode === 'jp' ? shownVer(c.num) : '';
+    var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num, null, sv);
+    d.appendChild(img); d.appendChild(el('div', 'sheen'));
+    d.addEventListener('mousemove', bmTilt); d.addEventListener('mouseleave', bmUntilt);
+    return d;
+  }
+  function bmTilt(e) {
+    var r = this.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - .5, py = (e.clientY - r.top) / r.height - .5;
+    this.style.transform = 'perspective(700px) rotateX(' + (-py * 16).toFixed(2) + 'deg) rotateY(' + (px * 16).toFixed(2) + 'deg) scale(1.09)';
+  }
+  function bmUntilt() { this.style.transform = ''; }
+  function bmRender() {
+    var pg = cards.slice((page - 1) * PER, page * PER), frag = document.createDocumentFragment();
+    for (var i = 0; i < PER; i++) frag.appendChild(bmTile(pg[i]));
+    bmg.replaceChildren(frag);
+    bmPrev.disabled = page <= 1; bmNext.disabled = page >= N;
+  }
+  function bmTurn(dir) {
+    if ((dir > 0 && page >= N) || (dir < 0 && page <= 1)) return;
+    if (!bmg.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { go(page + dir, dir); bmRender(); return; }
+    var away = dir > 0 ? -92 : 92, back = dir > 0 ? 92 : -92;
+    bmg.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(' + away + 'deg)' }], { duration: 190, easing: 'ease-in' }).onfinish = function () {
+      go(page + dir, dir); bmRender();
+      bmg.animate([{ transform: 'rotateY(' + back + 'deg)' }, { transform: 'rotateY(0deg)' }], { duration: 190, easing: 'ease-out' });
+    };
+  }
+  bmPrev.addEventListener('click', function () { bmTurn(-1); });
+  bmNext.addEventListener('click', function () { bmTurn(1); });
+  bmStage.addEventListener('click', function (e) {
+    var r = bmStage.getBoundingClientRect();
+    bmTurn(e.clientX - r.left < r.width / 2 ? -1 : 1);
+  });
+  var bsx = 0, bsy = 0, bst = 0;
+  bm.addEventListener('touchstart', function (e) { var t = e.changedTouches[0]; bsx = t.clientX; bsy = t.clientY; bst = Date.now(); }, { passive: true });
+  bm.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - bsx, dy = t.clientY - bsy;
+    if (Date.now() - bst < 700 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) bmTurn(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  function bmOpen() {
+    bmOn = true; bm.hidden = false; bmRender(); bm.focus();
+    try { (bm.requestFullscreen || bm.webkitRequestFullscreen || function () {}).call(bm); } catch (e) {}
+  }
+  function bmClose() {
+    bmOn = false; bm.hidden = true;
+    if (document.fullscreenElement === bm) { try { document.exitFullscreen(); } catch (e) {} }
+  }
+  document.addEventListener('fullscreenchange', function () { if (bmOn && document.fullscreenElement !== bm) bmClose(); });
+  $('bmbtn').addEventListener('click', bmOpen);
+  $('bmclose').addEventListener('click', bmClose);
+  document.addEventListener('keydown', function (e) {
+    if (!bmOn) return;
+    if (e.key === 'Escape') bmClose(); else if (e.key === 'ArrowLeft') bmTurn(-1); else if (e.key === 'ArrowRight') bmTurn(1);
+  });
 
   /* ---------- hover preview (wide desktop sidebar) ---------- */
   var pvEl = $('pv');
@@ -635,7 +722,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     var img = el('img'); img.alt = c.name; artImg(img, c.num, null, artMode === 'jp' ? shownVer(c.num) : ''); pvEl.appendChild(img);
     pvEl.appendChild(el('h3', '', c.name));
     pvEl.appendChild(el('div', 'meta', c.num + ' · ' + c.set + ' · ' + c.rar + ' · R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1)));
-    pvEl.appendChild(el('div', 'note' + (has(c.num, 'jp') ? ' done' : ordered(c.num) ? ' ord' : ''), jpText(c, true) + '.' + (ordered(c.num) && noteOf(c.num) ? ' ' + noteOf(c.num) : '')));
+    pvEl.appendChild(el('div', 'note' + (complete(c.num) ? ' done' : ordered(c.num) ? ' ord' : ''), jpText(c, true) + '.' + (ordered(c.num) && noteOf(c.num) ? ' ' + noteOf(c.num) : '')));
     if (tagged(c.num, 'foil')) pvEl.appendChild(el('div', 'small', '★ Foil in hand'));
   }
   grid.addEventListener('mouseover', function (e) { var t = e.target.closest('.card[data-n]'); if (t) preview(t.dataset.n); });
@@ -781,20 +868,20 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
       vw.prev.disabled = vidx <= 0; vw.next.disabled = vidx >= cards.length - 1;
       [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) preloadArt(cards[k].num, vwMode); });
     }
-    var done = has(n, 'jp');
+    var jpOwned = has(n, 'jp'), done = complete(n);
     vw.note.className = 'note' + (done ? ' done' : ordered(n) ? ' ord' : '');
     vw.note.textContent = jpText(c, true) + (tagged(n, 'foil') ? ' · Foil in hand' : '') + '.';
-    vw.jp.setAttribute('aria-pressed', done ? 'true' : 'false');
-    vw.jp.textContent = done ? '✓  JP card complete' : ordered(n) ? 'Received: mark JP card complete' : 'Mark JP card complete';
-    vw.ord.hidden = done; vw.ord.setAttribute('aria-pressed', ordered(n) ? 'true' : 'false');
+    vw.jp.setAttribute('aria-pressed', jpOwned ? 'true' : 'false');
+    vw.jp.textContent = jpOwned ? '✓  JP card complete' : ordered(n) ? 'Received: mark JP card complete' : done ? 'Also have the standard JP card' : 'Mark JP card complete';
+    vw.ord.hidden = jpOwned; vw.ord.setAttribute('aria-pressed', ordered(n) ? 'true' : 'false');
     vw.ord.textContent = ordered(n) ? '✓ On order (bought by proxy)' : 'Bought by proxy, on the way';
-    vw.onote.hidden = done || !ordered(n);
+    vw.onote.hidden = jpOwned || !ordered(n);
     if (newCard || document.activeElement !== vw.onote) vw.onote.value = noteOf(n);
     vw.en.setAttribute('aria-pressed', has(n, 'en') ? 'true' : 'false'); vw.en.textContent = 'EN copy';
     vw.kr.setAttribute('aria-pressed', has(n, 'kr') ? 'true' : 'false'); vw.kr.textContent = 'KR copy';
-    vw.foil.disabled = !done; vw.foil.setAttribute('aria-pressed', tagged(n, 'foil') ? 'true' : 'false'); vw.foil.textContent = '★ Foil';
+    vw.foil.disabled = !jpOwned; vw.foil.setAttribute('aria-pressed', tagged(n, 'foil') ? 'true' : 'false'); vw.foil.textContent = '★ Foil';
     vw.art.textContent = (vwAlt ? 'Showing the Japanese ' + (c.manga === vwAlt ? 'Manga' : 'alt-art') + ' version. '
-      : vwShowingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + (done ? '' : 'Tick Foil after the JP card is complete. ') + 'Swipe or use ‹ › for the next card.';
+      : vwShowingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + (jpOwned ? '' : 'Tick Foil after the JP card is complete. ') + 'Swipe or use ‹ › for the next card.';
     var isAlt = !!vwAlt;                 // an alt-art / Manga picture is showing: its own marks replace the standard-card controls
     vw.note.hidden = vw.jp.hidden = vw.row.hidden = isAlt;
     if (isAlt) { vw.ord.hidden = true; vw.onote.hidden = true; }
@@ -804,7 +891,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     if (isAlt) {
       var ast = altState(n, vwAlt);
       vw.altt.className = 'note' + (ast === 'have' ? ' done' : ast === 'ordered' ? ' ord' : '');
-      vw.altt.textContent = verLabel(c, vwAlt) + ': ' + (ast === 'have' ? 'in hand' : ast === 'ordered' ? 'on order' : ast === 'want' ? 'you want this one' : 'not marked') + '. Marks here never change whether the card counts as complete.';
+      vw.altt.textContent = verLabel(c, vwAlt) + ': ' + (ast === 'have' ? 'in hand' : ast === 'ordered' ? 'on order' : ast === 'want' ? 'you want this one' : 'not marked') + '. ' + (ast === 'have' ? 'Having this version counts the whole card as collected.' : 'Marking it Have it will count the whole card as collected.');
       vw.altd.textContent = verNote(c, vwAlt);
       vw.asb.hidden = ast !== 'have'; vw.asb.setAttribute('aria-pressed', shownVer(n) === vwAlt ? 'true' : 'false');
       vw.asb.textContent = shownVer(n) === vwAlt ? '▣ Shown in my binder' : '▣ Show this in my binder';
@@ -926,7 +1013,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 
   /* ---------- share "what I'm looking for" with friends ---------- */
   var shBtn = $('shbtn'), shDlg = $('shdlg'), shCfg = null, shMsg = null;
-  function missingList() { return cards.filter(function (c) { return !has(c.num, 'jp') && !ordered(c.num); }); }
+  function missingList() { return cards.filter(function (c) { return !complete(c.num) && !ordered(c.num); }); }
   function wishText(withFoil) {
     var m = missingList(), out = ["Japanese One Piece Event cards I'm looking for (" + m.length + ' of ' + cards.length + '):', ''], cur = null;
     m.forEach(function (c) {
@@ -1023,7 +1110,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   function isDeck(p) { return p.family === 'ST'; }
   function sumData(forBuy) {          // forBuy: cards already on order are not counted as missing
     var miss = {}, prods = {}, bySet = {};
-    cards.forEach(function (c) { if (!has(c.num, 'jp') && !(forBuy && ordered(c.num))) miss[c.num] = true; });
+    cards.forEach(function (c) { if (!complete(c.num) && !(forBuy && ordered(c.num))) miss[c.num] = true; });
     PROD.products.forEach(function (p) { prods[p.code] = { p: p, total: 0, miss: [], only: 0 }; bySet[p.code] = { p: p, total: 0, miss: [] }; });
     cards.forEach(function (c) {
       var src = PROD.sources[c.num] || [c.set], m = !!miss[c.num];
