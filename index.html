@@ -132,12 +132,16 @@ dialog::backdrop{background:var(--scrim)}
 .bm[hidden]{display:none}
 .bmstage{position:relative;width:min(88vw,calc(90dvh*63/88));aspect-ratio:63/88;perspective:1800px;-webkit-perspective:1800px}
 .bmgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(6px,1.6vw,18px);transform-style:preserve-3d;will-change:transform}
-.bmcard{position:relative;aspect-ratio:63/88;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.03);box-shadow:0 10px 24px rgba(0,0,0,.55);transition:transform .18s ease,box-shadow .18s ease;transform:perspective(700px) rotateX(0) rotateY(0) scale(1)}
-.bmcard img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.bmcard{position:relative;aspect-ratio:63/88;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.03);box-shadow:0 10px 24px rgba(0,0,0,.55);transition:transform .45s cubic-bezier(.22,1,.36,1),box-shadow .35s ease;transform:perspective(900px) rotateX(0) rotateY(0) scale(1);will-change:transform}
+.bmcard img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;filter:grayscale(.9) brightness(.85);transition:filter .3s ease}
+.bmcard.done img{filter:none}
 .bmcard.empty{background:repeating-linear-gradient(135deg,transparent,transparent 8px,rgba(255,255,255,.035) 8px,rgba(255,255,255,.035) 9px);border:1.5px dashed rgba(255,255,255,.15);box-shadow:none}
-@media (hover:hover){.bmcard:not(.empty):hover{box-shadow:0 20px 40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.18)}}
-.bmcard .sheen{position:absolute;inset:0;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.35) 50%,transparent 60%);transform:translateX(-120%);pointer-events:none;opacity:0;transition:opacity .2s,transform .5s}
-.bmcard:hover .sheen{opacity:1;transform:translateX(120%)}
+@media (hover:hover){.bmcard:not(.empty):hover{box-shadow:0 22px 44px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.18)}}
+.bmcard .holo{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s ease;mix-blend-mode:overlay;
+  background:radial-gradient(circle at var(--px,50%) var(--py,50%),rgba(255,255,255,.9),transparent 45%),
+             linear-gradient(115deg,transparent 28%,rgba(255,80,170,.55) 38%,rgba(255,225,110,.6) 46%,rgba(120,255,190,.55) 54%,rgba(110,180,255,.6) 62%,transparent 74%);
+  background-size:180% 180%,240% 240%;background-position:var(--px,50%) var(--py,50%),var(--px,50%) var(--py,50%)}
+.bmcard:not(.empty):hover .holo{opacity:.85}
 .bmx,.bmnav{all:unset;position:fixed;box-sizing:border-box;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);border-radius:50%;cursor:pointer}
 .bmx{top:calc(14px + env(safe-area-inset-top,0px));right:14px;width:42px;height:42px;font-size:16px}
 .bmnav{top:50%;transform:translateY(-50%);width:52px;height:52px;font-size:24px;opacity:.5;transition:opacity .2s}
@@ -146,7 +150,8 @@ dialog::backdrop{background:var(--scrim)}
 .bmnav:disabled{opacity:.12;cursor:default}
 .bml{left:14px}.bmr{right:14px}
 @media (max-width:680px){.bmnav{width:40px;height:40px;font-size:19px;opacity:.65}.bml{left:6px}.bmr{right:6px}.bmx{width:36px;height:36px;top:10px;right:10px}}
-@media (prefers-reduced-motion:reduce){.bmcard{transition:none}.bmcard .sheen{display:none}}
+.bmpg{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);color:rgba(255,255,255,.6);font:600 12px/1 var(--mono);letter-spacing:.04em;background:rgba(255,255,255,.08);padding:7px 14px;border-radius:999px;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.bmcard{transition:none}.bmcard .holo{display:none}}
 
 /* ---- wide desktop: sidebar + full-height 4x4, no vertical scrolling ---- */
 .app,.side{display:contents}
@@ -353,6 +358,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   <button type="button" class="bmnav bml" id="bmprev" aria-label="Previous page">‹</button>
   <div class="bmstage"><div class="bmgrid" id="bmgrid"></div></div>
   <button type="button" class="bmnav bmr" id="bmnext" aria-label="Next page">›</button>
+  <div class="bmpg" id="bmpg" aria-hidden="true"></div>
 </div>
 
 <dialog id="dlg" aria-label="Card viewer"></dialog>
@@ -654,26 +660,29 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   }, { passive: true });
 
   /* ---------- binder mode: fullscreen, no codes, no text — just the cards ---------- */
-  var bmg = $('bmgrid'), bmPrev = $('bmprev'), bmNext = $('bmnext'), bmStage = bm.querySelector('.bmstage'), bmOn = false;
+  var bmg = $('bmgrid'), bmPrev = $('bmprev'), bmNext = $('bmnext'), bmPageEl = $('bmpg'), bmStage = bm.querySelector('.bmstage'), bmOn = false;
   function bmTile(c) {
     var d = el('div', 'bmcard');
     if (!c) { d.classList.add('empty'); return d; }
+    if (complete(c.num)) d.classList.add('done');          // same grayscale-until-owned treatment as the binder grid; on order stays gray
     var sv = artMode === 'jp' ? shownVer(c.num) : '';
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num, null, sv);
-    d.appendChild(img); d.appendChild(el('div', 'sheen'));
+    d.appendChild(img); d.appendChild(el('div', 'holo'));
     d.addEventListener('mousemove', bmTilt); d.addEventListener('mouseleave', bmUntilt);
     return d;
   }
-  function bmTilt(e) {
-    var r = this.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - .5, py = (e.clientY - r.top) / r.height - .5;
-    this.style.transform = 'perspective(700px) rotateX(' + (-py * 16).toFixed(2) + 'deg) rotateY(' + (px * 16).toFixed(2) + 'deg) scale(1.09)';
+  function bmTilt(e) {          // a soft, lagging tilt (eased by the .bmcard transition, not this handler) plus a holo glare under the cursor
+    var r = this.getBoundingClientRect(), px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    this.style.transform = 'perspective(900px) rotateX(' + ((.5 - py) * 14).toFixed(2) + 'deg) rotateY(' + ((px - .5) * 14).toFixed(2) + 'deg) scale(1.06)';
+    this.style.setProperty('--px', (px * 100).toFixed(1) + '%'); this.style.setProperty('--py', (py * 100).toFixed(1) + '%');
   }
-  function bmUntilt() { this.style.transform = ''; }
+  function bmUntilt() { this.style.transform = ''; this.style.removeProperty('--px'); this.style.removeProperty('--py'); }
   function bmRender() {
     var pg = cards.slice((page - 1) * PER, page * PER), frag = document.createDocumentFragment();
     for (var i = 0; i < PER; i++) frag.appendChild(bmTile(pg[i]));
     bmg.replaceChildren(frag);
     bmPrev.disabled = page <= 1; bmNext.disabled = page >= N;
+    bmPageEl.textContent = page + ' / ' + N;
   }
   function bmTurn(dir) {
     if ((dir > 0 && page >= N) || (dir < 0 && page <= 1)) return;
