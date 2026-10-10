@@ -1595,8 +1595,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     });
     return out;
   }
-  function listOf(c, k) { return (c[k] || []).join(','); }
-  function mapOf(c, k) { var m = c[k] || {}; return Object.keys(m).map(function (x) { return x + '=' + m[x]; }).join(','); }
+  function listOf(c, k) { return ((c && c[k]) || []).join(','); }
+  function mapOf(c, k) { var m = (c && c[k]) || {}; return Object.keys(m).map(function (x) { return x + '=' + m[x]; }).join(','); }
   function deriveSid(set) {
     if (String(set).indexOf('P-') === 0) return 550901;
     var m = /^([A-Z]{2,3})-(\d{2})$/.exec(set);
