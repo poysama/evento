@@ -15,7 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 pkg = Path(tempfile.mkdtemp())
-for src in (REPO / 'aws' / 'lambda_function.py', REPO / 'aws' / 'share_data.json', REPO / 'index.html', REPO / 'cards.json', REPO / 'products.json'):
+for src in (REPO / 'aws' / 'lambda_function.py', REPO / 'aws' / 'share_data.json', REPO / 'index.html', REPO / 'cards.json', REPO / 'products.json', REPO / 'binders.json'):
     shutil.copy(src, pkg)
 
 os.environ.update(BUCKET='test-bucket', PASSCODE='test-passcode')
@@ -552,6 +552,29 @@ ro = j(post('/webauthn/register/options', cookies=ck))
 check('the number of passkeys is capped',
       len(json.loads(store[L.KEYS_KEY])) == L.MAX_PASSKEYS
       and post('/webauthn/register/verify', {'token': ro['token'], 'credential': Authenticator().create(ro['options'])}, ck)['statusCode'] == 400)
+
+# ----------------------------------------------------------------------------------------------
+# Editable data: the in-page editor (cards / products / share-data / binders, image upload)
+# ----------------------------------------------------------------------------------------------
+check('cards fall back to the packaged copy before any edit',
+      json.loads(h(ev('GET', '/cards.json', cookies=ck), None)['body'])[0]['num'] == 'ST01-014')
+check('the data editor needs a login', h(ev('PUT', '/api/cards', '[]'), None)['statusCode'] == 401
+      and h(ev('POST', '/api/image', json.dumps({})), None)['statusCode'] == 401)
+_cards = json.loads(h(ev('GET', '/cards.json', cookies=ck), None)['body'])
+check('cards PUT round-trips and rejects a bad shape',
+      h(ev('PUT', '/api/cards', json.dumps(_cards), cookies=ck), None)['statusCode'] == 200
+      and h(ev('PUT', '/api/cards', json.dumps([{'name': 'x'}]), cookies=ck), None)['statusCode'] == 400)
+check('binders default to Main', json.loads(h(ev('GET', '/binders.json', cookies=ck), None)['body']) == [{'id': 'main', 'name': 'Main'}])
+check('binders PUT works', h(ev('PUT', '/api/binders', json.dumps([{'id': 'main', 'name': 'Main'}, {'id': 'b2', 'name': 'Binder 2'}]), cookies=ck), None)['statusCode'] == 200
+      and 'Binder 2' in h(ev('GET', '/binders.json', cookies=ck), None)['body'])
+check('a card can carry a binder id', h(ev('PUT', '/api/cards', json.dumps(_cards + [{'name': 'X', 'num': 'OP18-001', 'rar': 'C', 'set': 'OP-18', 'col': 'Red', 'foil': False, 'slot': 1, 'binder': 'b2'}]), cookies=ck), None)['statusCode'] == 200)
+check('an edited card is served back (S3 overlay wins)',
+      'OP18-001' in h(ev('GET', '/cards.json', cookies=ck), None)['body']
+      and 'OP18-001' in h(ev('GET', '/cards.json', cookies=ck), None)['body'])
+check('share-data PUT round-trips', h(ev('PUT', '/api/share-data', json.dumps(json.loads(h(ev('GET', '/aws/share_data.json', cookies=ck), None)['body'])), cookies=ck), None)['statusCode'] == 200)
+check('image upload refuses a bad path', h(ev('POST', '/api/image', json.dumps({'path': '../etc', 'data': 'x'}), cookies=ck), None)['statusCode'] == 400)
+check('image upload writes to the bucket', h(ev('POST', '/api/image', json.dumps({'path': 'card_images_jp/OP01-026.png', 'data': base64.b64encode(b'\x89PNG\r\n\x1a\n').decode()}), cookies=ck), None)['statusCode'] == 200
+      and store.get('images_jp/OP01-026.png') == b'\x89PNG\r\n\x1a\n')
 
 shutil.rmtree(pkg, ignore_errors=True)
 if fails:

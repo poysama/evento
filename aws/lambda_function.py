@@ -138,6 +138,131 @@ def body_json(event):
     return d if isinstance(d, dict) else None
 
 
+# ---------------------------------------------------------------- editable data (cards / products / share / binders)
+# The UI can edit these. The packaged copies inside this Lambda are the base; edits are stored
+# in S3 and take precedence, so a redeploy never wipes them.
+EDITABLE = {
+    'cards': ('cards.json', 'data/cards.json', []),
+    'products': ('products.json', 'data/products.json', {'products': [], 'sources': {}}),
+    'share': ('share_data.json', 'data/share_data.json', {}),
+    'binders': ('binders.json', 'data/binders.json', [{'id': 'main', 'name': 'Main'}]),
+}
+COLOUR_SET = {'Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'}
+ALT_RE = re.compile(r'^p\d{1,2}$')
+SET_RE = re.compile(r'^(?:[A-Z]{2,3}-\d{2}|P-\d{3,4})$')
+
+
+def load_editable(name):
+    packaged, s3key, default = EDITABLE[name]
+    try:
+        return json.loads(s3.get_object(Bucket=BUCKET, Key=s3key)['Body'].read())
+    except (ClientError, ValueError):
+        try:
+            return json.loads((HERE / packaged).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return default
+
+
+def save_editable(name, data):
+    s3.put_object(Bucket=BUCKET, Key=EDITABLE[name][1], Body=json.dumps(data, ensure_ascii=False).encode(), ContentType='application/json')
+    _CACHE['cat'] = None   # edited cards/share_data must show on the share pages without a cold start
+
+
+def valid_card(c):
+    if not isinstance(c, dict):
+        return False
+    if not isinstance(c.get('name'), str) or not c['name'].strip():
+        return False
+    if not isinstance(c.get('num'), str) or not re.fullmatch(CARD, c['num']):
+        return False
+    if not isinstance(c.get('rar'), str):
+        return False
+    if not isinstance(c.get('set'), str) or not SET_RE.fullmatch(c['set']):
+        return False
+    if c.get('col') not in COLOUR_SET:
+        return False
+    if not isinstance(c.get('foil'), bool):
+        return False
+    if 'slot' in c and not isinstance(c['slot'], int):
+        return False
+    if 'binder' in c and not isinstance(c['binder'], str):
+        return False
+    if 'noen' in c and not isinstance(c['noen'], bool):
+        return False
+    if 'manga' in c and not (isinstance(c['manga'], str) and ALT_RE.fullmatch(c['manga'])):
+        return False
+    for key in ('alt', 'altsame', 'altstar'):
+        if key in c and (not isinstance(c[key], list) or not all(isinstance(a, str) and ALT_RE.fullmatch(a) for a in c[key])):
+            return False
+    for key in ('altsrc', 'alttype', 'altdup'):
+        if key in c and (not isinstance(c[key], dict) or not all(isinstance(a, str) and isinstance(v, str) for a, v in c[key].items())):
+            return False
+    return True
+
+
+def valid_cards(cards):
+    if not isinstance(cards, list):
+        return False
+    nums = set()
+    for c in cards:
+        if not valid_card(c) or c['num'] in nums:
+            return False
+        nums.add(c['num'])
+    return True
+
+
+def valid_products(products):
+    if not isinstance(products, dict) or not isinstance(products.get('products'), list):
+        return False
+    codes = set()
+    for p in products['products']:
+        if not isinstance(p, dict) or not isinstance(p.get('code'), str) or p['code'] in codes:
+            return False
+        codes.add(p['code'])
+    src = products.get('sources')
+    if not isinstance(src, dict):
+        return False
+    return all(isinstance(n, str) and isinstance(v, list) and all(isinstance(s, str) for s in v) for n, v in src.items())
+
+
+def valid_share(share):
+    if not isinstance(share, dict):
+        return False
+    for num, v in share.items():
+        if not isinstance(num, str) or not isinstance(v, dict):
+            return False
+        if not isinstance(v.get('jp'), str) or not isinstance(v.get('sid'), int):
+            return False
+        if not isinstance(v.get('alt'), list) or not all(isinstance(a, str) and ALT_RE.fullmatch(a) for a in v['alt']):
+            return False
+    return True
+
+
+def valid_binders(binders):
+    if not isinstance(binders, list):
+        return False
+    ids = set()
+    for b in binders:
+        if not isinstance(b, dict) or not isinstance(b.get('id'), str) or not b['id'] or not isinstance(b.get('name'), str):
+            return False
+        if b['id'] in ids:
+            return False
+        ids.add(b['id'])
+    return True
+
+
+def update_jp_manifest(num):
+    try:
+        mf = json.loads(s3.get_object(Bucket=BUCKET, Key='images_jp/manifest.json')['Body'].read())
+    except (ClientError, ValueError):
+        mf = []
+    if not isinstance(mf, list):
+        mf = []
+    if num not in mf:
+        mf.append(num)
+        s3.put_object(Bucket=BUCKET, Key='images_jp/manifest.json', Body=json.dumps(mf).encode(), ContentType='application/json')
+
+
 # ---------------------------------------------------------------- passkeys (WebAuthn)
 def b64u(b):
     return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
@@ -378,8 +503,7 @@ def share_gate(token):
 
 def _catalog():
     if not _CACHE['cat']:
-        _CACHE['cat'] = (json.loads((HERE / 'cards.json').read_text(encoding='utf-8')),
-                         json.loads((HERE / 'share_data.json').read_text(encoding='utf-8')))
+        _CACHE['cat'] = (load_editable('cards'), load_editable('share'))
     return _CACHE['cat']
 
 
@@ -829,9 +953,13 @@ def handler(event, context):
     if method == 'GET' and path == '/mine':
         return mine_page()
     if method == 'GET' and path == '/cards.json':
-        return resp(200, (HERE / 'cards.json').read_text(encoding='utf-8'), 'application/json')
+        return resp(200, json.dumps(load_editable('cards'), ensure_ascii=False), 'application/json')
     if method == 'GET' and path == '/products.json':
-        return resp(200, (HERE / 'products.json').read_text(encoding='utf-8'), 'application/json')
+        return resp(200, json.dumps(load_editable('products'), ensure_ascii=False), 'application/json')
+    if method == 'GET' and path == '/aws/share_data.json':
+        return resp(200, json.dumps(load_editable('share'), ensure_ascii=False), 'application/json')
+    if method == 'GET' and path == '/binders.json':
+        return resp(200, json.dumps(load_editable('binders'), ensure_ascii=False), 'application/json')
 
     if method == 'GET' and path.startswith('/card_images/'):
         name = path[len('/card_images/'):]
@@ -895,5 +1023,43 @@ def handler(event, context):
             s3.put_object(Bucket=BUCKET, Key='data/collection.json',
                           Body=json.dumps(owned, sort_keys=True).encode(), ContentType='application/json')
             return js(200, {'saved': len(owned)})
+
+    # editable data (cards / products / share / binders) - the in-page editor
+    if path in ('/api/cards', '/api/products', '/api/share-data', '/api/binders'):
+        name = {'/api/cards': 'cards', '/api/products': 'products', '/api/share-data': 'share', '/api/binders': 'binders'}[path]
+        checker = {'cards': valid_cards, 'products': valid_products, 'share': valid_share, 'binders': valid_binders}[name]
+        if method == 'GET':
+            return js(200, load_editable(name))
+        if method == 'PUT':
+            raw = body_bytes(event)
+            if len(raw) > 10_000_000:
+                return js(413, {'error': 'too large'})
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                return js(400, {'error': 'bad json'})
+            if not checker(data):
+                return js(400, {'error': 'bad shape'})
+            save_editable(name, data)
+            return js(200, {'saved': True})
+        return js(404, {'error': 'not found'})
+
+    if path == '/api/image' and method == 'POST':
+        d = body_json(event) or {}
+        rel = str(d.get('path') or '')
+        data = d.get('data')
+        if not re.fullmatch(r'(card_images|card_images_jp)/[A-Za-z0-9_-]+\.(jpg|png)', rel) or not isinstance(data, str) or not data:
+            return js(400, {'error': 'bad path'})
+        try:
+            raw = base64.b64decode(data)
+        except ValueError:
+            return js(400, {'error': 'bad image'})
+        prefix = 'images_jp/' if rel.startswith('card_images_jp/') else 'images/'
+        key = prefix + rel.split('/', 1)[1]
+        s3.put_object(Bucket=BUCKET, Key=key, Body=raw, ContentType='image/png' if rel.endswith('.png') else 'image/jpeg')
+        m = re.fullmatch(r'((?:[A-Z]{2,3}\d{2}|P)-\d{3})\.png', rel.rsplit('/', 1)[1])
+        if rel.startswith('card_images_jp/') and m:
+            update_jp_manifest(m.group(1))
+        return js(200, {'saved': rel})
 
     return js(404, {'error': 'not found'})

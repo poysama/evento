@@ -315,6 +315,17 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 .sr-i:first-child{border-top:0}.sr-i:hover,.sr-i:focus-visible{background:var(--ownbg)}
 .sr-i span{font:12px var(--mono);color:var(--mute)}.sr-i em{font-style:normal;font-size:12.5px;color:var(--mute)}
 .sm-empty{padding:26px 8px;text-align:center;font-weight:600;color:var(--own);font-size:17px}
+/* ---- data editor ---- */
+.ed-row{display:flex;flex-direction:column;gap:4px}
+.ed-row>span{font:600 11px var(--disp);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.ed-row input,.ed-row select,.ed-row textarea{border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:var(--sheet);color:var(--ink);font:inherit;width:100%;box-sizing:border-box}
+.ed-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ed-acts{display:flex;gap:8px}.ed-acts .btn{flex:1 1 0}
+.ed-note{font-size:12px;color:var(--mute);margin-top:2px}
+.card.empty .art.add{cursor:pointer;color:var(--focus);font-weight:700;border-style:dashed;background:var(--sheet)}
+.card.empty .art.add:hover{background:var(--ownbg);border-color:var(--own)}
+body.editing .card .art{border-color:var(--focus)}
+body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:4px;font-size:14px;color:var(--focus);background:rgba(15,25,38,.82);border-radius:4px;padding:2px 5px}
 </style>
 </head>
 <body>
@@ -324,12 +335,13 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
-  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="bmbtn">Binder Mode</button><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><span id="status">loading…</span></div>
+  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="bmbtn">Binder Mode</button><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><button type="button" class="mini" id="editbtn" aria-pressed="false">Edit data</button><button type="button" class="mini" id="setsbtn">Sets</button><span id="status">loading…</span></div>
   <div class="prog">
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
   </div>
   <div class="row ctl">
+    <select id="bindersel" aria-label="Binder"></select>
     <select id="setsel" aria-label="Jump to set"><option value="">Jump to set…</option></select>
     <select id="sizesel" class="sizesel" aria-label="Card size"><option value="m">Card size: Medium</option><option value="l">Card size: Large</option><option value="fit">Card size: Small (fits screen)</option></select>
     <div class="find"><input type="search" id="q" placeholder="Find a card…" aria-label="Find a card by name or code" autocomplete="off"><ul class="hits" id="hits" hidden></ul></div>
@@ -372,11 +384,14 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 <dialog id="orddlg" aria-label="Cards on order"></dialog>
 <dialog id="altdlg" aria-label="Alt art and Manga versions"></dialog>
 <dialog id="pricedlg" aria-label="Wishlist price"></dialog>
+<dialog id="eddlg" aria-label="Edit card"></dialog>
+<dialog id="setdlg" aria-label="Manage sets"></dialog>
 
 <script>
 (function () {
-  var PER = 16, cards = [], col = {}, page = 1, N = 1, firstPage = {};
+  var PER = 16, PAGES = 64, SLOTS = PAGES * PER, cards = [], col = {}, page = 1, N = PAGES, firstPage = {};
   var saveTimer = null, saving = false, dirty = false, openNum = null;
+  var bySlot = {}, share = {}, products = {}, binders = [], currentBinder = 'main', editMode = false;
   var $ = function (id) { return document.getElementById(id); };
   var grid = $('grid'), dlg = $('dlg'), bm = $('bm');
   var KEYS = ['jp', 'foil', 'en', 'kr', 'ordered'];
@@ -417,7 +432,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   function anyHave(n) { var e = col[n]; return !!(e && e.alt && Object.keys(e.alt).some(function (a) { return e.alt[a] === 'have'; })); }
   function complete(n) { return has(n, 'jp') || anyHave(n); }     // owning an alt-art / Manga "have" counts the whole card, even without the standard JP print
   function phList(n) { var a = []; if (has(n, 'en')) a.push('EN'); if (has(n, 'kr')) a.push('KR'); return a; }
-  function pageOf(i) { return Math.floor(i / PER) + 1; }
+  function pageOf(slot) { return Math.floor((slot - 1) / PER) + 1; }
 
   /* ---------- card art: Japanese card when we have it, English art as the fallback ---------- */
   var jpArt = {}, artMode = 'jp';
@@ -522,6 +537,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     if (o) art.appendChild(el('span', 'ob', 'ON ORDER'));
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
     art.addEventListener('click', function () {
+      if (editMode) { openCardEditor(c.slot); return; }
       if (window.matchMedia('(pointer: coarse)').matches) openInfo(c.num); else toggle(c.num, 'jp');
     });
     var info = el('button', 'i', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Card info: ' + c.name);
@@ -533,28 +549,36 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     card.appendChild(art); card.appendChild(info); card.appendChild(cap);
     return card;
   }
-  function emptyTile(i) {
+  function emptyTile(i, slot) {
     var card = el('div', 'card empty');
-    card.appendChild(el('div', 'art', 'reserved\nR' + (Math.floor(i / 4) + 1) + 'C' + (i % 4 + 1)));
-    card.appendChild(el('div', 'cap'));
+    var art = el('div', 'art', editMode ? '+ add card' : 'reserved\nR' + (Math.floor(i / 4) + 1) + 'C' + (i % 4 + 1));
+    if (editMode) {
+      art.classList.add('add');
+      art.setAttribute('role', 'button');
+      art.setAttribute('tabindex', '0');
+      art.addEventListener('click', function () { openCardEditor(slot); });
+    }
+    card.appendChild(art); card.appendChild(el('div', 'cap'));
     return card;
   }
   function render(dir) {
     pageGen++;
-    var pg = cards.slice((page - 1) * PER, page * PER), frag = document.createDocumentFragment(), sets = [];
-    for (var i = 0; i < PER; i++) frag.appendChild(pg[i] ? tile(pg[i], i) : emptyTile(i));
+    var base = (page - 1) * PER, frag = document.createDocumentFragment(), sets = [];
+    for (var i = 0; i < PER; i++) {
+      var slot = base + i + 1, c = bySlot[slot];
+      frag.appendChild(c ? tile(c, i) : emptyTile(i, slot));
+      if (c && sets.indexOf(c.set) < 0) sets.push(c.set);
+    }
     grid.replaceChildren(frag);
     grid.classList.remove('flip-n', 'flip-p'); void grid.offsetWidth;
     if (dir) grid.classList.add(dir > 0 ? 'flip-n' : 'flip-p');
-    pg.forEach(function (c) { if (sets.indexOf(c.set) < 0) sets.push(c.set); });
     $('ptitle').textContent = 'Page ' + page + ' of ' + N;
-    $('leaf').textContent = 'Sheet ' + Math.ceil(page / 2) + ' · ' + (page % 2 ? 'front' : 'back') + ' · slots ' + pg[0].slot + '–' + pg[pg.length - 1].slot;
+    $('leaf').textContent = 'Sheet ' + Math.ceil(page / 2) + ' · ' + (page % 2 ? 'front' : 'back') + ' · slots ' + (base + 1) + '–' + (base + PER);
     var ch = $('chips'); ch.textContent = ''; sets.forEach(function (s) { ch.appendChild(el('span', '', s)); });
     $('prev').disabled = $('prev2').disabled = page <= 1; $('next').disabled = $('next2').disabled = page >= N; $('pagesel').value = String(page);
     preview(null);
     stats();
-    // warm the neighbours so flipping is instant
-    [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) cards.slice((p - 1) * PER, p * PER).forEach(function (c) { preloadArt(c.num); }); });
+    [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) { for (var s2 = (p - 1) * PER + 1; s2 <= p * PER; s2++) { var c2 = bySlot[s2]; if (c2) preloadArt(c2.num); } } });
   }
   function stats() {
     var jp = 0, ph = 0, fo = 0, oo = 0;
@@ -678,8 +702,8 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   }
   function bmFlick() { this.classList.remove('flicked'); void this.offsetWidth; this.classList.add('flicked'); }
   function bmRender() {
-    var pg = cards.slice((page - 1) * PER, page * PER), frag = document.createDocumentFragment();
-    for (var i = 0; i < PER; i++) frag.appendChild(bmTile(pg[i]));
+    var base = (page - 1) * PER, frag = document.createDocumentFragment();
+    for (var i = 0; i < PER; i++) frag.appendChild(bmTile(bySlot[base + i + 1] || null));
     bmg.replaceChildren(frag);
     bmPrev.disabled = page <= 1; bmNext.disabled = page >= N;
     bmPageEl.textContent = page + ' / ' + N;
@@ -746,8 +770,8 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     if (!m.length) { var li = el('li'); li.appendChild(el('small', '', 'No matches')); hits.appendChild(li); hits.hidden = false; return; }
     m.forEach(function (i) {
       var c = cards[i], li = el('li'), b = el('button'); b.type = 'button';
-      b.appendChild(el('span', '', c.name)); b.appendChild(el('small', '', c.num + ' · p.' + pageOf(i)));
-      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; go(pageOf(i), 0); spotlight(c.num); });
+      b.appendChild(el('span', '', c.name)); b.appendChild(el('small', '', c.num + ' · p.' + pageOf(c.slot)));
+      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; go(pageOf(c.slot), 0); spotlight(c.num); });
       li.appendChild(b); hits.appendChild(li);
     });
     hits.hidden = false;
@@ -865,12 +889,12 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
     });
   }
   function vwUpdate(newCard, dir) {
-    var c = cards[vidx], n = c.num, j = vidx % PER;
+    var c = cards[vidx], n = c.num, j = (c.slot - 1) % PER;
     openNum = n;
     if (newCard) {
       vw.name.textContent = c.name;
       vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
-      vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + ' · p' + pageOf(vidx) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
+      vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + ' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
       vwAlt = null;
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
       vwShowArt(c); vwVariants(c);
@@ -928,7 +952,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   });
   function vwAfterClose() {        // idempotent: runs from the X, the backdrop, Esc and the Android back gesture
     var n = openNum; if (!n) return; openNum = null;
-    var pg = pageOf(vidx); if (pg !== page) go(pg, 0);   // the grid follows wherever you swiped to
+    var pg = pageOf(cards[vidx].slot); if (pg !== page) go(pg, 0);   // the grid follows wherever you swiped to
     flash(n);
     if (typeof sumDlg !== 'undefined' && sumDlg.open) sumFill();   // the shopping list may have changed
     if (typeof doneDlg !== 'undefined' && doneDlg.open) doneFill();
@@ -1554,18 +1578,258 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
   $('pricebtn').addEventListener('click', priceOpen);
   priceDlg.addEventListener('click', function (e) { if (e.target === priceDlg) priceDlg.close(); });
 
+  /* ---------- data editor: inline card CRUD + manage sets ---------- */
+  var edDlg = $('eddlg'), setDlg = $('setdlg');
+  var RARS = ['C', 'UC', 'R', 'SR', 'P'];
+
+  function putJSON(url, data) {
+    return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+  }
+  function parseList(s) { return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); }
+  function parseMap(s) {
+    var out = {};
+    parseList(s).forEach(function (part) {
+      var i = part.indexOf('='), k = i < 0 ? part : part.slice(0, i), v = i < 0 ? '' : part.slice(i + 1);
+      if (k) out[k.trim()] = v.trim();
+    });
+    return out;
+  }
+  function listOf(c, k) { return (c[k] || []).join(','); }
+  function mapOf(c, k) { var m = c[k] || {}; return Object.keys(m).map(function (x) { return x + '=' + m[x]; }).join(','); }
+  function deriveSid(set) {
+    if (String(set).indexOf('P-') === 0) return 550901;
+    var m = /^([A-Z]{2,3})-(\d{2})$/.exec(set);
+    if (m) { var b = { ST: 550000, OP: 550100, EB: 550200, PRB: 550300 }[m[1]]; if (b) return b + (+m[2]); }
+    return null;
+  }
+
+  function rebuild() {
+    bySlot = {};
+    cards.forEach(function (c) { if ((c.binder || 'main') === currentBinder) bySlot[c.slot] = c; });
+    render(0);
+  }
+  function saveCards() { return putJSON('/api/cards', cards).then(function () { setStatus('cards saved ✓'); }, function () { setStatus('cards NOT SAVED', true); }); }
+  function saveProducts() { return putJSON('/api/products', products).then(function () { setStatus('products saved ✓'); }, function () { setStatus('products NOT SAVED', true); }); }
+  function saveShare() { return putJSON('/api/share-data', share).then(function () { setStatus('share saved ✓'); }, function () { setStatus('share NOT SAVED', true); }); }
+  function saveBinders() { return putJSON('/api/binders', binders).then(function () { setStatus('binders saved ✓'); }, function () { setStatus('binders NOT SAVED', true); }); }
+
+  function renderBinders() {
+    var bs = $('bindersel'); bs.textContent = '';
+    binders.forEach(function (b) { var o = el('option', '', b.name); o.value = b.id; bs.appendChild(o); });
+    var add = el('option', '', '＋ Add binder…'); add.value = '__add__'; bs.appendChild(add);
+    bs.value = currentBinder;
+  }
+  function setBinder(id) {
+    currentBinder = id;
+    try { localStorage.setItem('binderId', id); } catch (e) {}
+    renderBinders(); rebuild();
+  }
+  $('bindersel').addEventListener('change', function () {
+    if (this.value === '__add__') {
+      var name = window.prompt('New binder name:', 'Binder ' + (binders.length + 1));
+      if (!name) { renderBinders(); return; }
+      var id = 'b' + Date.now().toString(36);
+      binders.push({ id: id, name: name.trim() });
+      saveBinders().then(function () { setBinder(id); });
+    } else {
+      setBinder(this.value);
+    }
+  });
+
+  function edRow(label, input) { var l = el('label', 'ed-row'); l.appendChild(el('span', '', label)); l.appendChild(input); return l; }
+  function edInput(label, id, value, type) { var i = el('input'); i.id = id; i.value = value == null ? '' : value; if (type) i.type = type; return edRow(label, i); }
+  function edSelect(label, id, options, value) { var s = el('select'); s.id = id; options.forEach(function (o) { var op = el('option', '', o); op.value = o; s.appendChild(op); }); s.value = value || options[0]; return edRow(label, s); }
+  function edCheck(label, id, on) { var i = el('input'); i.id = id; i.type = 'checkbox'; i.checked = !!on; var w = el('div'); w.appendChild(i); w.appendChild(el('span', '', ' ' + label)); var l = el('label', 'ed-row'); l.appendChild(w); return l; }
+  function edHead(t) { var d = el('div', 'sm-h2', t); d.style.marginTop = '8px'; return d; }
+
+  function uploadImage(file, path) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data = String(reader.result).split(',')[1] || '';
+      fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path, data: data }) })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function () { setStatus('image saved ✓'); })
+        .catch(function () { setStatus('image NOT SAVED', true); });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function openCardEditor(slot) {
+    var c = bySlot[slot] || null, adding = !c;
+    var num = c ? c.num : '';
+    var se = share[num] || { jp: '', sid: null, alt: [] };
+    var root = el('div', 'dl');
+    root.appendChild(el('h3', '', adding ? 'Add card · slot ' + slot : 'Edit ' + num + ' · slot ' + slot));
+    root.appendChild(el('div', 'small', adding ? 'Fill it in and Save. Art and the Japanese name are optional.' : 'Changes write to cards.json and share_data.json.'));
+
+    var g1 = el('div', 'ed-grid'); g1.appendChild(edInput('Name', 'ed-name', c ? c.name : '')); g1.appendChild(edInput('Number', 'ed-num', num));
+    var g2 = el('div', 'ed-grid'); g2.appendChild(edSelect('Rarity', 'ed-rar', RARS, c ? c.rar : 'C'));
+    var setIn = el('input'); setIn.id = 'ed-set'; setIn.value = c ? c.set : ''; g2.appendChild(edRow('Set', setIn));
+    var sidIn = el('input'); sidIn.id = 'ed-sid'; sidIn.type = 'number'; sidIn.value = se.sid == null ? '' : se.sid;
+    var g3 = el('div', 'ed-grid'); g3.appendChild(edSelect('Colour', 'ed-col', ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'], c ? c.col : 'Red')); g3.appendChild(edRow('Series id (sid)', sidIn));
+    root.appendChild(g1); root.appendChild(g2); root.appendChild(g3);
+    var g4 = el('div', 'ed-grid'); g4.appendChild(edCheck('Foil printing', 'ed-foil', c && c.foil)); g4.appendChild(edCheck('No English print', 'ed-noen', c && c.noen));
+    root.appendChild(g4);
+
+    setIn.addEventListener('input', function () { var s = deriveSid(this.value.trim()); if (s != null && !sidIn.value) sidIn.value = s; });
+
+    root.appendChild(edHead('Japanese name (share page)'));
+    root.appendChild(edInput('JP name', 'ed-jp', se.jp));
+    root.appendChild(edHead('Alt art / Manga'));
+    root.appendChild(edInput('Alt ids (p1,p2)', 'ed-alt', listOf(c, 'alt')));
+    root.appendChild(edInput('Alt sources (id=where)', 'ed-altsrc', mapOf(c, 'altsrc')));
+    root.appendChild(edInput('Alt types (id=Comic/Original/Animation/Other)', 'ed-alttype', mapOf(c, 'alttype')));
+    root.appendChild(edInput('Same drawing ids', 'ed-altsame', listOf(c, 'altsame')));
+    root.appendChild(edInput('Special foil ids (★)', 'ed-altstar', listOf(c, 'altstar')));
+    root.appendChild(edInput('Same as another print (id=id)', 'ed-altdup', mapOf(c, 'altdup')));
+    root.appendChild(edInput('Manga alt id', 'ed-manga', c && c.manga ? c.manga : ''));
+
+    root.appendChild(edHead('Card art'));
+    var jpImg = el('input'); jpImg.type = 'file'; jpImg.accept = 'image/png,image/jpeg';
+    jpImg.addEventListener('change', function () { if (jpImg.files[0]) uploadImage(jpImg.files[0], 'card_images_jp/' + $('ed-num').value.trim() + '.png'); });
+    var enImg = el('input'); enImg.type = 'file'; enImg.accept = 'image/png,image/jpeg';
+    enImg.addEventListener('change', function () { if (enImg.files[0]) uploadImage(enImg.files[0], 'card_images/' + $('ed-num').value.trim() + '.jpg'); });
+    root.appendChild(edRow('Japanese art (PNG)', jpImg));
+    root.appendChild(edRow('English art (JPG)', enImg));
+    root.appendChild(el('div', 'ed-note', 'Art is saved to card_images_jp/<num>.png and card_images/<num>.jpg.'));
+
+    function collect() {
+      var o = { name: $('ed-name').value.trim(), num: $('ed-num').value.trim(), rar: $('ed-rar').value, set: $('ed-set').value.trim(), col: $('ed-col').value, foil: $('ed-foil').checked };
+      if ($('ed-noen').checked) o.noen = true;
+      var alt = parseList($('ed-alt').value); if (alt.length) o.alt = alt;
+      var altsrc = parseMap($('ed-altsrc').value); if (Object.keys(altsrc).length) o.altsrc = altsrc;
+      var alttype = parseMap($('ed-alttype').value); if (Object.keys(alttype).length) o.alttype = alttype;
+      var altsame = parseList($('ed-altsame').value); if (altsame.length) o.altsame = altsame;
+      var altstar = parseList($('ed-altstar').value); if (altstar.length) o.altstar = altstar;
+      var altdup = parseMap($('ed-altdup').value); if (Object.keys(altdup).length) o.altdup = altdup;
+      var manga = $('ed-manga').value.trim(); if (manga) o.manga = manga;
+      return o;
+    }
+
+    var acts = el('div', 'ed-acts');
+    var save = el('button', 'btn pri', 'Save'); save.type = 'button';
+    save.addEventListener('click', function () {
+      var o = collect();
+      if (!o.name || !o.num) { setStatus('name + number required', true); return; }
+      var oldNum = c ? c.num : null;
+      if (adding) { o.slot = slot; if (currentBinder !== 'main') o.binder = currentBinder; cards.push(o); }
+      else { o.slot = c.slot; if (c.binder) o.binder = c.binder; cards[cards.indexOf(c)] = o; }
+      if (oldNum && oldNum !== o.num) delete share[oldNum];
+      var sidV = parseInt($('ed-sid').value, 10);
+      share[o.num] = { jp: $('ed-jp').value.trim(), sid: isNaN(sidV) ? (deriveSid(o.set) || 0) : sidV, alt: (o.alt || []).slice() };
+      rebuild();
+      Promise.all([saveCards(), saveShare()]).then(function () { edDlg.close(); });
+    });
+    var cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button';
+    cancel.addEventListener('click', function () { edDlg.close(); });
+    acts.appendChild(save); acts.appendChild(cancel);
+    if (!adding) {
+      var del = el('button', 'btn dng', 'Delete'); del.type = 'button';
+      del.addEventListener('click', function () {
+        if (!window.confirm('Delete ' + num + ' (' + c.name + ')?')) return;
+        cards = cards.filter(function (x) { return x.num !== num; });
+        delete share[num];
+        rebuild();
+        Promise.all([saveCards(), saveShare()]).then(function () { edDlg.close(); });
+      });
+      acts.appendChild(del);
+    }
+    root.appendChild(acts);
+    edDlg.replaceChildren(root);
+    if (!edDlg.open) edDlg.showModal();
+  }
+
+  function manageSets() {
+    function fill(root) {
+      root.textContent = '';
+      root.appendChild(el('h3', '', 'Sets'));
+      root.appendChild(el('div', 'small', 'Products (sets). Cards reference a set by its code; dates drive the sort order.'));
+      var ps = (products.products || []).slice().sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; });
+      ps.forEach(function (p) {
+        var row = el('div', 'pk-row'); var d = el('div');
+        d.appendChild(el('b', '', p.code + ' · ' + p.name));
+        d.appendChild(el('small', '', (p.family || '') + ' · ' + (p.kind || '') + ' · ' + (p.date || '')));
+        var ed = el('button', '', 'Edit'); ed.type = 'button'; ed.addEventListener('click', function () { setForm(p); });
+        var rm = el('button', '', 'Delete'); rm.type = 'button';
+        rm.addEventListener('click', function () {
+          if (!window.confirm('Delete set ' + p.code + '?')) return;
+          products.products = products.products.filter(function (x) { return x.code !== p.code; });
+          saveProducts().then(function () { fill(root); });
+        });
+        row.appendChild(d); row.appendChild(ed); row.appendChild(rm);
+        root.appendChild(row);
+      });
+      var add = el('button', 'btn', '+ Add set'); add.type = 'button'; add.addEventListener('click', function () { setForm(null); });
+      var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { setDlg.close(); });
+      root.appendChild(add); root.appendChild(cl);
+    }
+    function setForm(p) {
+      var root = el('div', 'dl');
+      root.appendChild(el('h3', '', p ? 'Edit ' + p.code : 'Add set'));
+      root.appendChild(edInput('Code', 'st-code', p ? p.code : ''));
+      root.appendChild(edInput('Name', 'st-name', p ? p.name : ''));
+      root.appendChild(edInput('Family', 'st-family', p ? p.family : ''));
+      root.appendChild(edInput('Kind', 'st-kind', p ? p.kind : ''));
+      root.appendChild(edInput('Date', 'st-date', p ? p.date : '', 'date'));
+      var acts = el('div', 'ed-acts');
+      var save = el('button', 'btn pri', 'Save'); save.type = 'button';
+      save.addEventListener('click', function () {
+        var code = $('st-code').value.trim();
+        if (!code) return;
+        var entry = { code: code, name: $('st-name').value.trim(), family: $('st-family').value.trim(), kind: $('st-kind').value.trim(), date: $('st-date').value };
+        if (p) { var i = products.products.indexOf(p); if (i >= 0) products.products[i] = entry; else products.products.push(entry); }
+        else { products.products.push(entry); }
+        saveProducts().then(function () { manageSets(); });
+      });
+      var cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', function () { manageSets(); });
+      acts.appendChild(save); acts.appendChild(cancel);
+      root.appendChild(acts);
+      var cl = el('button', 'close', 'Done'); cl.type = 'button'; cl.addEventListener('click', function () { setDlg.close(); });
+      root.appendChild(cl);
+      setDlg.replaceChildren(root);
+    }
+    var root = el('div', 'dl');
+    fill(root);
+    setDlg.replaceChildren(root);
+    if (!setDlg.open) setDlg.showModal();
+  }
+
+  $('editbtn').addEventListener('click', function () {
+    editMode = !editMode;
+    $('editbtn').setAttribute('aria-pressed', editMode ? 'true' : 'false');
+    document.body.classList.toggle('editing', editMode);
+    rebuild();
+  });
+  $('setsbtn').addEventListener('click', manageSets);
+  edDlg.addEventListener('click', function (e) { if (e.target === edDlg) edDlg.close(); });
+  setDlg.addEventListener('click', function (e) { if (e.target === setDlg) setDlg.close(); });
+
   /* ---------- boot ---------- */
   Promise.all([
     fetch('cards.json').then(function (r) { return r.json(); }),
     fetch('/api/collection', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }),
-    fetch('card_images_jp/manifest.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
+    fetch('card_images_jp/manifest.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+    fetch('products.json').then(function (r) { return r.json(); }),
+    fetch('aws/share_data.json').then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
+    fetch('binders.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
   ]).then(function (res) {
-    cards = res[0]; cards.forEach(function (c) { byNum[c.num] = c; }); col = migrate(res[1]); N = Math.ceil(cards.length / PER);
+    cards = res[0]; bySlot = {};
+    try { currentBinder = localStorage.getItem('binderId') || 'main'; } catch (e) { currentBinder = 'main'; }
+    cards.forEach(function (c) { byNum[c.num] = c; if ((c.binder || 'main') === currentBinder) bySlot[c.slot] = c; });
+    col = migrate(res[1]);
     (Array.isArray(res[2]) ? res[2] : []).forEach(function (n) { jpArt[n] = true; });
+    products = res[3] || { products: [], sources: {} };
+    share = res[4] || {};
+    binders = res[5] || [{ id: 'main', name: 'Main' }];
+    if (typeof PROD !== 'undefined') PROD = products;   // keep "What to buy" in sync with edits
+    renderBinders();
     makeArtSeg($('artseg'));
     var ps = $('pagesel'), ss = $('setsel');
     for (var p = 1; p <= N; p++) { var o = el('option', '', 'Page ' + p + ' / ' + N); o.value = p; ps.appendChild(o); }
-    cards.forEach(function (c, i) { if (!firstPage[c.set]) { firstPage[c.set] = pageOf(i); var o = el('option', '', c.set + ' — p.' + firstPage[c.set]); o.value = firstPage[c.set]; ss.appendChild(o); } });
+    cards.slice().sort(function (a, b) { return a.slot - b.slot; }).forEach(function (c) {
+      if (!firstPage[c.set]) { firstPage[c.set] = pageOf(c.slot); var o = el('option', '', c.set + ' — p.' + firstPage[c.set]); o.value = firstPage[c.set]; ss.appendChild(o); }
+    });
     var m = /p=(\d+)/.exec(location.hash), start = m ? +m[1] : 0;
     if (!start) { try { start = +localStorage.getItem('binderPage') || 1; } catch (e) { start = 1; } }
     page = Math.max(1, Math.min(N, start));
