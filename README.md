@@ -1,7 +1,7 @@
 # Evento - One Piece Event Card binder tracker
 
 A small local app for tracking a Japanese-language collection of every One Piece Card Game **Event** card
-(ST-01 through OP-17), laid out as a 4x4 binder. Mark each slot as a JP card you own, note EN/KR placeholders
+(ST-01 through OP-18), laid out as a 4x4 binder. Mark each slot as a JP card you own, note EN/KR placeholders
 you're holding until you get the JP copy, and tick foils separately.
 
 ## Run it
@@ -24,6 +24,43 @@ put your own images in `card_images/<CODE>.jpg` (e.g. `card_images/OP01-026.jpg`
 - `server.py` - tiny local server: serves the page and saves your collection (127.0.0.1 only)
 - `index.html` - the whole UI
 - `cards.json` - the 410 Event cards in binder order (404 from the sets plus 6 promo-only Events, placed by release date)
+- `products.json` - every product (release date) and which products each card appears in
+- `maintain.py` - data maintenance: sort the binder by release date, add sets, add cards (see below)
+- `maintain_config.json` - config for the sort (release-date vs set-code order, and any manual placements)
+
+## Maintaining the data (new sets and cards)
+
+`maintain.py` keeps `cards.json` and `products.json` in release-date order as new products come out:
+
+    python maintain.py sort                        # reorder the binder by release date (preview; add --apply to write)
+    python maintain.py add-set OP-19 --name "God Valley" --family OP --kind "Booster pack" --date 2026-12-26
+    python maintain.py add-card OP19-001 --name "..." --rar C --set OP-19 --col Red [--foil] [--also-in PRB-02]
+
+`sort` orders the sets by the `date` in `products.json` (stable, so sets sharing a release date keep their
+place) and renumbers every `slot`. `add-set` inserts a product in date order; `add-card` inserts a card,
+records its set (and any reprints) in `products.json` `sources`, and renumbers the binder so slots stay
+contiguous. Both `add-*` commands have `--dry-run`, and `sort` is a preview unless you pass `--apply`.
+
+`add-card` (and `edit-card`) cover the whole card schema, not just the basics - the alt-art / Manga
+metadata and the Japanese name / series id for the share page:
+
+    python maintain.py add-card OP19-001 --name "..." --rar C --set OP-19 --col Red --foil \
+        --jp "日本語名" --alt p1,p2 --altsrc "p1=Best Selection Vol.7,p2=PRB-02" \
+        --alttype "p1=Original,p2=Comic" --altsame p2 --altstar p1 --altdup "p2=p1" --manga p1
+
+    python maintain.py edit-card OP19-001 --jp "直した名前" --noen        # update an existing card
+
+The alt-art flags take comma lists (`--alt`, `--altsame`, `--altstar`) or `id=value` maps (`--altsrc`,
+`--alttype`, `--altdup`); `--manga` names the Manga alt id. `--jp` writes the Japanese name and the `sid`
+is derived from the set code (ST-14 -> 550014, OP-17 -> 550117, EB-04 -> 550204, promos -> 550901) unless
+you pass `--sid`. `edit-card` only rewrites the fields you give it.
+
+The config in `maintain_config.json` controls the sort:
+
+    {
+      "sort_by": "date",        // "date" (release date, default) or "code" (set code)
+      "place_after": {}         // optional: pin a set right after another, e.g. "P-2207": "ST-04"
+    }
 
 ## Hosting (AWS) and auto-deploy
 

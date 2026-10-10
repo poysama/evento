@@ -105,8 +105,8 @@ check('cards have the fields the UI needs', all({'slot', 'name', 'num', 'rar', '
 check('the product list needs a login', h(ev('GET', '/products.json'), None)['statusCode'] == 401)
 prod = json.loads(h(ev('GET', '/products.json', cookies=ck), None)['body'])
 codes = [p['code'] for p in prod['products']]
-check('all 62 products (59 sets + 3 promo sources) are listed once, in the binder\'s release order',
-      len(codes) == 62 and len(set(codes)) == 62 and codes[0] == 'ST-01' and codes[-1] == 'OP-17'
+check('all 64 products (61 sets + 3 promo sources) are listed once, in the binder\'s release order',
+      len(codes) == 64 and len(set(codes)) == 64 and codes[0] == 'ST-01' and codes[-1] == 'OP-18'
       and [c['set'] for c in cards if c['set'] in codes][0] == 'ST-01')
 check('every product says what it is', all(p['kind'] in ('Booster pack', 'Extra booster', 'Premium booster', 'Starter deck', 'Promo pack', 'Event promo', 'Cinema promo') for p in prod['products']))
 check('every card can be found in at least the set it came from',
