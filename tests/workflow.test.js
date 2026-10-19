@@ -317,3 +317,78 @@ test("separate duplicate artwork print orders remain distinct", () => {
   assert.deepEqual(W.printItems(cards, received).filter(item => item.state === "ordered").map(item => item.version), ["p3"]);
   assert.equal(received.A.jp, undefined);
 });
+
+
+test("removing an artwork cascades source prints and clears every legacy field", () => {
+  const raw = { num: "A", name: "Keep", slot: 42, custom: { keep: true },
+    alt: ["p1", "p2", "p3", "p4"], manga: "p1",
+    altdup: { p2: "p1", p3: "p2", obsolete: "p1" },
+    altsame: ["p4"], altstar: ["p1", "p3", "p4"],
+    altsrc: { p1: "ONE", p2: "TWO", p3: "THREE", p4: "FOUR" },
+    alttype: { p1: "Manga", p3: "Foil", p4: "Gold" } };
+  const before = JSON.stringify(raw);
+  const result = W.removeVersion(raw, "p1");
+  assert.deepEqual(result.removedIds, ["p1", "p2", "p3"]);
+  assert.equal(JSON.stringify(raw), before);
+  assert.deepEqual(result.card.variants.map(v => v.id), ["p4"]);
+  assert.deepEqual(result.card.alt, []);
+  assert.equal(result.card.manga, undefined);
+  assert.deepEqual(result.card.altdup, {});
+  assert.deepEqual(result.card.altstar, ["p4"]);
+  assert.deepEqual(result.card.alttype, { p4: "Gold" });
+  assert.deepEqual(result.card.altsrc, { p4: "FOUR" });
+  assert.equal(result.card.slot, 42);
+  assert.deepEqual(result.card.custom, { keep: true });
+  assert.deepEqual(W.card(JSON.parse(JSON.stringify(result.card))), result.card);
+});
+test("removing a reprint preserves its root and reparents dependent sources", () => {
+  const raw = { num: "A", variants: [
+    { id: "p1", kind: "parallel" },
+    { id: "p2", kind: "reprint", sameAs: "p1" },
+    { id: "p3", kind: "reprint", sameAs: "p2" },
+    { id: "p4", kind: "reprint", sameAs: "p3" },
+  ], altdup: { p3: "p2", p4: "p3" } };
+  const result = W.removeVersion(raw, "p2");
+  assert.deepEqual(result.removedIds, ["p2"]);
+  assert.deepEqual(result.card.variants.map(v => v.id), ["p1", "p3", "p4"]);
+  assert.equal(result.card.variants[1].sameAs, "p1");
+  assert.equal(result.card.altdup.p3, "p1");
+  assert.equal(W.artworkId(result.card, "p4"), "p1");
+  assert.deepEqual(W.card(result.card), result.card);
+});
+test("removing a base-art reprint preserves other base-art prints", () => {
+  const raw = { num: "A", alt: ["p1", "p2"], altsame: ["p1"], altdup: { p2: "p1" } };
+  const result = W.removeVersion(raw, "p1");
+  assert.deepEqual(result.removedIds, ["p1"]);
+  assert.equal(W.artworkId(result.card, "p2"), "std");
+  assert.equal(result.card.altdup.p2, "std");
+  assert.deepEqual(result.card.alt, []);
+});
+test("version removal rejects base and unknown IDs", () => {
+  const c = { num: "A", alt: ["p1"] };
+  for (const id of ["std", "", undefined]) assert.throws(() => W.removeVersion(c, id), /base card/);
+  assert.throws(() => W.removeVersion(c, "p9"), /not found/);
+  const result = W.removeVersion(c, "p1");
+  assert.deepEqual(result.card.variants, []);
+  assert.deepEqual(W.card(result.card).alt, []);
+});
+
+
+test("removed owned versions do not fill binder slots while raw ownership survives", () => {
+  const original = { num: "A", slot: 1, manga: "p1", alt: ["p1", "p2"],
+    variants: [{ id: "p1", kind: "manga" }, { id: "p2", kind: "parallel" }] };
+  const collection = { A: { alt: { p1: "have" }, manga: true, history: [{ version: "p1", status: "have" }] } };
+  const before = JSON.stringify(collection);
+  const updated = W.removeVersion(original, "p1").card;
+  assert.equal(W.projection([updated], collection).binderOwned, 0);
+  assert.equal(W.complete(collection.A, updated), false);
+  assert.equal(JSON.stringify(collection), before);
+  assert.equal(W.projection([updated], { A: { jp: true, alt: { p1: "have" } } }).binderOwned, 1);
+  assert.equal(W.projection([updated], { A: { alt: { p1: "have", p2: "have" } } }).binderOwned, 1);
+  assert.equal(W.projection([updated], { A: true }).binderOwned, 1);
+});
+test("stale legacy Manga marker cannot fill a binder slot", () => {
+  const c = { num: "A", slot: 1, manga: "deleted", variants: [] };
+  assert.equal(W.projection([c], { A: { manga: true } }).binderOwned, 0);
+  assert.equal(W.complete({ manga: true }, c), false);
+});

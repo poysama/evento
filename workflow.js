@@ -55,6 +55,38 @@
     if (!Array.isArray(c.variants)) c = card(c);
     return c.variants.filter(v => artworkId(c, v.id) === artwork);
   }
+  function removeVersion(raw, versionId) {
+    if (!versionId || versionId === "std")
+      throw Error("The base card cannot be removed as a version");
+    var c = card(raw);
+    if (!c.variants.some(v => v.id === versionId))
+      throw Error("Version not found");
+    var root = artworkId(c, versionId);
+    var removedIds = c.variants
+      .filter(v => v.id === versionId || (root === versionId && artworkId(c, v.id) === root))
+      .map(v => v.id);
+    var removed = new Set(removedIds);
+    c.variants = c.variants.filter(v => !removed.has(v.id));
+    c.variants.forEach(v => {
+      if (removed.has(v.sameAs)) v.sameAs = root;
+    });
+    c.alt = (c.alt || []).filter(id => !removed.has(id));
+    ["altsame", "altstar"].forEach(key => {
+      if (Array.isArray(c[key])) c[key] = c[key].filter(id => !removed.has(id));
+    });
+    ["altsrc", "alttype", "altdup"].forEach(key => {
+      if (!c[key] || typeof c[key] !== "object") return;
+      Object.keys(c[key]).forEach(id => {
+        if (removed.has(id)) delete c[key][id];
+        else if (key === "altdup" && removed.has(c[key][id])) {
+          if (removed.has(root)) delete c[key][id];
+          else c[key][id] = root;
+        }
+      });
+    });
+    if (removed.has(c.manga)) delete c.manga;
+    return { card: card(c), removedIds: removedIds };
+  }
   function effectiveState(c, e, artwork = "std") {
     var states = printSources(c, artwork).map(v => (e.alt || {})[v.id]);
     if (artwork === "std") states.push(e.jp ? "have" : e.ordered ? "ordered" : e.baseWish === "skip" ? "skip" : "want");
@@ -237,6 +269,15 @@
     return next;
   }
 
+  function complete(entry, catalogCard) {
+    var e = entry === true ? { jp: true } : entry || {};
+    if (e.jp) return true;
+    if (!catalogCard) return Object.values(e.alt || {}).includes("have");
+    var c = card(catalogCard);
+    return c.variants.some(v => (e.alt || {})[v.id] === "have") ||
+      !!(e.manga && c.variants.some(v => v.id === c.manga));
+  }
+
   function projection(cards, collection, products) {
     var base = items(cards, collection, false, products).filter(
       function (item) {
@@ -257,11 +298,7 @@
       binderTotal: placed.length,
       binderOwned: placed.filter(function (item) {
         var e = state(collection, item.num);
-        return !!(
-          e.jp ||
-          Object.values(e.alt || {}).includes("have") ||
-          (e.manga && item.card.manga)
-        );
+        return complete(e, item.card);
       }).length,
       ordered: base.filter(function (item) {
         return item.state === "ordered";
@@ -283,6 +320,7 @@
     };
   }
   var api = {
+    removeVersion: removeVersion,
     artworkId: artworkId,
     alternateVersions: alternateVersions,
     printSources: printSources,
@@ -366,8 +404,7 @@
     items: items,
     wishlist: (cards, col, up, products) =>
       items(cards, col, up, products).filter((x) => x.state === "want"),
-    complete: (e) =>
-      !!(e && (e.jp || Object.values(e.alt || {}).includes("have"))),
+    complete: complete,
   };
   if (typeof module !== "undefined") module.exports = api;
   else root.Workflow = api;

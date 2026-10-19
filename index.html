@@ -528,12 +528,12 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   }
   function shownVer(n) {               // the alt-art / Manga version that sits in this binder slot ('' = the regular card)
     var e = col[n], c = byNum[n]; if (!e || !e.alt || !c || e.show === 'std') return '';
-    if (e.show && versionDisplayState(c,e.show) === 'have') return e.show;
+    if (e.show && (c.variants || []).some(function(v){return v.id===e.show;}) && versionDisplayState(c,e.show) === 'have') return e.show;
     if (c.manga && artworkState(c,c.manga) === 'have') return c.manga;              // otherwise: the Manga if I have it, else the first alt I have
     var alts = c.alt || []; for (var i = 0; i < alts.length; i++) if (artworkState(c,alts[i]) === 'have') return alts[i];
     return '';
   }
-  function anyHave(n) { var e = col[n]; return !!(e && e.alt && Object.keys(e.alt).some(function (a) { return e.alt[a] === 'have'; })); }
+  function anyHave(n) { var e = col[n], c = byNum[n]; return !!(e && e.alt && c && (c.variants || []).some(function (v) { return e.alt[v.id] === 'have'; })); }
   function complete(n) { return has(n, 'jp') || anyHave(n); }     // owning an alt-art / Manga "have" counts the whole card, even without the standard JP print
   function phList(n) { var a = []; if (has(n, 'en')) a.push('EN'); if (has(n, 'kr')) a.push('KR'); return a; }
   function pageOf(slot) { return Math.floor((slot - 1) / PER) + 1; }
@@ -717,10 +717,38 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   }
 
   /* ---------- state + save ---------- */
+  function confirmEdit(action, target) {
+    return canEdit && window.confirm(action + (target ? " · " + target : "") + "?");
+  }
+  function editTarget(n, version) {
+    return n + (byNum[n] ? " · " + byNum[n].name : "") + (version ? " · " + verLabel(byNum[n], version) : "");
+  }
+  function beginEditorWrite(root) {
+    if(root.editBusy)return null;
+    root.editBusy=true;
+    var controls=Array.from(root.querySelectorAll('input,select,textarea,button'));
+    var disabled=controls.map(function(control){return control.disabled;});
+    controls.forEach(function(control){control.disabled=true;});
+    return function(){controls.forEach(function(control,index){control.disabled=disabled[index];});root.editBusy=false;};
+  }
+  async function removeCatalogVersion(c, id) {
+    if(!canEdit)return false;
+    if(catalogStore.pending || catalogStore.running || (catalogStore.recovery && catalogStore.recovery()))throw Error('Save or resolve pending catalog edits before removing a version.');
+    var result=Workflow.removeVersion(c,id),linked=result.removedIds.length-1;
+    if(!confirmEdit('Remove version',editTarget(c.num,id)+(linked ? ' · also removes '+linked+' linked same-art print'+(linked===1?'':'s') : '')+' · collection marks and history are kept'))return false;
+    var oldCards=cards,oldShare=JSON.parse(JSON.stringify(share)),oldCatalog=JSON.parse(JSON.stringify(catalog));
+    cards=cards.map(function(card){return card.num===c.num?result.card:card;});
+    if(share[c.num])share[c.num].alt=result.card.alt.slice();
+    try {await saveCatalog();}
+    catch(error){cards=oldCards;share=oldShare;catalog=oldCatalog;catalogStore.discard();rebuild();throw error;}
+    if(openNum===c.num){if(result.removedIds.includes(vwAlt))vwAlt=null;vwVariants(byNum[c.num]);vwShowArt(byNum[c.num]);fillInfo(c.num);}
+    return true;
+  }
   function toggle(n, k) { if (!canEdit) return;
     if ((k === 'foil' || k === 'manga') && !has(n, 'jp')) return;     // extras are ticked after the card itself is complete
     var e = col[n] || {};
     if (k === 'ordered' && e.jp) return;
+    if (!confirmEdit((e[k] ? 'Remove ' : 'Mark ') + ({jp:'JP ownership',ordered:'order',foil:'foil',en:'EN copy',kr:'KR copy',manga:'Manga'}[k] || k), editTarget(n))) return;
     if (k === 'jp' && !e.jp) { delete e.ordered; delete e.note; }        // it arrived: no longer on order
     if (k === 'ordered' && e.ordered) delete e.note;                     // cancelled: forget the note
     if (e[k]) delete e[k]; else e[k] = true;
@@ -728,7 +756,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     render(0); preview(n); if (openNum === n) fillInfo(n);
     scheduleSave();
   }
-  function setAlt(n, a, st) { if (!canEdit) return;          // st = 'want' | 'ordered' | 'have', or '' to clear
+  function setAlt(n, a, st, confirmed) { if (!canEdit) return;          // st = 'want' | 'ordered' | 'have', or '' to clear
+    if (!confirmed && !confirmEdit(st ? 'Mark version ' + ({want:'wanted',ordered:'ordered',have:'owned'}[st] || st) : 'Clear version marks', editTarget(n,a))) return;
     var e = col[n] || {}, m = e.alt || {};
     if (st) m[a] = st; else delete m[a];
     if (Object.keys(m).length) e.alt = m; else delete e.alt;
@@ -738,6 +767,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     scheduleSave();
   }
   function setShow(n, v) { if (!canEdit) return;             // v = an alt id, 'std' (the regular card) or '' (automatic)
+    if (!confirmEdit('Change binder artwork', editTarget(n,v))) return;
     var e = col[n] || {};
     if (v) e.show = v; else delete e.show;
     if (Object.keys(e).length) col[n] = e; else delete col[n];
@@ -747,8 +777,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   function setNote(n, text) { if (!canEdit) return;          // free text about an order (where it was bought, order id ...)
     if (!ordered(n)) return;
     var e = col[n], v = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (v === (e.note || '')) return true;
+    if (!confirmEdit('Save order note', editTarget(n))) return false;
     if (v) e.note = v; else delete e.note;
-    scheduleSave();
+    scheduleSave(); return true;
   }
   function setStatus(t, err) { var retry=$('workflow-retry');if(retry)retry.hidden=!(collectionStore.pending||catalogStore.pending);$('status').textContent = t; $('status').className = err ? 'err' : ''; $('warn').hidden = !err; }
   collectionStore.onchange = function(t) { dirty = !!collectionStore.pending; setStatus(t, t.indexOf('failed')>=0 || t.indexOf('Conflict')>=0); };
@@ -948,7 +980,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     r.ord = vbtn('ord', false, function () { toggle(cards[vidx].num, 'ordered'); });
     r.onote = el('input', 'vnote'); r.onote.type = 'text'; r.onote.maxLength = 200; r.onote.hidden = true;
     r.onote.placeholder = 'Where from? e.g. Buyee, order #1234'; r.onote.setAttribute('aria-label', 'Order note');
-    r.onote.addEventListener('input', function () { setNote(cards[vidx].num, r.onote.value); });
+    r.onote.addEventListener('change', function () { var n=cards[vidx].num;if(setNote(n,r.onote.value)===false)r.onote.value=noteOf(n); });
     r.onote.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onote.blur(); });
     r.row = el('div', 'vrow');
     r.row.appendChild(r.en); r.row.appendChild(r.kr); r.row.appendChild(r.foil);
@@ -1194,6 +1226,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   function shLoad() { return pkFetch('/api/share').then(function (c) { shCfg = c; }).catch(function () { shCfg = null; }); }
   function shOpen() { if (!canEdit) return; shLoad().then(function () { shFill(); if (!shDlg.open) shDlg.showModal(); }); }
   function shPut(body, okText) {
+    if(!canEdit)return Promise.resolve();
+    if(!body.rotate&&!confirmEdit(body.enabled===false?'Disable wishlist sharing':'Save wishlist sharing settings'))return Promise.resolve();
     return pkFetch('/api/share', { method: 'PUT', headers: JSONH, body: JSON.stringify(body) })
       .then(function (c) { shCfg = c; shFill(); shSay(okText, 'ok'); })
       .catch(function (e) { shSay('Could not save' + (e && e.message ? ': ' + e.message : '.'), 'err'); });
@@ -1231,7 +1265,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var c1 = ck('Show card pictures', shCfg.pics), c3 = ck('Include upcoming announced prints',shCfg.upcoming), c2 = ck('Also show the alt-art / Manga versions I want' + (fm.length ? ' (' + fm.length + ')' : ''), shCfg.foil);
       f.appendChild(nm); f.appendChild(ms); f.appendChild(c1[0]); f.appendChild(c2[0]); f.appendChild(c3[0]);
       var go = el('button', 'btn pri', shCfg.enabled ? 'Save changes' : 'Create share link'); go.type = 'button';
-      go.addEventListener('click', function () { go.disabled = true; shPut({ enabled: true, name: nm.value, message: ms.value, pics: c1[1].checked, foil: c2[1].checked, upcoming:c3[1].checked }, shCfg.enabled ? 'Saved.' : 'Link created. Copy it and send it to your friends.'); });
+      go.addEventListener('click', function () { shPut({ enabled: true, name: nm.value, message: ms.value, pics: c1[1].checked, foil: c2[1].checked, upcoming:c3[1].checked }, shCfg.enabled ? 'Saved.' : 'Link created. Copy it and send it to your friends.'); });
       f.appendChild(go);
       if (shCfg.enabled) {
         var r2 = el('div', 'sh-row');
@@ -1565,7 +1599,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var t = el('div', 'ol-t'); t.appendChild(el('b', '', c.name)); t.appendChild(el('small', '', c.num + ' · ' + c.set + ' · ' + c.rar));
       var inp = el('input'); inp.type = 'text'; inp.maxLength = 200; inp.placeholder = 'Where from? e.g. Buyee, order #1234'; inp.value = noteOf(c.num);
       inp.setAttribute('aria-label', 'Note for ' + c.name);
-      inp.addEventListener('input', function () { setNote(c.num, inp.value); });
+      inp.addEventListener('change', function () { if(setNote(c.num,inp.value)===false)inp.value=noteOf(c.num); });
       inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') inp.blur(); });
       var acts = el('div', 'ol-a');
       var rc = el('button', 'btn pri', 'Received'); rc.type = 'button'; rc.addEventListener('click', function () { toggle(c.num, 'jp'); ordFill(); });
@@ -1789,6 +1823,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       if (!canEdit) { renderBinders(); return; }
       var name = window.prompt('New binder name:', 'Binder ' + (binders.length + 1));
       if (!name) { renderBinders(); return; }
+      if (!confirmEdit('Add binder', name.trim())) { renderBinders(); return; }
       var id = 'b' + Date.now().toString(36);
       binders.push({ id: id, name: name.trim() });
       saveBinders().then(function () { setBinder(id); });
@@ -1871,6 +1906,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     save.addEventListener('click', async function () {
       var o = collect();
       if (!o.name || !o.num) { setStatus('name + number required', true); return; }
+      if (!confirmEdit(adding ? 'Add card' : 'Save card changes', o.num + ' · ' + o.name)) return;
       save.disabled=true;
       try{
       if(jpImg.files[0]){var jf=jpImg.files[0];var ji=await uploadImage(jf,'card_images_jp/'+o.num+(jf.type==='image/png'?'.png':'.jpg'));o.image=ji.image||ji.path;jpArt[o.num]=true;}
@@ -1942,6 +1978,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         var code = $('st-code').value.trim();
         if (!code) return;
         var entry = Workflow.mergeProduct(p||{}, { code: code, name: $('st-name').value.trim(), family: $('st-family').value.trim(), kind: $('st-kind').value.trim(), date: $('st-date').value });
+        if(!confirmEdit(p ? 'Save set changes' : 'Add set',code+' · '+entry.name))return;
         products.products=Workflow.upsert(products.products,entry,'code');
         saveProducts().then(function () { manageSets(); });
       });
@@ -1966,7 +2003,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     rebuild();
   });
   $('setsbtn').addEventListener('click', manageSets);
-  edDlg.addEventListener('click', function (e) { if (e.target === edDlg) edDlg.close(); });
+  edDlg.addEventListener('click', function (e) { if (e.target === edDlg && !(edDlg.firstElementChild && edDlg.firstElementChild.editBusy)) edDlg.close(); });
+  edDlg.addEventListener('cancel',function(e){if(edDlg.firstElementChild && edDlg.firstElementChild.editBusy)e.preventDefault();});
   setDlg.addEventListener('click', function (e) { if (e.target === setDlg) setDlg.close(); });
 
   function recoverPending() { if (!canEdit) return;
@@ -1985,6 +2023,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       box.append(restore, discard, exportBtn);
       grid.before(box);
       restore.onclick = function () {
+        if(!confirmEdit('Restore unsaved draft',store.url.split('/').pop()))return;
         try {
           var data = store.restore(pending);
           if (store === collectionStore) col = data;
@@ -2003,6 +2042,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         }
       };
       discard.onclick = function () {
+        if(!confirmEdit('Discard unsaved edits permanently',store.url.split('/').pop()))return;
         store.discard();
         box.remove();
       };
@@ -2087,6 +2127,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     };
     function mark(items, state) {
       if(!canEdit)return;
+      if(!confirmEdit('Mark ' + ({want:'wanted',ordered:'ordered',have:'owned',skip:'skipped',untracked:'untracked'}[state] || state),items.length === 1 ? editTarget(items[0].num,items[0].version === 'std' ? null : items[0].version) : items.length + ' selected prints'))return;
       var changed = Workflow.change(col, items, state);
       col = changed.collection; undo = changed.patches; selected.clear();
       scheduleSave(); rebuild(); draw();
@@ -2196,7 +2237,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var active=search || upcoming || filterControls.some(c=>c.value);
       if(active) results.appendChild(button("Reset filters",function(){search="";searchInput.value="";upcoming=false;filterControls.forEach(c=>c.value="");listPage=0;selected.clear();draw();searchInput.focus();}));
       if(canEdit) results.appendChild(button(selecting ? "Done selecting" : "Select cards",function(){selecting=!selecting;if(!selecting)selected.clear();draw();}));
-      if(canEdit && undo) results.appendChild(button("Undo last change",function(){col=Workflow.undo(col,undo);undo=null;scheduleSave();rebuild();draw();}));
+      if(canEdit && undo) results.appendChild(button("Undo last change",function(){if(!confirmEdit("Undo last collection change"))return;col=Workflow.undo(col,undo);undo=null;scheduleSave();rebuild();draw();}));
       panel.appendChild(results);
       var pageSize=40,totalPages=Math.max(1,Math.ceil(items.length/pageSize));listPage=Math.min(listPage,totalPages-1);
       var pageItems=items.slice(listPage*pageSize,(listPage+1)*pageSize);
@@ -2230,7 +2271,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         else if(item.state !== "have")rowActions.appendChild(button(mode === "Orders" ? "Received" : "Mark owned",()=>mark([item],"have"),true));
         else rowActions.appendChild(button("View card",()=>openInfo(c.num,v && v.id)));
         if(canEdit && mode === "Orders") {
-          var note=el("input","workflow-order-note");note.placeholder="Seller, tracking or arrival note…";note.setAttribute("aria-label","Order note for " + c.num + " " + kind);var e=col[item.num] || {};note.value=v ? (e.altNotes || {})[v.id] || "" : e.note || "";note.maxLength=200;note.oninput=function(){col=Workflow.orderNote(col,item,this.value);scheduleSave();};info.appendChild(note);
+          var note=el("input","workflow-order-note");note.placeholder="Seller, tracking or arrival note…";note.setAttribute("aria-label","Order note for " + c.num + " " + kind);var e=col[item.num] || {};note.value=v ? (e.altNotes || {})[v.id] || "" : e.note || "";note.maxLength=200;note.onchange=function(){var before=v ? ((col[item.num]||{}).altNotes||{})[v.id]||"" : (col[item.num]||{}).note||"";if(this.value===before)return;if(!confirmEdit("Save order note",editTarget(item.num,v&&v.id))){this.value=before;return;}col=Workflow.orderNote(col,item,this.value);scheduleSave();};note.onkeydown=function(event){if(event.key==="Enter")this.blur();};info.appendChild(note);
         }
         row.appendChild(rowActions);list.appendChild(row);
       });panel.appendChild(list);
@@ -2269,9 +2310,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var save = el("button", "btn pri", "Save"),
         cancel = el("button", "btn", "Cancel");
       save.onclick = async function () {
-        save.disabled = true;
+        var finish=beginEditorWrite(root);if(!finish)return;
+
         try {
-          await action();
+          if (await action() === false) return;
           edDlg.close();
           rebuild();
           draw();
@@ -2279,10 +2321,11 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           error.textContent = e.message;
           setStatus(e.message, true);
         } finally {
-          save.disabled = false;
+          finish();
         }
       };
       cancel.onclick = function () {
+        if(root.editBusy)return;
         edDlg.close();
       };
       root.append(save, cancel);
@@ -2326,6 +2369,17 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
             ". Artwork uploads only when Save is pressed. Unknown source stays unspecified.",
         ),
       );
+      if(previous && previous.id !== 'std') {
+        var remove = el('button','btn dng','Remove version'); remove.type='button';
+        var removeError=el('p','err');removeError.setAttribute('role','alert');
+        remove.onclick=async function(){
+          var finish=beginEditorWrite(root);if(!finish)return;
+          try {if(await removeCatalogVersion(c,previous.id)){edDlg.close();draw();}}
+          catch(error){removeError.textContent=error.message;setStatus(error.message,true);}
+          finally {finish();}
+        };
+        root.append(remove,removeError);
+      }
       submit(root, async function () {
         var target = byNum[number.value.trim()];
         if (!target) throw Error("Choose an existing card number");
@@ -2343,6 +2397,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         if (status.value !== "inherit") variant.status = status.value; else delete variant.status;
         if (date.value) variant.releaseDate = date.value;
         if (sourceUrl.value) variant.sourceUrl = sourceUrl.value;
+        if (!confirmEdit(previous ? "Save version changes" : "Add version", editTarget(target.num) + " · " + variant.label + " · " + kind.value + " · " + state.value)) return false;
         if (file.files[0]) {
           var f = file.files[0];
           if (!["image/png", "image/jpeg"].includes(f.type))
@@ -2386,7 +2441,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           throw e;
         }
         if (state.value !== "untracked" || previous) {
-          setAlt(target.num, id, state.value === "untracked" ? "" : state.value);
+          setAlt(target.num, id, state.value === "untracked" ? "" : state.value, true);
           await flush();
           if (collectionStore.pending)
             throw Error(
@@ -2439,6 +2494,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           releaseDate: date.value,
           sourceUrl: url.value,
         });
+        if(!confirmEdit(existing ? "Save release changes" : "Add release",code+" · "+record.name))return false;
         if (current)
           products.products[products.products.indexOf(current)] = record;
         else {
@@ -2511,6 +2567,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           c,
           draft && draft.num,
         );
+        if(!confirmEdit(draft ? "Save card changes" : "Add card",(official || "Private draft")+" · "+c.name))return false;
         cards = staged.cards;
         catalog.drafts = staged.drafts;
         await saveCatalog();
@@ -2557,7 +2614,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           )
         )
           throw Error("Slot is occupied");
-        if (!window.confirm(preview.textContent + "?")) return;
+        if (!confirmEdit("Change binder placement",preview.textContent)) return false;
         c.slot = n;
         c.binder = binder.value;
         await saveCatalog();
