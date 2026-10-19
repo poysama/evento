@@ -2109,6 +2109,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       group = settingGroup("Card catalog", "Add missing cards, record different artwork, or update a release.");
       group.append(button("Add from image",()=>recognitionEditor(),true),button("Add card",()=>cardEditor()),button("Add version",()=>versionEditor()),button("Add release",()=>releaseEditor()));
       searchableDetails(group,"Releases",products.products || [],p=>p.code + (p.name ? " · " + p.name : ""),p=>releaseEditor(p));
+      if(canEdit){
+        group = settingGroup("Card recognition", "Connect DeepSeek to prefill card details from JP and EN images. Images are sent only when you choose Analyze.");
+        group.appendChild(button("Configure DeepSeek",()=>recognitionSettingsEditor()));
+      }
       group = settingGroup("Upcoming & drafts", "Prepare future cards, then choose where they belong in your binder.");
       var future = cards.filter(c=>c.status === "announced" || c.status === "draft"), drafts = catalog.drafts || [], unplaced = cards.filter(c=>c.slot == null);
       searchableDetails(group,"Upcoming cards",future,c=>c.num + " · " + c.name,c=>cardEditor(c));
@@ -2278,11 +2282,45 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       };
       root.append(save, cancel);
     }
+    function recognitionSettingsEditor() {
+      var root=modal("Card recognition · DeepSeek"),status=el("p","small","Loading recognition settings…"),error=el("p","err");
+      status.setAttribute("role","status");error.setAttribute("role","alert");root.append(status);
+      root.appendChild(el("p","small","Use a DeepSeek API token. The token is stored on the server and reused across reloads. It is never returned to this form or kept in browser storage. Card images are sent to DeepSeek only when you choose Analyze."));
+      var token=control(root,"DeepSeek API token","password");token.autocomplete="off";token.spellcheck=false;token.setAttribute("autocapitalize","none");
+      var save=el("button","btn pri","Save token"),remove=el("button","btn dng","Remove token"),done=el("button","btn","Done"),busy=false,closed=false,configured=false,settingsRevision=0;
+      save.type=remove.type=done.type="button";remove.disabled=true;root.append(error,save,remove,done);
+      function updateButtons(){save.disabled=busy;remove.disabled=busy||!configured;token.disabled=busy;done.disabled=busy;root.editBusy=busy;}
+      function showSettings(data){configured=data.configured===true;status.textContent=configured ? "DeepSeek token stored. The connection has not been verified. Analyze an image to use it." : "No DeepSeek token configured. Add one to enable AI prefill, or enter card details manually.";updateButtons();}
+      edDlg.addEventListener("close",()=>{closed=true;token.value="";},{once:true});
+      done.onclick=function(){if(!busy)edDlg.close();};
+      async function responseData(response){var data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||data.message||"Could not update recognition settings.");return data;}
+      async function refreshAvailability(){
+        var response=await fetch("/api/access",{cache:"no-store"}),access=await responseData(response);
+        recognitionAvailable=access.recognitionAvailable===true;
+        if(access.canEdit!==true)throw Error("Editing access expired. Unlock editing again.");
+      }
+      async function change(method){
+        if(busy||closed)return;
+        if(!canEdit){error.textContent="Unlock editing before changing recognition settings.";return;}
+        var value=token.value.trim();
+        if(method==="PUT"&&!value){error.textContent="Enter a DeepSeek API token.";return;}
+        if(!confirmEdit(method==="PUT"?"Save DeepSeek API token":"Remove DeepSeek API token",method==="PUT"?"Store this token on the server for future image analysis. The connection will not be verified by saving.":"Disable AI prefill. Existing cards and artwork will remain saved."))return;
+        busy=true;settingsRevision++;updateButtons();error.textContent="";
+        try{
+          var options={method:method,headers:{"Content-Type":"application/json"}};if(method==="PUT")options.body=JSON.stringify({token:value});
+          var data=await responseData(await fetch("/api/recognition-settings",options));token.value="";showSettings(data);
+          try{await refreshAvailability();}catch(e){throw Error("Token settings saved, but availability could not be refreshed. "+e.message);}
+        }catch(e){if(!closed)error.textContent=e.message;}
+        finally{busy=false;updateButtons();}
+      }
+      save.onclick=()=>change("PUT");remove.onclick=()=>change("DELETE");
+      fetch("/api/recognition-settings",{cache:"no-store"}).then(responseData).then(data=>{if(!closed&&settingsRevision===0)showSettings(data);}).catch(e=>{if(!closed&&settingsRevision===0)error.textContent=e.message;});
+    }
     function recognitionEditor(context) {
       context=context || {};
       var root=modal("Add from image"), files=control(root,"Card images (one or two PNG/JPEG files)","file");
       files.multiple=true;files.accept="image/png,image/jpeg";
-      root.appendChild(el("p","small",recognitionAvailable===false ? "AI prefill is not enabled on this server yet. Upload JP/EN images and enter details manually." : "Analyze sends the selected card images to AWS image recognition for a suggested prefill. Review every field. Nothing is uploaded to your binder or saved until you confirm Save in the card editor."));
+      root.appendChild(el("p","small",recognitionAvailable===false ? "Add your DeepSeek API token in Settings → Card recognition to enable AI prefill. Upload JP/EN images and enter details manually meanwhile." : "Analyze sends the selected card images to DeepSeek for a suggested prefill. Review every field. Nothing is uploaded to your binder or saved until you confirm Save in the card editor."));
       var previews=el("div","row"),review=el("div"),error=el("p","err"),urls=[],selected=[],results=[];
       error.setAttribute("role","alert");root.append(previews,review,error);
       var analyze=button("Analyze images",analyzeImages,true),manual=button("Enter details manually",()=>openManual(),recognitionAvailable===false),cancel=button("Cancel",()=>edDlg.close());
@@ -2301,7 +2339,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         choices.forEach(f=>{var box=el("div"),img=el("img"),url=URL.createObjectURL(f);urls.push(url);img.src=url;img.alt=f.name;img.style.cssText="max-width:150px;max-height:210px;object-fit:contain";box.appendChild(img);var language=choose(box,"Language · "+f.name,["auto","jp","en"],"auto");selected.push({file:f,language:language});previews.appendChild(box);});
       };
       async function analyzeImages(){
-        if(recognitionAvailable===false){error.textContent="AI prefill is not enabled on this server yet. Enter details manually.";return;}
+        if(recognitionAvailable===false){error.textContent="Configure DeepSeek in Settings → Card recognition, or enter details manually.";return;}
         if(busy)return;
         if(!selected.length){error.textContent="Choose one or two card images first.";return;}
         busy=true;analyze.disabled=manual.disabled=files.disabled=true;error.textContent="";analyze.textContent="Analyzing…";

@@ -20,6 +20,7 @@ import webbrowser
 import workflow as wf
 import recognition
 import recognition_budget
+import recognition_settings
 import shutil
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -35,6 +36,19 @@ PORT = int(os.environ.get("BINDER_PORT", "8765"))
 LOCK = threading.Lock()
 EDIT_PASSCODE = os.environ.get("BINDER_EDIT_PASSCODE", "")
 COOKIE = "evento_session"
+
+
+def recognition_token():
+    return recognition_settings.load_local(
+        os.path.join(HERE, recognition_settings.LOCAL_FILE)
+    )
+
+
+def recognition_available():
+    try:
+        return bool(recognition_token())
+    except recognition_settings.SettingsError:
+        return False
 
 
 # Per card: {"jp": true, "foil": true, "en": true, "kr": true} - only true values are stored.
@@ -308,9 +322,18 @@ class Handler(SimpleHTTPRequestHandler):
                 200,
                 {
                     "canEdit": editor,
-                    "recognitionAvailable": editor and recognition.configured(),
+                    "recognitionAvailable": editor and recognition_available(),
                 },
             )
+        if path == "/api/recognition-settings":
+            if not self._require_editor():
+                return
+            try:
+                return self._json(
+                    200, recognition_settings.public_status(recognition_token())
+                )
+            except recognition_settings.SettingsError as exc:
+                return self._json(exc.status, {"error": str(exc)})
         editor = self._authed()
         legacy = {
             "/cards.json": "cards",
@@ -367,6 +390,21 @@ class Handler(SimpleHTTPRequestHandler):
         if not self._require_editor():
             return
         path = self.path.split("?")[0]
+        if path == "/api/recognition-settings":
+            body, err = self._read_body(recognition_settings.MAX_BODY_BYTES)
+            if err:
+                return self._json(
+                    413 if err == "too large" else 400,
+                    {"error": "Invalid recognition settings request"},
+                )
+            try:
+                token = recognition_settings.token_from_request(body)
+                recognition_settings.save_local(
+                    os.path.join(HERE, recognition_settings.LOCAL_FILE), token
+                )
+                return self._json(200, recognition_settings.public_status(token))
+            except recognition_settings.SettingsError as exc:
+                return self._json(exc.status, {"error": str(exc)})
         if path in ("/api/cards", "/api/products", "/api/share-data", "/api/binders"):
             return self._json(
                 409, {"error": "Save the canonical /api/catalog document with If-Match"}
@@ -449,12 +487,16 @@ class Handler(SimpleHTTPRequestHandler):
                     recognition.recognize(
                         body,
                         load_catalog(),
+                        api_key=recognition_token(),
                         reserve=lambda: recognition_budget.reserve_local(
                             os.path.join(HERE, recognition_budget.LOCAL_FILE)
                         ),
                     ),
                 )
-            except recognition.RecognitionError as exc:
+            except (
+                recognition.RecognitionError,
+                recognition_settings.SettingsError,
+            ) as exc:
                 return self._json(exc.status, {"error": str(exc)})
             except OSError:
                 return self._json(503, {"error": "Catalog unavailable"})
@@ -497,8 +539,17 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def do_DELETE(self):
-        if self._require_editor():
-            self._json(404, {"error": "not found"})
+        if not self._require_editor():
+            return
+        if urlsplit(self.path).path == "/api/recognition-settings":
+            try:
+                recognition_settings.save_local(
+                    os.path.join(HERE, recognition_settings.LOCAL_FILE), ""
+                )
+                return self._json(200, recognition_settings.public_status(""))
+            except recognition_settings.SettingsError as exc:
+                return self._json(exc.status, {"error": str(exc)})
+        self._json(404, {"error": "not found"})
 
     def do_PATCH(self):
         if self._require_editor():

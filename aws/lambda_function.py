@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 import workflow as wf
 import recognition
 import recognition_budget
+import recognition_settings
 import public_access as public
 
 import boto3
@@ -35,6 +36,15 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 s3 = boto3.client("s3")
+
+
+def recognition_available():
+    try:
+        return bool(recognition_settings.load_s3(s3, BUCKET))
+    except recognition_settings.SettingsError:
+        return False
+
+
 # signs short-lived direct links to pictures, so the bytes come from S3 and not through this (concurrency-limited) function
 s3_sign = boto3.client(
     "s3",
@@ -1392,7 +1402,7 @@ def _handler(event, context):
             200,
             {
                 "canEdit": editor,
-                "recognitionAvailable": editor and recognition.configured(),
+                "recognitionAvailable": editor and recognition_available(),
             },
         )
     if path == "/logout" and method == "POST":
@@ -1616,6 +1626,28 @@ def _handler(event, context):
             else js(404, {"error": "not found"})
         )
 
+    if path == "/api/recognition-settings":
+        try:
+            if method == "GET":
+                return js(
+                    200,
+                    recognition_settings.public_status(
+                        recognition_settings.load_s3(s3, BUCKET)
+                    ),
+                )
+            if method == "PUT":
+                if len(event.get("body") or "") > recognition_settings.MAX_BODY_BYTES:
+                    return js(413, {"error": "Invalid recognition settings request"})
+                token = recognition_settings.token_from_request(body_json(event))
+                recognition_settings.save_s3(s3, BUCKET, token)
+                return js(200, recognition_settings.public_status(token))
+            if method == "DELETE":
+                recognition_settings.save_s3(s3, BUCKET, "")
+                return js(200, recognition_settings.public_status(""))
+            return js(404, {"error": "not found"})
+        except recognition_settings.SettingsError as exc:
+            return js(exc.status, {"error": str(exc)})
+
     if path == "/api/recognize" and method == "POST":
         if len(event.get("body") or "") > recognition.MAX_BODY_BYTES:
             return js(413, {"error": "Card image is too large"})
@@ -1625,10 +1657,14 @@ def _handler(event, context):
                 recognition.recognize(
                     body_json(event),
                     load_catalog_document()[0],
+                    api_key=recognition_settings.load_s3(s3, BUCKET),
                     reserve=lambda: recognition_budget.reserve_s3(s3, BUCKET),
                 ),
             )
-        except recognition.RecognitionError as exc:
+        except (
+            recognition.RecognitionError,
+            recognition_settings.SettingsError,
+        ) as exc:
             return js(exc.status, {"error": str(exc)})
 
     if path == "/api/image" and method == "POST":

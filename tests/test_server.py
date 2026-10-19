@@ -26,6 +26,7 @@ class ServerTests(unittest.TestCase):
         self.patchers = [
             patch.object(server, k, str(root / v))
             for k, v in {
+                "HERE": "",
                 "SAVE": "collection.json",
                 "CATALOG": "catalog.json",
                 "CARDS": "cards.json",
@@ -241,21 +242,71 @@ class ServerTests(unittest.TestCase):
         self.assertFalse(Path(server.SAVE).exists())
 
     def test_recognition_access_configuration(self):
-        with patch.dict(
-            "os.environ",
-            {
-                "RECOGNITION_MODEL_ID": "apac.amazon.nova-lite-v1:0",
-                "RECOGNITION_REGION": "ap-southeast-1",
-            },
-        ):
-            self.assertEqual(
-                self.request("GET", "/api/access")[2],
-                {"canEdit": True, "recognitionAvailable": True},
-            )
-            self.assertEqual(
-                self.request("GET", "/api/access", anonymous=True)[2],
-                {"canEdit": False, "recognitionAvailable": False},
-            )
+        server.recognition_settings.save_local(
+            str(Path(server.HERE) / server.recognition_settings.LOCAL_FILE),
+            "unit-test-token",
+        )
+        self.assertEqual(
+            self.request("GET", "/api/access")[2],
+            {"canEdit": True, "recognitionAvailable": True},
+        )
+        self.assertEqual(
+            self.request("GET", "/api/access", anonymous=True)[2],
+            {"canEdit": False, "recognitionAvailable": False},
+        )
+
+    def test_recognition_settings_private_crud(self):
+        token = "private-http-unit-token"
+        for method in ["GET", "PUT", "DELETE"]:
+            with patch.object(
+                server.recognition_settings, "load_local"
+            ) as read, patch.object(server.recognition_settings, "save_local") as write:
+                self.assertEqual(
+                    self.request(
+                        method,
+                        "/api/recognition-settings",
+                        {"token": token},
+                        anonymous=True,
+                    )[0],
+                    401,
+                )
+                read.assert_not_called()
+                write.assert_not_called()
+        status, _, result = self.request(
+            "PUT", "/api/recognition-settings", {"token": token}
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["configured"])
+        self.assertNotIn(token, json.dumps(result))
+        self.assertEqual(self.request("GET", "/api/recognition-settings")[2], result)
+        self.assertEqual(
+            self.request("PUT", "/api/recognition-settings", {"token": "a b"})[0], 400
+        )
+        self.assertEqual(
+            self.request("PUT", "/api/recognition-settings", {"token": "a" * 5000})[0],
+            413,
+        )
+        for anonymous in [True, False]:
+            for path in [
+                "/.recognition-settings.json",
+                "/.recognition-settings.json.lock",
+                "/.recognition-settings-secret",
+                "/recognition_settings.py",
+            ]:
+                connection = http.client.HTTPConnection(
+                    "127.0.0.1", self.http.server_port
+                )
+                connection.request(
+                    "GET", path, headers={} if anonymous else {"Cookie": self.cookie}
+                )
+                response = connection.getresponse()
+                self.assertEqual(response.status, 404)
+                self.assertNotIn(token.encode(), response.read())
+                connection.close()
+        self.assertFalse(
+            self.request("DELETE", "/api/recognition-settings")[2]["configured"]
+        )
+        self.assertFalse(self.request("GET", "/api/access")[2]["recognitionAvailable"])
 
 
 class AtomicSaveTests(unittest.TestCase):

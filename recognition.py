@@ -1,12 +1,14 @@
 """Extract reviewable card details without changing the catalog."""
 
 import json
-import os
+import base64
+from urllib import request, error
 import re
 import struct
 
 import workflow as wf
 import recognition_budget as budget
+import recognition_settings as settings
 
 MAX_IMAGE_BYTES = 3_500_000
 MAX_BODY_BYTES = 4_700_000
@@ -63,24 +65,53 @@ def validate_image(body):
     return raw, mime.split("/")[1], hint
 
 
-def _client():
-    try:
-        import boto3
-        from botocore.config import Config
+ENDPOINT = "https://api.deepseek.com/chat/completions"
 
-        return boto3.client(
-            "bedrock-runtime",
-            region_name=os.environ.get("RECOGNITION_REGION")
-            or os.environ.get("AWS_REGION")
-            or "ap-southeast-1",
-            config=Config(
-                connect_timeout=3, read_timeout=20, retries={"total_max_attempts": 1}
-            ),
-        )
+
+class _NoRedirect(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _complete(payload, api_key):
+    req = request.Request(
+        ENDPOINT,
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    opener = request.build_opener(_NoRedirect())
+    try:
+        with opener.open(req, timeout=20) as response:
+            raw = response.read(32769)
+        if len(raw) > 32768:
+            raise ValueError("response too large")
+        return json.loads(raw)
+    except error.HTTPError as exc:
+        if exc.code == 401:
+            raise RecognitionError(
+                503, "DeepSeek rejected the saved API token. Update it in Settings."
+            ) from None
+        if exc.code == 402:
+            raise RecognitionError(
+                503,
+                "The DeepSeek account has insufficient credit. Add credit or enter the card manually.",
+            ) from None
+        if exc.code == 429:
+            raise RecognitionError(
+                503,
+                "DeepSeek is temporarily rate limited. Try later or enter the card manually.",
+            ) from None
+        raise RecognitionError(
+            502,
+            "DeepSeek could not process the image. Try later or enter the card manually.",
+        ) from None
     except Exception:
         raise RecognitionError(
-            503,
-            "Card recognition is unavailable. Configure AWS credentials and install requirements-vision.txt for local use.",
+            502, "Card recognition could not finish. Retry or enter the card manually."
         ) from None
 
 
@@ -159,37 +190,18 @@ def normalize_result(value, catalog):
     }
 
 
-def configured():
-    region = (
-        os.environ.get("RECOGNITION_REGION")
-        or os.environ.get("AWS_REGION")
-        or "ap-southeast-1"
-    )
-    return (
-        os.environ.get("RECOGNITION_MODEL_ID", "").strip()
-        == "apac.amazon.nova-lite-v1:0"
-        and region == "ap-southeast-1"
-    )
-
-
-def recognize(body, catalog, reserve=None):
+def recognize(body, catalog, reserve=None, api_key=None):
     raw, image_format, hint = validate_image(body)
-    model = os.environ.get("RECOGNITION_MODEL_ID", "").strip()
-    if not model or model.lower() in {"off", "disabled", "none"}:
+    try:
+        api_key = settings.validate_token(api_key)
+    except settings.SettingsError:
         raise RecognitionError(
-            503, "Card recognition is not configured. You can still add cards manually."
-        )
-    region = (
-        os.environ.get("RECOGNITION_REGION")
-        or os.environ.get("AWS_REGION")
-        or "ap-southeast-1"
-    )
-    if model != "apac.amazon.nova-lite-v1:0" or region != "ap-southeast-1":
+            503, "Add a DeepSeek API token in Settings to enable card recognition."
+        ) from None
+    if len(PROMPT.encode("utf-8")) > 2000:
         raise RecognitionError(
-            503,
-            "Card recognition requires the supported Nova Lite model in Singapore for its spending guard.",
+            503, "Recognition prompt exceeds its spending guard. Add the card manually."
         )
-    client = _client()
     if reserve is None:
         raise RecognitionError(
             503,
@@ -204,53 +216,52 @@ def recognize(body, catalog, reserve=None):
             503,
             "Card recognition spending guard is unavailable. Add the card manually.",
         ) from None
-    try:
-        result = client.converse(
-            modelId=model,
-            system=[{"text": PROMPT}],
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"image": {"format": image_format, "source": {"bytes": raw}}},
-                        {
-                            "text": "Read the visible card. Language hint (not evidence): "
-                            + hint
+    payload = {
+        "model": settings.MODEL,
+        "messages": [
+            {"role": "system", "content": PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Read the visible card. Language hint (not evidence): "
+                        + hint,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/"
+                            + image_format
+                            + ";base64,"
+                            + base64.b64encode(raw).decode()
                         },
-                    ],
-                }
-            ],
-            inferenceConfig={"maxTokens": budget.MAX_OUTPUT_TOKENS, "temperature": 0},
-        )
-        if result.get("stopReason") not in {"end_turn", "stop_sequence"}:
+                    },
+                ],
+            },
+        ],
+        "thinking": {"type": "disabled"},
+        "max_tokens": budget.MAX_OUTPUT_TOKENS,
+        "response_format": {"type": "json_object"},
+        "stream": False,
+        "temperature": 0,
+    }
+    result = _complete(payload, api_key)
+    try:
+        choice = result["choices"][0]
+        if choice.get("finish_reason") != "stop":
             raise ValueError("incomplete response")
-        parts = result["output"]["message"]["content"]
-        text = "".join(p.get("text", "") for p in parts)
-        if len(text) > 12000:
-            raise ValueError("response too large")
+        text = choice["message"]["content"]
+        if not isinstance(text, str) or len(text) > 12000:
+            raise ValueError("invalid response")
         text = text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```(?:json)?\s*", "", text)
             text = re.sub(r"\s*```$", "", text)
         value = json.loads(text)
-    except Exception as exc:
-        code = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
-        if code in {"ThrottlingException", "ServiceQuotaExceededException"}:
-            raise RecognitionError(
-                503,
-                "Card recognition is temporarily unavailable because its usage limit was reached. Your image is preserved; enter the card manually or retry later.",
-            ) from None
-        if code in {
-            "AccessDeniedException",
-            "ResourceNotFoundException",
-            "ValidationException",
-            "UnrecognizedClientException",
-        } or type(exc).__name__ in {"NoCredentialsError", "PartialCredentialsError"}:
-            raise RecognitionError(
-                503,
-                "Card recognition is not configured for this server. You can still add cards manually.",
-            ) from None
+    except Exception:
         raise RecognitionError(
-            502, "Card recognition could not finish. Retry or enter the card manually."
+            502,
+            "Recognition returned invalid details. Enter the card manually or retry.",
         ) from None
     return normalize_result(value, catalog)

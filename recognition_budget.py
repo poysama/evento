@@ -10,9 +10,12 @@ import tempfile
 MONTHLY_LIMIT_MILLI_USD = 1000
 RESERVATION_MILLI_USD = 25
 MAX_ATTEMPTS = MONTHLY_LIMIT_MILLI_USD // RESERVATION_MILLI_USD
-MAX_INPUT_TOKENS = 300_000
+MAX_INPUT_TOKENS = 8192
+MAX_PROMPT_BYTES = 2000
+MAX_IMAGE_TOKENS = 1024
 MAX_OUTPUT_TOKENS = 700
-PLAN = "apac-nova-lite-300k-input-700-output-v1"
+PLAN = "deepseek-flash-8192-input-700-output-v1"
+LEGACY_PLAN = "apac-nova-lite-300k-input-700-output-v1"
 S3_KEY = "data/recognition-budget.json"
 LOCAL_FILE = ".recognition-budget.json"
 
@@ -32,7 +35,7 @@ def _advance(value, now=None):
         not isinstance(value, dict)
         or type(value.get("schema")) is not int
         or value.get("schema") != 1
-        or value.get("plan") != PLAN
+        or value.get("plan") not in {PLAN, LEGACY_PLAN}
         or not isinstance(value.get("months"), dict)
         or len(value["months"]) > 1200
     ):
@@ -55,6 +58,7 @@ def _advance(value, now=None):
             "The $1 monthly card-recognition allowance is used up. Add the card manually or try next month (UTC).",
         )
     result = copy.deepcopy(value)
+    result["plan"] = PLAN
     result["months"][current] = attempts + 1
     return result
 

@@ -24,3 +24,8 @@ catalog.json.tmp
 .recognition-budget.json
 .recognition-budget.json.lock
 .recognition-budget-*
+
+# Private local recognition provider settings
+.recognition-settings.json
+.recognition-settings.json.lock
+.recognition-settings-*

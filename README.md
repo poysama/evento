@@ -257,15 +257,19 @@ An AA/parallel is a distinct artwork, not simply another product printing or foi
 
 Same-art reprints and foil finishes live under **Print sources / Foil**. Repeated prints of one AA share one artwork entry. Their original print IDs, ownership and order marks are retained, so changing classification does not erase collection history. **Add/Edit version** lets you distinguish different artwork, Manga, and a same-art reprint.
 
-### Card recognition spending limit
+### Card recognition
 
-Image recognition is editor-only and requires review before saving. It uses Amazon Nova Lite (`apac.amazon.nova-lite-v1:0`) from Singapore (`ap-southeast-1`). Other models and regions are rejected so a configuration change cannot bypass the cost assumptions.
+Unlock editing, then open **Settings → Card recognition** and save a DeepSeek API token. Image recognition uses `deepseek-flash` at `https://api.deepseek.com`; it does not require Bedrock access, AWS model quotas, or an additional Python SDK. Without a saved token, add cards manually. Recognition extracts suggestions only; review the card number, language, artwork classification, release and ownership before saving.
+
+The token stays on the server. Hosted settings are stored in the private S3 object `data/recognition-settings.json`; local settings use the ignored `.recognition-settings.json` file with mode `0600`. Settings responses reveal whether a token is configured and never return its value. Catalog exports and public browsing exclude provider settings. Replace or remove the token in Settings. Saving a token does not reset recognition usage.
+
+### Card recognition spending limit
 
 The application reserves **$0.025 before each attempted image recognition**, with a fixed **$1 allowance per calendar month (UTC)**. This permits at most **40 attempts per month**, shared across concurrent requests to the same installation. JP and EN images each count as one attempt. Failed or interrupted requests retain their reservation because billing may be uncertain. There are no automatic model retries. This is a conservative reservation, not a report of actual charges.
 
-Singapore standard Nova Lite pricing is $0.081 per million input tokens and $0.324 per million output tokens. Reserving the model's entire 300,000-token input context plus the configured 700-token maximum output costs at most `300000 × 0.081 / 1000000 + 700 × 0.324 / 1000000 = $0.0245268`, rounded up to $0.025. Pricing sources: [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) and [AWS regional price data](https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/bedrock/USD/current/bedrock.json). These rates were checked on October 19, 2026. Recheck them before changing the model or rate assumptions.
+The supported request contains one image, a fixed extraction prompt under 2,000 UTF-8 bytes, an enumerated language hint, and at most 700 output tokens with thinking disabled. The guard allows 8,192 input tokens, including the image's documented maximum of 1,024 tokens and message overhead. DeepSeek Flash peak cache-miss pricing is $0.30 per million input tokens and $1.20 per million output tokens. This request bound costs at most `8192 × 0.30 / 1000000 + 700 × 1.20 / 1000000 = $0.0032976`, below the retained $0.025 reservation. Sources: [DeepSeek image token limits](https://api-docs.deepseek.com/guides/vision/) and [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing). Rates checked on October 19, 2026. Recheck the bound before changing the model, prompt, image count or pricing assumptions.
 
-The cap covers model requests made through this recognition endpoint. S3/Lambda overhead and Bedrock requests made elsewhere are separate. Each installation has its own ledger; running recognition locally and on the hosted site gives each installation its own allowance.
+The cap covers model requests made through this recognition endpoint. S3/Lambda overhead and other DeepSeek requests are separate. Each installation has its own ledger; running recognition locally and on the hosted site gives each installation its own allowance. Existing recognition ledgers migrate their provider plan during a conditional reservation while preserving every month's attempt count. A provider change never grants another allowance.
 
 Recognition fails closed if its ledger is missing, corrupt, or cannot be updated. Local reservations use a file lock and durable atomic replacement. Hosted reservations use S3 ETag conditional writes on `data/recognition-budget.json`. Preserve this object across deployments and backups. Never delete, overwrite, or reset an existing ledger to provision recognition again.
 
@@ -287,6 +291,4 @@ AWS_PROFILE=personal aws s3api put-object \
   --if-none-match '*'
 ```
 
-Provisioning the ledger does not enable Bedrock model access or increase provider quotas. Those must be configured separately. Recognition stays unavailable until both provider access and the spending guard are ready; manual card entry remains available.
-
-Recognition is disabled by default. After provider quotas/access and the ledger are ready, explicitly configure `RECOGNITION_MODEL_ID=apac.amazon.nova-lite-v1:0` and `RECOGNITION_REGION=ap-southeast-1`. For local use, export both variables before starting the server. Hosted configuration must be set by an operator separately. Leaving the model unset, empty, or `disabled` blocks all model calls. `/api/access` reports `recognitionAvailable` only for an authenticated editor with this supported explicit configuration; this flag does not probe provider quotas or the ledger. Every recognition request still checks its durable spending guard before inference.
+Recognition stays unavailable until a token and the spending guard are ready; manual entry remains available. Provider errors preserve the selected image for review or retry. Do not paste API tokens into shell commands, catalog fields, exports or shared screenshots.

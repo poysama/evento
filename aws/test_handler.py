@@ -20,6 +20,7 @@ pkg = Path(tempfile.mkdtemp())
 for src in (
     REPO / "workflow.py",
     REPO / "recognition.py",
+    REPO / "recognition_settings.py",
     REPO / "recognition_budget.py",
     REPO / "public_access.py",
     REPO / "workflow.js",
@@ -48,8 +49,8 @@ class FakeBody:
     def __init__(self, d):
         self.d = d
 
-    def read(self):
-        return self.d
+    def read(self, amount=None):
+        return self.d if amount is None else self.d[:amount]
 
 
 class FakeS3:
@@ -71,7 +72,14 @@ class FakeS3:
         return {}
 
     def put_object(
-        self, Bucket, Key, Body, ContentType=None, IfMatch=None, IfNoneMatch=None
+        self,
+        Bucket,
+        Key,
+        Body,
+        ContentType=None,
+        IfMatch=None,
+        IfNoneMatch=None,
+        ServerSideEncryption=None,
     ):
         if IfNoneMatch == "*" and Key in store:
             raise ClientError("PreconditionFailed")
@@ -2020,17 +2028,71 @@ for path in (
         "owner can read private endpoint " + path,
         h(ev("GET", path, cookies=ck), None)["statusCode"] != 401,
     )
-os.environ["RECOGNITION_MODEL_ID"] = "apac.amazon.nova-lite-v1:0"
-os.environ["RECOGNITION_REGION"] = "ap-southeast-1"
+
+settings_key = L.recognition_settings.S3_KEY
+settings_token = "private-handler-unit-token"
+settings_store_before = dict(store)
+for method in ("GET", "PUT", "DELETE"):
+    check(
+        "anonymous recognition settings denied " + method,
+        h(
+            ev(
+                method,
+                "/api/recognition-settings",
+                json.dumps({"token": settings_token}),
+            ),
+            None,
+        )["statusCode"]
+        == 401,
+    )
+check("anonymous settings requests never write", store == settings_store_before)
+settings_saved = h(
+    ev(
+        "PUT",
+        "/api/recognition-settings",
+        json.dumps({"token": settings_token}),
+        cookies=ck,
+    ),
+    None,
+)
+check(
+    "recognition token saves privately",
+    settings_saved["statusCode"] == 200 and j(settings_saved)["configured"],
+)
+check("save never echoes token", settings_token not in settings_saved["body"])
+settings_read = h(ev("GET", "/api/recognition-settings", cookies=ck), None)
+check(
+    "recognition settings safe read",
+    j(settings_read)
+    == {"configured": True, "provider": "deepseek", "model": "deepseek-flash"},
+)
 check(
     "recognition capability requires editor",
     j(h(ev("GET", "/api/access"), None))["recognitionAvailable"] is False,
 )
 check(
-    "recognition capability explicit configuration",
+    "recognition capability saved token",
     j(h(ev("GET", "/api/access", cookies=ck), None))["recognitionAvailable"] is True,
 )
-os.environ["RECOGNITION_MODEL_ID"] = ""
+for path in (
+    "/data/recognition-settings.json",
+    "/recognition_settings.py",
+    "/.recognition-settings.json",
+):
+    check(
+        "private token storage unavailable " + path,
+        h(ev("GET", path, cookies=ck), None)["statusCode"] == 404,
+    )
+settings_removed = h(ev("DELETE", "/api/recognition-settings", cookies=ck), None)
+check(
+    "recognition token removed",
+    settings_removed["statusCode"] == 200 and not j(settings_removed)["configured"],
+)
+check(
+    "recognition token removal disables capability",
+    j(h(ev("GET", "/api/access", cookies=ck), None))["recognitionAvailable"] is False,
+)
+store.pop(settings_key, None)
 
 
 # Recognition is private and returns suggestions without writing any S3 objects.
@@ -2038,7 +2100,7 @@ recognize_original = L.recognition.recognize
 recognize_calls = []
 
 
-def fake_recognition(body, catalog, reserve=None):
+def fake_recognition(body, catalog, reserve=None, api_key=None):
     recognize_calls.append(body)
     return {
         "fields": {"num": "P-134"},

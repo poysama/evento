@@ -46,13 +46,65 @@ class FakeS3:
 class BudgetTests(unittest.TestCase):
     def test_conservative_model_cost_bound(self):
         upper_bound = (
-            Decimal(budget.MAX_INPUT_TOKENS) * Decimal("0.081")
-            + Decimal(budget.MAX_OUTPUT_TOKENS) * Decimal("0.324")
+            Decimal(budget.MAX_INPUT_TOKENS) * Decimal("0.30")
+            + Decimal(budget.MAX_OUTPUT_TOKENS) * Decimal("1.20")
         ) / 1_000_000
-        self.assertEqual(upper_bound, Decimal("0.0245268"))
+        self.assertEqual(upper_bound, Decimal("0.0032976"))
         reservation = Decimal(budget.RESERVATION_MILLI_USD) / 1000
         self.assertLessEqual(upper_bound, reservation)
         self.assertLessEqual(reservation * budget.MAX_ATTEMPTS, Decimal("1"))
+
+    def test_fixed_request_input_allowance(self):
+        import recognition
+
+        self.assertLess(len(recognition.PROMPT.encode("utf-8")), budget.MAX_PROMPT_BYTES)
+        self.assertEqual(budget.MAX_IMAGE_TOKENS, 1024)
+        self.assertGreaterEqual(
+            budget.MAX_INPUT_TOKENS,
+            budget.MAX_PROMPT_BYTES + budget.MAX_IMAGE_TOKENS + 1024,
+        )
+
+    def test_legacy_plan_migrates_without_resetting_months(self):
+        legacy = {"schema": 1, "plan": budget.LEGACY_PLAN,
+                  "months": {"2026-09": 17, "2026-10": 39}}
+        before = copy.deepcopy(legacy)
+        migrated = budget._advance(legacy, OCTOBER)
+        self.assertEqual(legacy, before)
+        self.assertEqual(migrated["plan"], budget.PLAN)
+        self.assertEqual(migrated["months"], {"2026-09": 17, "2026-10": 40})
+        with self.assertRaises(budget.BudgetError):
+            budget._advance(migrated, OCTOBER)
+        exhausted = copy.deepcopy(legacy)
+        exhausted["months"]["2026-10"] = 40
+        with self.assertRaises(budget.BudgetError):
+            budget._advance(exhausted, OCTOBER)
+
+    def test_legacy_s3_migration_is_conditional_and_concurrent(self):
+        s3 = FakeS3()
+        s3.value = {"schema": 1, "plan": budget.LEGACY_PLAN,
+                    "months": {"2026-09": 17, "2026-10": 38}}
+        def attempt(_):
+            try:
+                budget.reserve_s3(s3, "bucket", OCTOBER)
+                return True
+            except budget.BudgetError:
+                return False
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(attempt, range(20)))
+        self.assertEqual(sum(results), 2)
+        self.assertEqual(s3.value["plan"], budget.PLAN)
+        self.assertEqual(s3.value["months"], {"2026-09": 17, "2026-10": 40})
+        self.assertEqual(s3.puts, 2)
+
+    def test_legacy_local_migration_keeps_usage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "ledger.json"
+            path.write_text(json.dumps({"schema": 1, "plan": budget.LEGACY_PLAN,
+                                       "months": {"2026-09": 17, "2026-10": 39}}))
+            budget.reserve_local(str(path), OCTOBER)
+            value = json.loads(path.read_text())
+            self.assertEqual(value["plan"], budget.PLAN)
+            self.assertEqual(value["months"], {"2026-09": 17, "2026-10": 40})
 
     def test_limit_math_and_month_rollover(self):
         ledger = budget.initial_ledger()
