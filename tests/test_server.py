@@ -277,6 +277,10 @@ class ServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertTrue(result["configured"])
+        self.assertEqual(result["maskedKey"], "private-*****oken")
+        self.assertNotIn(
+            "maskedKey", self.request("GET", "/api/access", anonymous=True)[2]
+        )
         self.assertNotIn(token, json.dumps(result))
         self.assertEqual(self.request("GET", "/api/recognition-settings")[2], result)
         self.assertEqual(

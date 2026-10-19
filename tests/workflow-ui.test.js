@@ -6,7 +6,7 @@ const Workflow = require('../workflow.js');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const setup = html.slice(html.indexOf('  function setupWorkflow() {'), html.indexOf('  /* ---------- boot ---------- */'));
 
-function workspace(canEdit = true) {
+function workspace(canEdit = true, extraCards = []) {
   let active = null;
   class Node {
     constructor(tag, cls = '', text = '') { this.tag = tag; this.className = cls; this.text = text; this.children = []; this.attrs = {}; this.hidden = false; this.value = ''; this.classList = {add:()=>{},toggle:()=>{}}; }
@@ -32,6 +32,7 @@ function workspace(canEdit = true) {
   ids.pkbtn.hidden = true; ids.minebtn.hidden = true;
   const document = {body:root,createTextNode:t=>new Node('text','',t),get activeElement(){return active;},querySelector:s=>({'.top':top,'.stage':stage,'.board':board,'.top>.row':headerRow}[s]),querySelectorAll:()=>[]};
   const cards = [Workflow.card({num:'T-001',name:'First card',set:'OP-01',status:'released',col:'Red',variants:[{id:'p1',kind:'parallel',source:'OP-01'},{id:'p3',kind:'parallel',source:'OP-04'},{id:'p2',kind:'reprint',sameAs:'p1',source:'PRB-02'}]}),Workflow.card({num:'T-002',name:'Second card',set:'OP-02',status:'released',col:'Blue',variants:[]}),Workflow.card({num:'T-003',name:'Wanted card',set:'OP-03',status:'released',variants:[]})];
+  cards.push(...extraCards.map(Workflow.card));
   let col = {'T-001':{jp:true},'T-002':{ordered:true}};
   const stores={pending:null};
   let editor;
@@ -103,3 +104,5 @@ test('editing access remains connected and available across every workspace rout
   assert.match(html,/\.top>\.row:not\(\.access-controls\)>/);
   assert.match(html,/\.top>\.access-controls\{order:3;display:flex/);
 });
+
+test('Collection displays an announced card after refresh while wishlist keeps upcoming opt-in',()=>{for(const editable of [true,false]){const w=workspace(editable,[{num:'EB05-008',name:'New announcement',col:'Red',rar:'R',set:'',status:'announced',slot:412,binder:'main'}]);w.find('Collection').onclick();assert.ok(w.find('New announcement'));w.find('Wishlist').onclick();assert.equal(w.find('New announcement'),undefined);w.find('Collection').onclick();assert.ok(w.find('New announcement'));}});

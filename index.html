@@ -2113,10 +2113,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         group = settingGroup("Card recognition", "Connect DeepSeek to prefill card details from JP and EN images. Images are sent only when you choose Analyze.");
         group.appendChild(button("Configure DeepSeek",()=>recognitionSettingsEditor()));
       }
-      group = settingGroup("Upcoming & drafts", "Prepare future cards, then choose where they belong in your binder.");
+      group = settingGroup("Upcoming cards", "Prepare future cards and choose where they belong in your binder.");
       var future = cards.filter(c=>c.status === "announced" || c.status === "draft"), drafts = catalog.drafts || [], unplaced = cards.filter(c=>c.slot == null);
       searchableDetails(group,"Upcoming cards",future,c=>c.num + " · " + c.name,c=>cardEditor(c));
-      searchableDetails(group,"Private drafts",drafts,c=>(c.num ? c.num + " · " : "") + (c.name || "Untitled draft"),c=>cardEditor(c));
+      searchableDetails(group,"Unfinished cards",drafts,c=>(c.num ? c.num + " · " : "") + (c.name || "Untitled draft"),c=>cardEditor(c));
       searchableDetails(group,"Unplaced cards",unplaced,c=>c.num + " · " + c.name,c=>placement(c));
       group = settingGroup("Sharing & account", "Manage your public wishlist and sign in on this device.");
       moveAction("shbtn",group,"Sharing options"); moveAction("minebtn",group,"Open my shared list"); moveAction("pkbtn",group,"Manage passkeys");
@@ -2162,16 +2162,16 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var toolbar = el("div","workflow-toolbar"), common = el("div","workflow-common-filters");
       toolbar.appendChild(searchInput); common.append(kindFilter,setFilter);
       var advanced = el("details","workflow-filters"); advanced.open=filtersOpen;
-      var advancedCount=[statusFilter,colourFilter,sourceFilter].filter(c=>c.value).length + (mode === "Collection" && stateFilter.value ? 1 : 0) + (upcoming ? 1 : 0);
+      var advancedCount=[statusFilter,colourFilter,sourceFilter].filter(c=>c.value).length + (mode === "Collection" && stateFilter.value ? 1 : 0) + (mode !== "Collection" && upcoming ? 1 : 0);
       advanced.appendChild(el("summary","","More filters" + (advancedCount ? " ("+advancedCount+")" : "")));
       advanced.ontoggle=function(){filtersOpen=this.open;};
       var advancedBody=el("div","workflow-filter-fields"); advancedBody.append(statusFilter,colourFilter,sourceFilter);
       if(mode === "Collection") advancedBody.appendChild(stateFilter);
       var up=el("input"); up.type="checkbox"; up.checked=upcoming;
       up.onchange=function(){upcoming=this.checked;listPage=0;selected.clear();draw();};
-      var upl=el("label","workflow-check"); upl.append(up,document.createTextNode("Include upcoming")); advancedBody.appendChild(upl);
+      var upl=el("label","workflow-check"); upl.append(up,document.createTextNode("Include upcoming")); if(mode !== "Collection")advancedBody.appendChild(upl);
       advanced.appendChild(advancedBody); common.appendChild(advanced); toolbar.appendChild(common); panel.appendChild(toolbar);
-      var all = mode === "Orders" ? Workflow.printItems(cards, col, upcoming, products.products) : Workflow.items(cards, col, upcoming, products.products);
+      var all = mode === "Orders" ? Workflow.printItems(cards, col, upcoming, products.products) : Workflow.items(cards, col, mode === "Collection" || upcoming, products.products);
       var items=all.filter(function(x) {
         var c=x.card,v=x.variant || {},kind=x.version === "std" ? "base" : v.kind;
         var sources=Workflow.printSources(c,x.version).map(v=>v.source || "");
@@ -2186,7 +2186,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var matchingIds=new Set(items.map(x=>x.id)); selected.forEach(id=>{if(!matchingIds.has(id)) selected.delete(id);});
       var results=el("div","workflow-results"), count=el("p","workflow-count",items.length + " " + (mode === "Orders" ? "print" : "artwork") + (items.length === 1 ? "" : "s"));
       count.setAttribute("role","status"); results.appendChild(count);
-      var active=search || upcoming || filterControls.some(c=>c.value);
+      var active=search || (mode !== "Collection" && upcoming) || filterControls.some(c=>c.value);
       if(active) results.appendChild(button("Reset filters",function(){search="";searchInput.value="";upcoming=false;filterControls.forEach(c=>c.value="");listPage=0;selected.clear();draw();searchInput.focus();}));
       if(canEdit) results.appendChild(button(selecting ? "Done selecting" : "Select cards",function(){selecting=!selecting;if(!selecting)selected.clear();draw();}));
       if(canEdit && undo) results.appendChild(button("Undo last change",function(){if(!confirmEdit("Undo last collection change"))return;col=Workflow.undo(col,undo);undo=null;scheduleSave();rebuild();draw();}));
@@ -2250,7 +2250,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     }
     function choose(root, label, values, value) {
       var i = el("select");
-      values.forEach((v) => i.appendChild(new Option(v, v)));
+      values.forEach((v) => i.appendChild(new Option(v === "inherit" ? "Same as base card" : v === "announced" ? "Announced" : v === "released" ? "Released" : v, v)));
       i.value = value || values[0];
       root.appendChild(edRow(label, i));
       return i;
@@ -2290,7 +2290,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var save=el("button","btn pri","Save token"),remove=el("button","btn dng","Remove token"),done=el("button","btn","Done"),busy=false,closed=false,configured=false,settingsRevision=0;
       save.type=remove.type=done.type="button";remove.disabled=true;root.append(error,save,remove,done);
       function updateButtons(){save.disabled=busy;remove.disabled=busy||!configured;token.disabled=busy;done.disabled=busy;root.editBusy=busy;}
-      function showSettings(data){configured=data.configured===true;status.textContent=configured ? "DeepSeek token stored. The connection has not been verified. Analyze an image to use it." : "No DeepSeek token configured. Add one to enable AI prefill, or enter card details manually.";updateButtons();}
+      function showSettings(data){configured=data.configured===true;status.textContent=configured ? "DeepSeek token stored · "+(typeof data.maskedKey === "string" ? data.maskedKey : "*****")+". The connection has not been verified. Analyze an image to use it." : "No DeepSeek token configured. Add one to enable AI prefill, or enter card details manually.";updateButtons();}
       edDlg.addEventListener("close",()=>{closed=true;token.value="";},{once:true});
       done.onclick=function(){if(!busy)edDlg.close();};
       async function responseData(response){var data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||data.message||"Could not update recognition settings.");return data;}
@@ -2373,7 +2373,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           checks.push({number:number,name:name,jpName:jpName,colour:colour,rarity:rarity,event:confirmEvent});
         });
         var choice=choose(review,"When this number already exists",["Choose an action","Update existing base images","Add different artwork AA","Add same-art reprint"],"Choose an action");
-        review.appendChild(el("p","small","A reprint or foil uses the same drawing. Different art is AA. Recognition never chooses this for you. Unknown release information stays blank; new cards start as private drafts."));
+        review.appendChild(el("p","small","A reprint or foil uses the same drawing. Different art is AA. Recognition never chooses this for you. Unknown release information stays blank. New cards are Announced and appear in your binder and Collection."));
         review.appendChild(button("Continue to card editor",()=>{
           try{
             var imageFiles=retained();if(Object.keys(imageFiles).length!==selected.length)throw Error("Choose JP or EN for every image.");
@@ -2381,18 +2381,18 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
             var nums=checks.map(c=>c.number.value.trim().toUpperCase()).filter(Boolean);
             if(new Set(nums).size>1)throw Error("These images show different card numbers. Correct the numbers before combining them.");
             var num=nums[0]||"",draftMatches=(catalog.drafts||[]).filter(c=>c.num===num&&num),existing=byNum[num],prefill={};
-            if(!existing&&draftMatches.length>1)throw Error("Several private drafts use this number. Open the intended draft in Settings → Private drafts and update its images there.");
+            if(!existing&&draftMatches.length>1)throw Error("Several unfinished cards use this number. Open the intended card in Settings → Upcoming cards → Unfinished cards.");
             if(!existing)existing=draftMatches[0];
             checks.forEach(c=>{if(c.name.value.trim())prefill.name=c.name.value.trim();if(c.jpName.value.trim())prefill.jpName=c.jpName.value.trim();if(c.colour.value)prefill.col=c.colour.value;if(c.rarity.value)prefill.rar=c.rarity.value;});
             if(existing){
               if(choice.value==="Choose an action")throw Error("This card already exists. Choose whether to update its base images or add a print version.");
               if(choice.value!=="Update existing base images"){
-                if(!byNum[num])throw Error("Save the existing draft as an announced or released card before adding versions.");
-                clearUrls();versionEditor(existing,null,{initialFiles:imageFiles,kind:choice.value==="Add same-art reprint"?"Same-art reprint or foil":"Different artwork AA",status:"draft"});return;
+                if(!byNum[num])throw Error("Save this unfinished card as Announced or Released before adding versions.");
+                clearUrls();versionEditor(existing,null,{initialFiles:imageFiles,kind:choice.value==="Add same-art reprint"?"Same-art reprint or foil":"Different artwork AA",status:"announced"});return;
               }
               if(existing.name)prefill.name=existing.name;
               prefill.jpName=prefill.jpName||existing.jpName||(share[num]||{}).jp||"";
-            }else{prefill.num=num;prefill.status="draft";prefill.set="";}
+            }else{prefill.num=num;prefill.status="announced";prefill.set="";}
             clearUrls();cardEditor(existing||null,Object.assign({},context,{prefill:prefill,initialFiles:imageFiles}));
           }catch(e){error.textContent=e.message;}
         },true));
@@ -2418,8 +2418,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           "inherit",
           "released",
           "announced",
-          "draft",
-        ],context.status || "draft"),
+        ],context.status || "announced"),
         date = control(root, "Release date", "date"),
         sourceUrl = control(root, "Source URL", "url"),
         file = control(root, "Japanese artwork (optional)", "file"),
@@ -2433,7 +2432,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       sameAs.parentNode.hidden=true;kind.onchange=function(){sameAs.parentNode.hidden=kind.value!=="Same-art reprint or foil"};kind.onchange();
       root.appendChild(el("p","small","AA means a different drawing. Borders, frames, stars and foil alone do not make an AA."));
       var id = previous ? previous.id : Workflow.id();
-      if(previous){label.value=previous.label||"";kind.value=previous.kind==="reprint"?"Same-art reprint or foil":previous.kind==="manga"?"Manga":"Different artwork AA";source.value=previous.source||"";finish.value=previous.finish||"";sameAs.value=versionReference(c,previous.id);sameAs.parentNode.hidden=previous.kind!=="reprint";status.value=previous.status||"inherit";date.value=previous.releaseDate||"";sourceUrl.value=previous.sourceUrl||"";state.value=altState(c.num,previous.id)||"untracked";}
+      if(previous){label.value=previous.label||"";kind.value=previous.kind==="reprint"?"Same-art reprint or foil":previous.kind==="manga"?"Manga":"Different artwork AA";source.value=previous.source||"";finish.value=previous.finish||"";sameAs.value=versionReference(c,previous.id);sameAs.parentNode.hidden=previous.kind!=="reprint";status.value=previous.status==="draft"?"announced":previous.status||"inherit";date.value=previous.releaseDate||"";sourceUrl.value=previous.sourceUrl||"";state.value=altState(c.num,previous.id)||"untracked";}
       if (c) number.readOnly = true;
       root.appendChild(
         el(
@@ -2517,7 +2516,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         status = choose(
           root,
           "Release status",
-          ["announced", "released", "draft"],
+          ["announced", "released"],
           existing && existing.status,
         ),
         date = control(
@@ -2564,13 +2563,13 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var editingActive=activeCardRecord(cards,draft), identity=(draft && draft.id)||Workflow.id();
       var root=modal(draft ? "Edit card" : "Add card"), original=Object.assign({},draft || {},context.prefill || {});
       if(!draft)root.appendChild(button("Add from image",()=>recognitionEditor(context)));
-      var num=control(root,"Official card number (optional)","text",original.num),
+      var num=control(root,"Official card number","text",original.num),
           name=control(root,"Name","text",original.name),
           set=control(root,"Release / set","text",original.set),
-          status=choose(root,"Release status",["draft","inherit","announced","released"],original.status || (draft ? "inherit" : "draft"));
+          status=choose(root,"Release status",["announced","released"],(original.status || (editingActive ? ((products.products||[]).find(p=>p.code===original.set)||{}).status || "released" : "announced")) === "released" ? "released" : "announced");
       if(editingActive)num.readOnly=true;
       set.placeholder='OP-12, ST-01 or P-2207';
-      root.appendChild(el('p','small','Unknown number or release? Save a private draft. Artwork is uploaded only after you confirm Save.'));
+      root.appendChild(el('p','small','Announced cards appear in your binder and Collection. Leave the release blank if unknown. Artwork uploads only after you confirm Save.'));
       var artwork=el('details');artwork.open=true;artwork.appendChild(el('summary','','Card artwork'));root.appendChild(artwork);
       function imageInput(label,ref) {
         var file=control(artwork,label,"file");file.accept="image/png,image/jpeg";
@@ -2595,7 +2594,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           slot=control(details,"Physical slot (optional)","number",context.slot == null ? original.slot : context.slot);
       foil.checked=!!original.foil;noen.checked=!!original.noen && !(context.initialFiles||{}).en;slot.min=1;slot.max=SLOTS;
       var placementNote=el('p','small');root.appendChild(placementNote);
-      function explainPlacement(){placementNote.textContent=status.value==='draft' ? 'Private drafts stay in Settings → Private drafts. The selected binder slot is remembered but not reserved until you announce or release this card.' : slot.value.trim() ? 'This card will appear in the selected binder slot after Save.' : 'This card will appear in Collection. Assign a physical slot to show it in the binder.';}
+      function explainPlacement(){placementNote.textContent=slot.value.trim() ? 'This card will appear in the selected binder slot after Save.' : 'This card will appear in Collection. Assign a physical slot to show it in the binder.';}
       status.onchange=slot.oninput=explainPlacement;explainPlacement();
       submit(root,async function(){
         if(catalogStore.pending || catalogStore.running || (catalogStore.recovery && catalogStore.recovery()))throw Error('Save or resolve pending catalog edits before editing a card.');
@@ -2604,14 +2603,14 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         var official=num.value.trim().toUpperCase();
         if(official && !/^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$/.test(official))throw Error('Use an official card number such as OP12-018');
         if(editingActive && official!==editingActive.num)throw Error('Card numbers remain permanent');
-        if(!official && status.value!=='draft')throw Error('Cards need an official number before announcement or release');
+        if(!official)throw Error('Enter an official card number before saving.');
         if(!binders.some(b=>b.id===binder.value))throw Error('Choose an existing binder');
         if(url.value.trim()){var sourceUrl;try{sourceUrl=new URL(url.value.trim());}catch(error){throw Error('Enter a valid source URL');}if(!['http:','https:'].includes(sourceUrl.protocol))throw Error('Source URL must use http or https');}
         if(sid.value.trim()!=='' && (!Number.isInteger(Number(sid.value)) || Number(sid.value)<0))throw Error('Series id must be a positive whole number');
         var n=slot.value.trim()==='' ? null : Number(slot.value);
         if(n!==null && (!Number.isInteger(n)||n<1||n>SLOTS))throw Error('Choose a valid physical slot');
         if(n!==null && cards.some(c=>c!==editingActive && (c.binder||'main')===binder.value && c.slot===n))throw Error('That binder slot is already occupied');
-        var c=Workflow.prepareCard(Object.assign({},original,{id:identity,name:name.value.trim(),set:releaseCode(set.value,status.value!=='draft'),col:colour.value,rar:rarity.value,foil:foil.checked,sourceUrl:url.value.trim(),slot:n,binder:binder.value}),status.value);
+        var c=Workflow.prepareCard(Object.assign({},original,{id:identity,name:name.value.trim(),set:releaseCode(set.value,status.value==='released'),col:colour.value,rar:rarity.value,foil:foil.checked,sourceUrl:url.value.trim(),slot:n,binder:binder.value}),status.value);
         if(official)c.num=official;else delete c.num;
         if(c.status==='draft'){c.jpName=jpName.value.trim();c.sid=sid.value.trim()==='' ? null : Number(sid.value);}
         if(noen.checked)c.noen=true;else delete c.noen;
@@ -2625,7 +2624,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         cards=staged.cards;catalog.drafts=staged.drafts;
         if(official && c.status!=='draft'){share[official]=Object.assign({},share[official]||{},{jp:jpName.value.trim(),sid:sid.value.trim()==='' ? (deriveSid(c.set)||0) : Number(sid.value),alt:(c.alt||[]).slice()});if(c.image)jpArt[official]=true;}
         await saveCatalog();
-        if(c.status==='draft')setStatus('Saved private draft. Open Settings → Private drafts to announce it and place it in the binder.');
+        if(!draft&&mode==='Collection'){search='';searchInput.value='';filterControls.forEach(f=>f.value='');listPage=0;}
+        setStatus('Card saved. Announced cards appear in Binder and Collection.');
       });
       if(draft){
         var remove=el('button','btn dng','Delete card');

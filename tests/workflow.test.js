@@ -450,3 +450,14 @@ test("variant JP and EN references survive normalization without ownership or ar
   assert.deepEqual(card.alt, ["v_aa", "v_manga"]);
   assert.equal(W.effectiveState(card, {}, "v_aa"), "untracked");
 });
+
+test("numbered unknown-release announcement preserves promoted draft identity and artwork", () => {
+  const draft = {id: "v_eb05008", num: "EB05-008", status: "draft", set: "", slot: 412, binder: "main", image: "card_images_jp/v_eb05008.png", enImage: "card_images/v_eb05008.png"};
+  const announced = {...draft, status: "announced"};
+  const staged = W.stageCard([], [draft], announced, draft.num, draft);
+  assert.deepEqual(staged.cards, [announced]);
+  assert.deepEqual(staged.drafts, []);
+  assert.equal(W.items(staged.cards, {}, true).length, 1);
+  assert.equal(W.items(staged.cards, {}, false).length, 0);
+  assert.equal(W.effectiveState(W.card(announced), {}), "want");
+});

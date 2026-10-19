@@ -41,7 +41,7 @@ test('release shorthand is normalized and invalid published releases fail before
   for(const [input,expected] of [[' op12 ','OP-12'],['st01','ST-01'],['PRB02','PRB-02'],['eb04','EB-04'],['P-2207','P-2207']]) assert.equal(releaseCode(input,true),expected);
   assert.equal(releaseCode('',false),'');
   for(const code of ['', 'Romance Dawn', 'P-134-card']) assert.throws(()=>releaseCode(code,true),/Release \/ set/);
-  assert.match(html,/set:\s*releaseCode\(set.value,status.value\s*!==\s*["']draft["']\)/);
+  assert.match(html,/set:\s*releaseCode\(set.value,status.value\s*===\s*["']released["']\)/);
 });
 
 

@@ -215,9 +215,9 @@ card as complete, same as any other alt-art version.
 
 After unlocking editing, **Edit binder** stays visible on the Binder page. An empty slot opens **Add card** directly, even outside edit mode. To edit an occupied slot, turn on Edit binder or open its viewer and choose **Edit card**. Collection, Settings, the viewer and binder slots use the same editor; binder slots simply prefill placement.
 
-The shared editor accepts separate Japanese and English PNG/JPEG images for new and existing cards. Current artwork is previewed and replacements upload only after confirming Save. Private draft images stay private; publishing preserves their image references. Draft placement is remembered but does not reserve a binder slot until publication.
+The shared editor accepts separate Japanese and English PNG/JPEG images for new and existing cards. Current artwork is previewed and replacements upload only after confirming Save. New cards and versions default to Announced and appear in the binder and Collection. An announced card can have an unknown set or release date; add those details later. Legacy private draft images stay private until the card is published.
 
-The Collection, Wishlist and Orders views track individual print versions. Missing Japanese base cards stay on the wishlist even when an alternate print fills their binder slot. Ordered bases and prints are excluded from actionable wants. Announced releases are opt-in; drafts are excluded. Existing cards default to released.
+The Collection, Wishlist and Orders views track individual print versions. Missing Japanese base cards stay on the wishlist even when an alternate print fills their binder slot. Ordered bases and prints are excluded from actionable wants. Collection includes announced cards by default. Shopping views keep announced releases opt-in. Legacy drafts are excluded. Existing cards without a status default to released; “Same as base card” makes a version follow its base card’s status.
 
 Catalog edits use one canonical catalog document and conditional ETag saves. Legacy packaged catalogs remain fallback input; canonical saved data takes precedence. Existing numbers, print IDs, collection marks and physical slots are preserved. New cards remain unplaced until explicitly assigned. Per-print notes and history are private. Select an image in the editor, then Save to commit its catalog reference.
 
@@ -261,7 +261,7 @@ Same-art reprints and foil finishes live under **Print sources / Foil**. Repeate
 
 Unlock editing, then open **Settings → Card recognition** and save a DeepSeek API token. Image recognition uses `deepseek-flash` at `https://api.deepseek.com`; it does not require Bedrock access, AWS model quotas, or an additional Python SDK. Without a saved token, add cards manually. Recognition extracts suggestions only; review the card number, language, artwork classification, release and ownership before saving.
 
-The token stays on the server. Hosted settings are stored in the private S3 object `data/recognition-settings.json`; local settings use the ignored `.recognition-settings.json` file with mode `0600`. Settings responses reveal whether a token is configured and never return its value. Catalog exports and public browsing exclude provider settings. Replace or remove the token in Settings. Saving a token does not reset recognition usage.
+The token stays on the server. Hosted settings are stored in the private S3 object `data/recognition-settings.json`; local settings use the ignored `.recognition-settings.json` file with mode `0600`. Authenticated Settings responses show whether a token is configured and a masked preview such as `sk-f00e2*****1ab1`; the full token is never returned. Short tokens are fully masked. Catalog exports and public browsing exclude provider settings. Replace or remove the token in Settings. Saving a token does not reset recognition usage.
 
 ### Card recognition spending limit
 

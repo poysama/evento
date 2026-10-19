@@ -38,7 +38,12 @@ class SettingsTests(unittest.TestCase):
             status = settings.public_status(settings.load_local(path))
             self.assertEqual(
                 status,
-                {"configured": True, "provider": "deepseek", "model": "deepseek-flash"},
+                {
+                    "configured": True,
+                    "provider": "deepseek",
+                    "model": "deepseek-flash",
+                    "maskedKey": "private-*****oken",
+                },
             )
             self.assertNotIn(TOKEN, json.dumps(status))
             settings.save_local(path, "")
@@ -76,3 +81,12 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(settings.SettingsError) as ctx:
             settings.save_s3(client, "bucket", TOKEN)
         self.assertNotIn(TOKEN, str(ctx.exception))
+
+    def test_masked_preview_never_returns_full_key(self):
+        for token in ["x", "short-token", "x" * 19]:
+            self.assertEqual(settings.public_status(token)["maskedKey"], "*****")
+        token = "sk-f00e2xxxxxxxx1ab1xx"
+        masked = settings.public_status(token)["maskedKey"]
+        self.assertEqual(masked, token[:8] + "*****" + token[-4:])
+        self.assertNotEqual(masked, token)
+        self.assertEqual(settings.public_status("")["maskedKey"], None)

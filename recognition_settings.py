@@ -61,7 +61,17 @@ def _unavailable():
 
 
 def public_status(token):
-    return {"configured": bool(token), "provider": "deepseek", "model": MODEL}
+    masked = (
+        None
+        if not token
+        else (token[:8] + "*****" + token[-4:] if len(token) >= 20 else "*****")
+    )
+    return {
+        "configured": bool(token),
+        "provider": "deepseek",
+        "model": MODEL,
+        "maskedKey": masked,
+    }
 
 
 def load_local(path):

@@ -55,6 +55,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(w.wishlist(catalog, {}), [])
         catalog["drafts"] = []
         catalog["cards"] = [{**draft, "status": "announced"}]
+        self.assertTrue(w.valid_catalog(catalog))
+        catalog["cards"][0]["status"] = "released"
         self.assertFalse(w.valid_catalog(catalog))
         catalog["cards"][0]["set"] = "P-2026"
         self.assertTrue(w.valid_catalog(catalog))
@@ -236,3 +238,14 @@ class SharedPolicyTests(unittest.TestCase):
             invalid["cards"][0]["variants"][0]["enImage"] = bad
             with self.subTest(image=bad):
                 self.assertFalse(w.valid_catalog(invalid))
+
+    def test_announced_unknown_release_is_active_without_date_or_ownership(self):
+        card = {"id": "v_eb05008", "num": "EB05-008", "name": "Spoiled event", "set": "", "status": "announced", "rar": "C", "col": "Red", "foil": False, "slot": 412, "binder": "main", "image": "card_images_jp/v_eb05008.png", "enImage": "card_images/v_eb05008.png"}
+        catalog = w.normalize_catalog({"cards": [card]})
+        self.assertTrue(w.valid_catalog(catalog))
+        self.assertEqual(catalog["cards"][0]["id"], card["id"])
+        self.assertEqual(catalog["cards"][0]["slot"], 412)
+        self.assertEqual(w.wishlist(catalog, {}), [])
+        self.assertEqual([row["id"] for row in w.wishlist(catalog, {}, include_upcoming=True)], ["EB05-008:std"])
+        catalog["cards"][0]["set"] = "arbitrary text"
+        self.assertFalse(w.valid_catalog(catalog))

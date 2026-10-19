@@ -2064,7 +2064,12 @@ settings_read = h(ev("GET", "/api/recognition-settings", cookies=ck), None)
 check(
     "recognition settings safe read",
     j(settings_read)
-    == {"configured": True, "provider": "deepseek", "model": "deepseek-flash"},
+    == {
+        "configured": True,
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "maskedKey": "private-*****oken",
+    },
 )
 check(
     "recognition capability requires editor",
@@ -2083,6 +2088,10 @@ for path in (
         "private token storage unavailable " + path,
         h(ev("GET", path, cookies=ck), None)["statusCode"] == 404,
     )
+check(
+    "public access never contains token preview",
+    "maskedKey" not in j(h(ev("GET", "/api/access"), None)),
+)
 settings_removed = h(ev("DELETE", "/api/recognition-settings", cookies=ck), None)
 check(
     "recognition token removed",

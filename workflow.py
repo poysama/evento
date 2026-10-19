@@ -228,7 +228,10 @@ def _valid_catalog(c):
         if (
             not isinstance(card.get("rar"), str)
             or not isinstance(card.get("set"), str)
-            or not re.fullmatch(r"(?:[A-Z]{2,3}-\d{2}|P-\d{3,4})", card["set"])
+            or not (
+                re.fullmatch(r"(?:[A-Z]{2,3}-\d{2}|P-\d{3,4})", card["set"])
+                or card["set"] == "" and card.get("status") == "announced"
+            )
             or type(card.get("foil")) != bool
             or card.get("col")
             not in {"Red", "Green", "Blue", "Purple", "Black", "Yellow"}

@@ -173,3 +173,13 @@ class PublicProjectionTests(unittest.TestCase):
         source["cards"][0]["variants"] = [{"id": "v_hidden", "kind": "parallel", "label": "Hidden", "source": "", "enImage": "card_images/v_hidden.png"}]
         source["cards"][0]["status"] = "draft"
         self.assertNotIn("card_images/v_hidden.png", public.image_paths(public.catalog(source)))
+
+    def test_announced_card_with_unknown_release_is_public(self):
+        source = self.fixture()
+        card = source["cards"][0]
+        card.update(status="announced", set="", image="card_images_jp/v_spoiler.png", enImage="card_images/v_spoiler.png")
+        visible = public.catalog(source)
+        self.assertEqual(visible["cards"][0]["status"], "announced")
+        self.assertEqual(visible["cards"][0]["set"], "")
+        self.assertIn("card_images/v_spoiler.png", public.image_paths(visible))
+        self.assertIn("card_images_jp/v_spoiler.png", public.image_paths(visible))
