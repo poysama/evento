@@ -68,7 +68,7 @@ The same app runs on AWS at https://evento.peonbox.xyz - one Lambda (`aws/lambda
 API Gateway HTTP API, with your collection and card art in a private S3 bucket, all behind a passcode.
 
 **Every push to `main` deploys automatically** (`.github/workflows/deploy.yml`): it runs the tests in
-`aws/test_handler.py`, packages `aws/lambda_function.py` + `index.html` + `cards.json`, updates the Lambda,
+Python and Node suites, packages the Python domain module, UI scripts and catalog fallbacks, updates the Lambda,
 checks that the live code matches the build, and smoke-tests the site. AWS access uses short-lived OIDC
 credentials for a role that only `main` of this repo can assume - no keys are stored in GitHub.
 
@@ -125,9 +125,7 @@ and clears the note. The Completed page and the binder progress still count only
 
 ## Alt art and Manga versions
 
-The alt-art data now covers every one of Bandai's 62 card lists (boosters, decks, Premium Card Collection / Best Selection,
-anniversary sets, promos, prize cards): 156 prints on 103 Events, each with where it came from, Bandai's own illustration type
-(Comic / Original / Animation) and whether it only repeats the regular card's drawing in a foil finish. A ★ next to the
+The packaged legacy alt-art data records known print sources, illustration types (Comic / Original / Animation), and repeat-drawing foil finishes. It is a maintained snapshot, not a complete live official feed. A ★ next to the
 rarity marks the special foil print. 17 cards have a Manga version (your list). The Alt art page hides the repeat-drawing prints
 by default ("Different drawings only"). When you own an alt art or the Manga (mark **Have it**), it replaces the regular card
 in the 4x4 grid (Japanese art mode), like the real binder; use **Show this in my binder** / **Show the regular card** in the
@@ -186,3 +184,40 @@ with as few products as possible. The Boosters / Starter decks / Promos filter l
 Cards with a Japanese alt-art printing get Standard / Alt art buttons in the card viewer; the four Manga Events
 (OP09-020, -057, -078, -096) are marked and have an optional "Manga" owned flag - a Have mark on it counts the
 card as complete, same as any other alt-art version.
+
+
+## Collection workflow and safe editing
+
+The Collection, Wishlist and Orders views track individual print versions. Missing Japanese base cards stay on the wishlist even when an alternate print fills their binder slot. Ordered bases and prints are excluded from actionable wants. Announced releases are opt-in; drafts are excluded. Existing cards default to released.
+
+Catalog edits use one canonical catalog document and conditional ETag saves. Legacy packaged catalogs remain fallback input; canonical saved data takes precedence. Existing numbers, print IDs, collection marks and physical slots are preserved. New cards remain unplaced until explicitly assigned. Per-print notes and history are private. Select an image in the editor, then Save to commit its catalog reference.
+
+For local verification:
+
+```sh
+python -m unittest discover -s tests
+python aws/test_handler.py
+node --test tests/*.test.js
+```
+
+## Review an official catalog import
+
+`import_catalog.py` accepts an explicit Japanese official cardlist URL, optionally paired with saved HTML from that same page. It extracts Event records from official `modalCol` records, not a claimed complete feed. The official form uses `search=true`, `series` and `freewords`; confirm the resulting product list before accepting a proposal. No images are downloaded or redistributed.
+
+Start the local server, then preview:
+
+```sh
+python import_catalog.py preview --source-url 'https://www.onepiece-cardgame.com/cardlist/?search=true&series=550112' --html /path/to/official.html --out /tmp/catalog-review.json
+```
+
+Inspect `changes`, `review` and the resulting `catalog` in the proposal file. Existing manual names, variants, slots and collection data are retained. Provenance aliases are recorded under `officialPrints`, with a hash of the supplied HTML in the proposal. Unknown parallel prints require explicit identity and kind review; a print suffix never establishes Manga. New bases are unplaced. The importer never removes cards or reorders slots. Empty/unrecognized source pages fail closed.
+
+After review, apply the proposal explicitly:
+
+```sh
+python import_catalog.py apply /tmp/catalog-review.json
+```
+
+The proposal records the catalog endpoint and ETag. Apply sends one conditional catalog PUT; a concurrent edit rejects the proposal instead of overwriting newer data. Generate a fresh preview after a conflict. Hosted endpoints can be selected with `--endpoint`; authenticated requests accept `--cookie` (avoid storing cookies in shared shell history). Ambiguous review records are excluded from automatic changes and need manual version editing. Saved HTML provenance relies on the supplied source URL; this tool cannot authenticate an offline file's origin.
+
+The official OP12-018 search checked during importer development returned only the base print, named 覇王色の覇気, from 師弟の絆【OP-12】. It did not establish an alternate-print ID for a separately supplied picture. Add such artwork as a manual version with source unspecified until an authoritative match is available; never manufacture a pN identity from the picture.

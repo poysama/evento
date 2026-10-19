@@ -326,6 +326,10 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 .card.empty .art.add:hover{background:var(--ownbg);border-color:var(--own)}
 body.editing .card .art{border-color:var(--focus)}
 body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:4px;font-size:14px;color:var(--focus);background:rgba(15,25,38,.82);border-radius:4px;padding:2px 5px}
+
+.workflow-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.workflow-panel{margin-bottom:20px;padding:16px;border:1px solid var(--line,#777);border-radius:12px}.workflow-panel input,.workflow-panel select{padding:10px;margin:4px;max-width:100%}.workflow-list{display:grid;gap:8px;margin-top:16px}.workflow-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px;border:1px solid #6665;border-radius:8px}.workflow-row img{width:54px;height:76px;object-fit:contain;cursor:pointer}.workflow-row .btn{min-height:44px}.workflow-panel .btn{margin:3px}.workflow-nav .btn[aria-pressed=true]{color:var(--own);border-color:var(--own);background:var(--ownbg)}.workflow-panel h2{margin:0 0 12px}.workflow-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--own)}.workflow-row:focus-within{outline:2px solid var(--focus)}.workflow-panel select{background:var(--paper,var(--bg));color:inherit}.workflow-panel .workflow-row img[hidden]+button:before{content:'▧ ';color:var(--mute)}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.workflow-ready .stage{display:block;min-width:0;max-width:100%;overflow:auto;align-self:stretch;margin:0;width:100%}.workflow-ready .app{grid-template-columns:minmax(230px,300px) minmax(0,840px);justify-content:center}.workflow-ready .board[hidden],.workflow-ready [hidden]{display:none!important}.workflow-ready .workflow-nav{margin:0 0 12px}.workflow-ready .workflow-panel{width:100%;box-sizing:border-box}.workflow-ready .workflow-pages{display:flex;align-items:center;justify-content:space-between;gap:8px}.workflow-ready .workflow-row{min-width:0}.workflow-ready .workflow-row .btn{white-space:normal;text-align:left}.workflow-ready .workflow-panel input,.workflow-ready .workflow-panel select{box-sizing:border-box;max-width:100%}.workflow-ready .workflow-panel input[type=search]{width:100%}@media(max-width:1000px){.workflow-ready .stage{overflow:visible}.workflow-ready .workflow-nav{position:relative}.workflow-ready .workflow-panel{padding:10px}.workflow-ready .workflow-row{gap:5px}}
 </style>
 </head>
 <body>
@@ -387,11 +391,15 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 <dialog id="eddlg" aria-label="Edit card"></dialog>
 <dialog id="setdlg" aria-label="Manage sets"></dialog>
 
+<script src="/workflow.js"></script>
+<script src="/save.js"></script>
 <script>
 (function () {
   var PER = 16, PAGES = 64, SLOTS = PAGES * PER, cards = [], col = {}, page = 1, N = PAGES, firstPage = {};
   var saveTimer = null, saving = false, dirty = false, openNum = null;
   var bySlot = {}, share = {}, products = {}, binders = [], currentBinder = 'main', editMode = false;
+  var workflowRedraw=function(){}, workflowVersionEditor=null;
+  var catalog = {schema:2,drafts:[]}, catalogStore = new RevisionStore('/api/catalog'), collectionStore = new RevisionStore('/api/collection');
   var $ = function (id) { return document.getElementById(id); };
   var grid = $('grid'), dlg = $('dlg'), bm = $('bm');
   var KEYS = ['jp', 'foil', 'en', 'kr', 'ordered'];
@@ -411,7 +419,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   }
   function verLabel(c, a) {            // plus where the print came from and a star for the special foil finish
     var src = c.altsrc && c.altsrc[a], star = c.altstar && c.altstar.indexOf(a) >= 0 && c.manga !== a;
-    return verBase(c, a) + (src ? ' · ' + src : '') + (star ? ' ★' : '');
+    var structured=(c.variants||[]).find(function(v){return v.id===a});
+    return (structured&&structured.label||verBase(c, a)) + (src ? ' · ' + src : '') + (star ? ' ★' : '');
   }
   function verSame(c, a) { return !!(c.altsame && c.altsame.indexOf(a) >= 0); }       // uses the regular card's drawing
   function verNote(c, a) {             // one sentence: Bandai's illustration type and whether the drawing is a repeat
@@ -437,7 +446,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   /* ---------- card art: Japanese card when we have it, English art as the fallback ---------- */
   var jpArt = {}, artMode = 'jp';
   try { if (localStorage.getItem('binderArt') === 'en') artMode = 'en'; } catch (e) {}
-  function showingJP(n) { return artMode === 'jp' && !!jpArt[n]; }
+  function showingJP(n) { return artMode === 'jp' && !!(jpArt[n] || byNum[n]&&byNum[n].image); }
   var artSegs = [];
   function hasJP() { for (var k in jpArt) if (jpArt[k]) return true; return false; }
   function syncSegs() {
@@ -492,8 +501,10 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     }
   }
   function artUrls(n, mode, ver) {     // picture URLs to try in order; mode 'en' | 'jp' (default = the binder's setting); ver = an alt id to show
-    var jpU = 'card_images_jp/' + n + '.png', enU = 'card_images/' + n + '.jpg', c = byNum[n];
-    var wantJP = (mode ? mode === 'jp' : artMode === 'jp') && !!jpArt[n];
+    var c = byNum[n], jpU = c&&c.image || 'card_images_jp/' + n + '.png', enU = c&&c.enImage || 'card_images/' + n + '.jpg';
+    var variant = c && (c.variants||[]).find(function(v){return v.id===ver;});
+    if(ver && (mode||artMode)==='jp') return [variant&&variant.image || 'card_images_jp/'+n+'_'+ver+'.png',jpU,enU];
+    var wantJP = (mode ? mode === 'jp' : artMode === 'jp') && !!(jpArt[n] || c&&c.image);
     if (!wantJP && c && c.noen && jpArt[n]) wantJP = true;      // a few promos have no English print
     return wantJP ? (ver ? ['card_images_jp/' + n + '_' + ver + '.png'] : []).concat([jpU, enU]) : [enU].concat(jpArt[n] ? [jpU] : []);
   }
@@ -511,7 +522,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 
   /* ---------- status text (one place, used by tile + panel) ---------- */
   function jpText(c, long) {
-    if (complete(c.num)) return long ? 'JP card complete' : 'JP ✓ Complete';
+    if (has(c.num,'jp')) return long ? 'JP base owned' : 'JP base ✓';
+    if(anyHave(c.num))return long?'Binder slot filled by a parallel. JP base still missing':'Slot filled · base missing';
     if (ordered(c.num)) return long ? 'On order (bought by proxy), waiting for delivery' : 'On order';
     var p = phList(c.num);
     if (p.length) return long ? 'No JP card yet — has ' + p.join('/') + ' as a placeholder' : 'No JP yet · ' + p.join('/');
@@ -526,7 +538,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var card = el('div', 'card' + (d ? ' done' : '') + (p ? ' hasph' : '') + (o ? ' ord' : ''));
     card.dataset.n = c.num;
     var art = el('button', 'art'); art.type = 'button'; art.setAttribute('aria-pressed', d);
-    art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + (window.matchMedia('(pointer: coarse)').matches ? 'open the card viewer' : 'mark JP card ' + (jpOwned ? 'not owned' : 'owned')) + '.');
+    art.setAttribute('aria-label', c.name + ', ' + c.num + ', ' + pos + '. ' + jpText(c, true) + '. Press to ' + 'open the card viewer' + '.');
     var sv = artMode === 'jp' ? shownVer(c.num) : '';            // an alt art / Manga I own takes the slot, as in the real binder
     if (sv) card.classList.add('shown');
     var img = el('img'); img.alt = ''; img.decoding = 'async'; artImg(img, c.num, null, sv);
@@ -538,7 +550,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
     art.addEventListener('click', function () {
       if (editMode) { openCardEditor(c.slot); return; }
-      if (window.matchMedia('(pointer: coarse)').matches) openInfo(c.num); else toggle(c.num, 'jp');
+      openInfo(c.num);
     });
     var info = el('button', 'i', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Card info: ' + c.name);
     info.addEventListener('click', function (e) { e.stopPropagation(); openInfo(c.num); });
@@ -581,16 +593,31 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) { for (var s2 = (p - 1) * PER + 1; s2 <= p * PER; s2++) { var c2 = bySlot[s2]; if (c2) preloadArt(c2.num); } } });
   }
   function stats() {
-    var jp = 0, ph = 0, fo = 0, oo = 0;
-    cards.forEach(function (c) {
-      if (complete(c.num)) jp++; else { if (ordered(c.num)) oo++; if (phList(c.num).length) ph++; }
-      if (tagged(c.num, 'foil')) fo++;
+    var projection = Workflow.projection(cards, col, products.products),
+      ph = 0,
+      fo = 0;
+    projection.cards.forEach(function (c) {
+      if (!has(c.num, "jp") && phList(c.num).length) ph++;
+      if (tagged(c.num, "foil")) fo++;
     });
-    $('fill').style.width = (jp / cards.length * 100) + '%';
-    $('pbar').setAttribute('aria-valuenow', jp); $('pbar').setAttribute('aria-valuemax', cards.length);
-    var s = $('stats'); s.textContent = '';
-    [['JP complete ', jp + '/' + cards.length], ['Placeholder only ', String(ph)], ['On order ', String(oo)], ['Foils ', String(fo)]].forEach(function (x) {
-      var sp = el('span', '', x[0]); sp.appendChild(el('b', '', x[1])); s.appendChild(sp);
+    $("fill").style.width =
+      (projection.total ? (projection.baseOwned / projection.total) * 100 : 0) +
+      "%";
+    $("pbar").setAttribute("aria-label", "Released Japanese base prints owned");
+    $("pbar").setAttribute("aria-valuenow", projection.baseOwned);
+    $("pbar").setAttribute("aria-valuemax", projection.total);
+    var s = $("stats");
+    s.textContent = "";
+    [
+      ["Base prints ", projection.baseOwned + "/" + projection.total],
+      ["Binder slots ", projection.binderOwned + "/" + projection.binderTotal],
+      ["Placeholder only ", String(ph)],
+      ["On order ", String(projection.ordered)],
+      ["Foils ", String(fo)],
+    ].forEach(function (x) {
+      var span = el("span", "", x[0]);
+      span.appendChild(el("b", "", x[1]));
+      s.appendChild(span);
     });
   }
 
@@ -628,29 +655,22 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     if (v) e.note = v; else delete e.note;
     scheduleSave();
   }
-  function setStatus(t, err) { $('status').textContent = t; $('status').className = err ? 'err' : ''; $('warn').hidden = !err; }
-  function flush() {
-    saveTimer = null;
-    if (saving) { dirty = true; return; }
-    saving = true; dirty = false; setStatus('saving…');
-    fetch('/api/collection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(col) })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); setStatus(dirty ? 'saving…' : 'saved ✓'); })
-      .catch(function () { setStatus('NOT SAVED', true); dirty = false; })
-      .then(function () { saving = false; if (dirty) flush(); });
-  }
-  function scheduleSave() { setStatus('unsaved…'); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 300); }
+  function setStatus(t, err) { var retry=$('workflow-retry');if(retry)retry.hidden=!(collectionStore.pending||catalogStore.pending);$('status').textContent = t; $('status').className = err ? 'err' : ''; $('warn').hidden = !err; }
+  collectionStore.onchange = function(t) { dirty = !!collectionStore.pending; setStatus(t, t.indexOf('failed')>=0 || t.indexOf('Conflict')>=0); };
+  function flush() { saveTimer=null; saving=true; return collectionStore.save(col).catch(function(e){setStatus(e.message,true);}).finally(function(){saving=false;}); }
+  function scheduleSave() { collectionStore.stage(col); setStatus('unsaved…'); clearTimeout(saveTimer); saveTimer=setTimeout(flush,300); }
   function migrate(raw) {
     var out = {};
     Object.keys(raw || {}).forEach(function (n) {
-      var v = raw[n], e = {};
+      var v = raw[n], e = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : {};
       if (v === true) e.jp = true;
       else if (v && typeof v === 'object') { KEYS.forEach(function (k) { if (v[k] === true) e[k] = true; }); if (typeof v.note === 'string' && v.note) e.note = v.note.slice(0, 200); }
       if (!e.ordered) delete e.note;
       if (v && v.alt && typeof v.alt === 'object') {
-        var m = {}; Object.keys(v.alt).forEach(function (a) { if (/^p\d{1,2}$/.test(a) && ALT_ST.indexOf(v.alt[a]) >= 0) m[a] = v.alt[a]; });
+        var m = {}; Object.keys(v.alt).forEach(function (a) { if (/^(p\d+|v_[a-zA-Z0-9_-]+)$/.test(a) && ALT_ST.indexOf(v.alt[a]) >= 0) m[a] = v.alt[a]; });
         if (Object.keys(m).length) e.alt = m;
       }
-      if (e.alt && typeof v.show === 'string' && /^(std|p\d{1,2})$/.test(v.show)) e.show = v.show;
+      if (e.alt && typeof v.show === 'string' && /^(std|p\d+|v_[a-zA-Z0-9_-]+)$/.test(v.show)) e.show = v.show;
       if (v && v.manga === true) {          // the old on/off Manga flag becomes a mark on the Manga version
         var mc = cards.find(function (c) { return c.num === n; });
         if (mc && mc.manga) { e.alt = e.alt || {}; if (!e.alt[mc.manga]) e.alt[mc.manga] = 'have'; }
@@ -750,7 +770,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   function preview(n) {
     pvEl.textContent = '';
     var c = n && cards.find(function (x) { return x.num === n; });
-    if (!c) { pvEl.appendChild(el('div', 'hint', 'Hover a card to see it here. Click a card to mark the JP copy as owned; use the “i” for placeholders, foil and Manga.')); return; }
+    if (!c) { pvEl.appendChild(el('div', 'hint', 'Hover a card to preview it. Open artwork for Japanese base and print ownership controls.')); return; }
     var i = cards.indexOf(c), j = i % PER;
     var img = el('img'); img.alt = c.name; artImg(img, c.num, null, artMode === 'jp' ? shownVer(c.num) : ''); pvEl.appendChild(img);
     pvEl.appendChild(el('h3', '', c.name));
@@ -770,8 +790,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     if (!m.length) { var li = el('li'); li.appendChild(el('small', '', 'No matches')); hits.appendChild(li); hits.hidden = false; return; }
     m.forEach(function (i) {
       var c = cards[i], li = el('li'), b = el('button'); b.type = 'button';
-      b.appendChild(el('span', '', c.name)); b.appendChild(el('small', '', c.num + ' · p.' + pageOf(c.slot)));
-      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; go(pageOf(c.slot), 0); spotlight(c.num); });
+      b.appendChild(el('span', '', c.name)); b.appendChild(el('small', '', c.num + ' · '+((binders.find(function(b){return b.id===(c.binder||'main')})||{}).name||'Main')+(c.slot==null?' · Unplaced':' · p.'+pageOf(c.slot))));
+      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; setBinder(c.binder||'main'); if(c.slot!=null){go(pageOf(c.slot), 0); spotlight(c.num);}openInfo(c.num); });
       li.appendChild(b); hits.appendChild(li);
     });
     hits.hidden = false;
@@ -806,7 +826,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     r.artseg = el('span', 'seg2'); buildVwSeg(r.artseg);
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close card viewer');
     x.addEventListener('click', function () { vwClose(); });
-    hd.appendChild(tt); hd.appendChild(r.artseg); hd.appendChild(x);
+    var addVersion=el('button','btn','Add version');addVersion.type='button';addVersion.onclick=function(){if(workflowVersionEditor)workflowVersionEditor(cards[vidx])};
+    hd.appendChild(tt); hd.appendChild(r.artseg);hd.appendChild(addVersion); hd.appendChild(x);
 
     var stage = el('div', 'vs');
     r.prev = el('button', 'vn vp', '‹'); r.prev.type = 'button'; r.prev.setAttribute('aria-label', 'Previous card');
@@ -854,7 +875,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     vw = r;
   }
   var vwMode = 'jp';                    // the viewer's own EN | JP choice: switching it here never touches the binder behind
-  function vwShowingJP(n) { return vwMode === 'jp' && !!jpArt[n]; }
+  function vwShowingJP(n) { return vwMode === 'jp' && !!(jpArt[n] || byNum[n]&&byNum[n].image); }
   function syncVwSeg() {
     if (!vw) return;
     vw.artseg.hidden = !hasJP();
@@ -872,13 +893,13 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   var vwAlt = null;                       // which alt-art / Manga picture the viewer is showing (null = the standard card)
   function vwShowArt(c) {
     var img = el('img'); img.alt = c.name;
-    if (vwAlt) loadImg(img, 'card_images_jp/' + c.num + '_' + vwAlt + '.png', { fail: function () { img.remove(); } });
+    if (vwAlt) loadImg(img, Workflow.artwork(c,vwAlt), { fail: function () { img.remove(); } });
     else artImg(img, c.num, vwMode);
     vw.wrap.replaceChildren(img);
   }
   function vwVariants(c) {                // Standard / Alt art / Manga: Japanese pictures only, so only where we have JP art
     vw.vv.textContent = '';
-    var alts = (c.alt || []).filter(function () { return !!jpArt[c.num]; });
+    var alts = c.alt || [];
     vw.vv.hidden = !alts.length;
     if (!alts.length) return;
     var opts = [[null, 'Standard']].concat(alts.map(function (a, i) { return [a, verLabel(c, a) + ({ want: ' (want)', ordered: ' (on order)', have: ' ✓' }[altState(c.num, a)] || '')]; }));
@@ -894,18 +915,18 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     if (newCard) {
       vw.name.textContent = c.name;
       vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
-      vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + ' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1);
+      vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + (c.slot==null?' · Unplaced':' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1));
       vwAlt = null;
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
       vwShowArt(c); vwVariants(c);
-      vw.prev.disabled = vidx <= 0; vw.next.disabled = vidx >= cards.length - 1;
+      vw.prev.disabled = !cards.slice(0,vidx).some(function(x){return (x.binder||'main')===currentBinder}); vw.next.disabled = !cards.slice(vidx+1).some(function(x){return (x.binder||'main')===currentBinder});
       [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) preloadArt(cards[k].num, vwMode); });
     }
     var jpOwned = has(n, 'jp'), done = complete(n);
     vw.note.className = 'note' + (done ? ' done' : ordered(n) ? ' ord' : '');
     vw.note.textContent = jpText(c, true) + (tagged(n, 'foil') ? ' · Foil in hand' : '') + '.';
     vw.jp.setAttribute('aria-pressed', jpOwned ? 'true' : 'false');
-    vw.jp.textContent = jpOwned ? '✓  JP card complete' : ordered(n) ? 'Received: mark JP card complete' : done ? 'Also have the standard JP card' : 'Mark JP card complete';
+    vw.jp.textContent = jpOwned ? '✓  JP base owned' : ordered(n) ? 'Received: mark JP base owned' : done ? 'Also have the standard JP card' : 'Mark JP base owned';
     vw.ord.hidden = jpOwned; vw.ord.setAttribute('aria-pressed', ordered(n) ? 'true' : 'false');
     vw.ord.textContent = ordered(n) ? '✓ On order (bought by proxy)' : 'Bought by proxy, on the way';
     vw.onote.hidden = jpOwned || !ordered(n);
@@ -924,7 +945,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     if (isAlt) {
       var ast = altState(n, vwAlt);
       vw.altt.className = 'note' + (ast === 'have' ? ' done' : ast === 'ordered' ? ' ord' : '');
-      vw.altt.textContent = verLabel(c, vwAlt) + ': ' + (ast === 'have' ? 'in hand' : ast === 'ordered' ? 'on order' : ast === 'want' ? 'you want this one' : 'not marked') + '. ' + (ast === 'have' ? 'Having this version counts the whole card as collected.' : 'Marking it Have it will count the whole card as collected.');
+      vw.altt.textContent = verLabel(c, vwAlt) + ': ' + (ast === 'have' ? 'in hand' : ast === 'ordered' ? 'on order' : ast === 'want' ? 'you want this one' : 'not marked') + '. ' + (ast === 'have' ? 'Having this version fills this binder slot.' : 'Marking it Have it will fill this binder slot.');
       vw.altd.textContent = verNote(c, vwAlt);
       vw.asb.hidden = ast !== 'have'; vw.asb.setAttribute('aria-pressed', shownVer(n) === vwAlt ? 'true' : 'false');
       vw.asb.textContent = shownVer(n) === vwAlt ? '▣ Shown in my binder' : '▣ Show this in my binder';
@@ -934,10 +955,11 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     }
   }
   function vstep(d) {
-    var k = vidx + d; if (k < 0 || k >= cards.length) return;
+    var k=vidx+d; while(k>=0 && k<cards.length && (cards[k].binder||'main')!==currentBinder)k+=d; if(k<0||k>=cards.length)return;
     vidx = k; vwUpdate(true, d);
   }
   function openInfo(n, alt) {          // alt (optional): open straight on that alt-art / Manga version
+    var target=byNum[n];if(target&&(target.binder||'main')!==currentBinder)setBinder(target.binder||'main');
     vidx = Math.max(0, cards.findIndex(function (c) { return c.num === n; }));
     if (!vw) vwBuild();
     vwMode = artMode; syncVwSeg();      // starts from the binder's setting; changing it here stays here
@@ -952,8 +974,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   });
   function vwAfterClose() {        // idempotent: runs from the X, the backdrop, Esc and the Android back gesture
     var n = openNum; if (!n) return; openNum = null;
-    var pg = pageOf(cards[vidx].slot); if (pg !== page) go(pg, 0);   // the grid follows wherever you swiped to
-    flash(n);
+    var pg = cards[vidx].slot==null?page:pageOf(cards[vidx].slot); if (pg !== page) go(pg, 0);   // the grid follows wherever you swiped to
+    flash(n);workflowRedraw();
     if (typeof sumDlg !== 'undefined' && sumDlg.open) sumFill();   // the shopping list may have changed
     if (typeof doneDlg !== 'undefined' && doneDlg.open) doneFill();
     if (typeof ordDlg !== 'undefined' && ordDlg.open) ordFill();
@@ -972,7 +994,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     });
   })();
 
-  window.addEventListener('beforeunload', function (ev) { if (saveTimer || saving) { ev.preventDefault(); ev.returnValue = ''; } });
+  window.addEventListener('beforeunload', function (ev) { if (saveTimer || saving || dirty || catalogStore.pending) { ev.preventDefault(); ev.returnValue = ''; } });
 
   /* ---------- passkeys (hosted version only; hidden when the server has none) ---------- */
   var pkBtn = $('pkbtn'), pkDlg = $('pkdlg'), pkBan = $('pkban'), pkList = null, pkMsg = null;
@@ -1046,17 +1068,12 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 
   /* ---------- share "what I'm looking for" with friends ---------- */
   var shBtn = $('shbtn'), shDlg = $('shdlg'), shCfg = null, shMsg = null;
-  function missingList() { return cards.filter(function (c) { return !complete(c.num) && !ordered(c.num); }); }
+  function missingList() { return cards.filter(function (c) { return Workflow.wishlist([c],col,false,products.products).some(function(x){return x.version==='std';}); }); }
   function wishText(withFoil) {
-    var m = missingList(), out = ["Japanese One Piece Event cards I'm looking for (" + m.length + ' of ' + cards.length + '):', ''], cur = null;
-    m.forEach(function (c) {
-      if (c.set !== cur) { if (cur) out.push(''); out.push(c.set); cur = c.set; }
-      var ph = phList(c.num);
-      out.push('- ' + c.num + ' ' + c.name + ' (' + c.rar + ')' + (ph.length ? ' - I have the ' + ph.join('/') + ' copy, need the JP card' : ''));
-    });
-    var f = withFoil ? altWantList() : [];
-    if (f.length) { out.push('', 'Also collecting these alt-art / Manga versions:'); f.forEach(function (v) { out.push('- ' + v.c.num + ' ' + v.c.name + ' (' + verLabel(v.c, v.a) + ')'); }); }
-    if (shCfg && shCfg.enabled && shCfg.url) out.push('', 'Pictures: ' + shCfg.url);
+    var items=Workflow.wishlist(cards,col,!!(shCfg&&shCfg.upcoming),products.products).filter(function(x){return withFoil||x.version==='std'});
+    var out=["Japanese Event prints I'm looking for ("+items.length+'):', ''];
+    items.forEach(function(x){out.push('- '+x.num+' '+x.card.name+' · '+(x.variant?x.variant.label||x.variant.kind:'Base')+(x.status==='announced'?' · Upcoming':''));});
+    if(shCfg&&shCfg.enabled&&shCfg.url)out.push('','Pictures: '+shCfg.url);
     return out.join('\n');
   }
   function legacyCopy(t) {          // for browsers / contexts where the modern clipboard call is refused
@@ -1082,7 +1099,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     root.appendChild(el('h3', '', 'Share what I’m looking for'));
     root.appendChild(el('div', 'small', 'Show your friends the Japanese cards you still need, with pictures, so they know what to look for.'));
     root.appendChild(el('div', 'note' + (miss.length ? '' : ' done'), miss.length
-      ? 'Still looking for ' + miss.length + ' of ' + cards.length + ' JP cards' + (fm.length ? ' (plus ' + fm.length + ' alt-art / Manga versions I want)' : '') + (onN ? '. ' + onN + ' more already on order, not shown to friends' : '') + '.'
+      ? 'Still looking for ' + miss.length + ' of ' + Workflow.projection(cards,col,products.products).total + ' JP cards' + (fm.length ? ' (plus ' + fm.length + ' alt-art / Manga versions I want)' : '') + (onN ? '. ' + onN + ' more already on order, not shown to friends' : '') + '.'
       : (onN ? 'Nothing left to find: everything else is already on order.' : 'Nothing missing: the JP collection is complete!')));
     shMsg = el('div', 'sh-msg'); shMsg.setAttribute('role', 'status');
 
@@ -1107,10 +1124,10 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
       var nm = el('input'); nm.type = 'text'; nm.maxLength = 40; nm.placeholder = 'Your name (shown at the top, optional)'; nm.value = shCfg.name || ''; nm.setAttribute('aria-label', 'Your name');
       var ms = el('textarea'); ms.maxLength = 300; ms.placeholder = 'A short message for your friends (optional)'; ms.value = shCfg.message || ''; ms.setAttribute('aria-label', 'Message for your friends');
       function ck(text, on) { var l = el('label', 'ck'), i = el('input'); i.type = 'checkbox'; i.checked = on; l.appendChild(i); l.appendChild(el('span', '', text)); return [l, i]; }
-      var c1 = ck('Show card pictures', shCfg.pics), c2 = ck('Also show the alt-art / Manga versions I want' + (fm.length ? ' (' + fm.length + ')' : ''), shCfg.foil);
-      f.appendChild(nm); f.appendChild(ms); f.appendChild(c1[0]); f.appendChild(c2[0]);
+      var c1 = ck('Show card pictures', shCfg.pics), c3 = ck('Include upcoming announced prints',shCfg.upcoming), c2 = ck('Also show the alt-art / Manga versions I want' + (fm.length ? ' (' + fm.length + ')' : ''), shCfg.foil);
+      f.appendChild(nm); f.appendChild(ms); f.appendChild(c1[0]); f.appendChild(c2[0]); f.appendChild(c3[0]);
       var go = el('button', 'btn pri', shCfg.enabled ? 'Save changes' : 'Create share link'); go.type = 'button';
-      go.addEventListener('click', function () { go.disabled = true; shPut({ enabled: true, name: nm.value, message: ms.value, pics: c1[1].checked, foil: c2[1].checked }, shCfg.enabled ? 'Saved.' : 'Link created. Copy it and send it to your friends.'); });
+      go.addEventListener('click', function () { go.disabled = true; shPut({ enabled: true, name: nm.value, message: ms.value, pics: c1[1].checked, foil: c2[1].checked, upcoming:c3[1].checked }, shCfg.enabled ? 'Saved.' : 'Link created. Copy it and send it to your friends.'); });
       f.appendChild(go);
       if (shCfg.enabled) {
         var r2 = el('div', 'sh-row');
@@ -1138,20 +1155,56 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   shBtn.addEventListener('click', shOpen);
   shDlg.addEventListener('click', function (e) { if (e.target === shDlg) shDlg.close(); });
 
-  /* ---------- what to buy: missing cards per product, where to find them, shortest shopping list ---------- */
+  /* ---------- what to buy: missing cards per product, where to find them, suggested products ---------- */
   var sumDlg = $('sumdlg'), PROD = null, sumMode = 'find', sumKind = 'all', sumHideDone = true;
   function isDeck(p) { return p.family === 'ST'; }
-  function sumData(forBuy) {          // forBuy: cards already on order are not counted as missing
-    var miss = {}, prods = {}, bySet = {};
-    cards.forEach(function (c) { if (!complete(c.num) && !(forBuy && ordered(c.num))) miss[c.num] = true; });
-    PROD.products.forEach(function (p) { prods[p.code] = { p: p, total: 0, miss: [], only: 0 }; bySet[p.code] = { p: p, total: 0, miss: [] }; });
-    cards.forEach(function (c) {
-      var src = PROD.sources[c.num] || [c.set], m = !!miss[c.num];
-      src.forEach(function (code) { var d = prods[code]; if (!d) return; d.total++; if (m) { d.miss.push(c); if (src.length === 1) d.only++; } });
-      var b = bySet[c.set]; if (b) { b.total++; if (m) b.miss.push(c); }
+  function sumData(forBuy) {
+    var projection = Workflow.projection(cards, col, products.products),
+      missing = forBuy ? projection.wantedBase : projection.missingBase;
+    var miss = {},
+      prods = {},
+      bySet = {};
+    missing.forEach(function (c) {
+      miss[c.num] = true;
     });
-    return { prods: prods, bySet: bySet, missing: cards.filter(function (c) { return miss[c.num]; }) };
+    PROD.products
+      .filter(function (p) {
+        return !p.status || p.status === "released";
+      })
+      .forEach(function (p) {
+        prods[p.code] = { p: p, total: 0, owned:0, miss: [], only: 0 };
+        bySet[p.code] = { p: p, total: 0, owned:0, miss: [] };
+      });
+    projection.cards.forEach(function (c) {
+      var src = PROD.sources[c.num] || [c.set],
+        m = !!miss[c.num];
+      src = src.filter(function (code) {
+        return !!prods[code];
+      });
+      src.forEach(function (code) {
+        var d = prods[code];
+        d.total++;if(has(c.num,'jp'))d.owned++;
+        if (m) {
+          d.miss.push(c);
+          if (src.length === 1) d.only++;
+        }
+      });
+      var b = bySet[c.set];
+      if (b) {
+        b.total++;if(has(c.num,'jp'))b.owned++;
+        if (m) b.miss.push(c);
+      }
+    });
+    return {
+      prods: prods,
+      bySet: bySet,
+      missing: missing,
+      total: projection.total,
+      owned: projection.baseOwned,
+      shopping:Workflow.shoppingSummary(projection),
+    };
   }
+
   function sumPlan(D, kind) {        // greedy cover: always take the product that adds the most still-missing cards (decks win ties)
     var left = {}, n = D.missing.length, plan = [];
     D.missing.forEach(function (c) { left[c.num] = true; });
@@ -1179,7 +1232,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   var KIND_LABEL = { all: 'all products', pack: 'boosters', deck: 'starter decks', promo: 'promos' };
   function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : ''; }
   function planText(plan, D) {
-    var out = ['Japanese One Piece Event cards I still need (' + D.missing.length + '). Shortest shopping list:', ''];
+    var out = ['Japanese One Piece Event cards I still need (' + D.missing.length + '). Suggested products:', ''];
     plan.forEach(function (s, i) { out.push((i + 1) + '. ' + s.d.p.code + ' ' + s.d.p.name + ' (' + s.d.p.kind.toLowerCase() + '): ' + s.gain.length + ' card' + (s.gain.length === 1 ? '' : 's') + ' - ' + s.gain.map(function (c) { return c.num; }).join(', ')); });
     return out.join('\n');
   }
@@ -1187,11 +1240,11 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var det = el('details', 'sr'), sm = el('summary'), p = d.p;
     sm.appendChild(el('span', 'sr-c' + famClass(p), p.code));
     var t = el('div', 'sr-t'); t.appendChild(el('b', '', p.name));
-    var own = d.total - d.miss.length;
+    var own = d.owned;
     t.appendChild(chipRow([[p.kind, ''], [fmtDate(p.date), ''], [own + ' of ' + d.total + ' owned', own ? 'own' : ''],
       (mode === 'find' && d.only) ? [d.only + ' only in ' + p.code, 'only', d.only + ' of your missing cards are in no other product, so ' + p.code + ' is the only place to get them.'] : null]));
     var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (d.total ? own / d.total * 100 : 100) + '%'; bar.appendChild(fill); t.appendChild(bar);
-    var n = el('div', 'sr-n' + (d.miss.length ? '' : ' zero')); n.appendChild(el('b', '', String(d.miss.length))); n.appendChild(el('span', '', d.miss.length ? 'missing' : 'complete'));
+    var n = el('div', 'sr-n' + (d.miss.length ? '' : ' zero')); n.appendChild(el('b', '', String(d.miss.length))); n.appendChild(el('span', '', d.miss.length ? 'to buy' : 'nothing to buy'));
     sm.appendChild(t); sm.appendChild(n); det.appendChild(sm);
     var list = el('div', 'sr-l');
     d.miss.forEach(function (c) {
@@ -1213,15 +1266,15 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var hd = el('header', 'sm-h'); hd.appendChild(el('h3', '', 'What to buy'));
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.addEventListener('click', function () { sumDlg.close(); }); hd.appendChild(x);
     if (!D.missing.length) {
-      body.appendChild(el('div', 'sm-empty', orderedCards().length ? 'Nothing left to buy: everything else is already on order.' : 'Nothing to buy: your JP collection is complete!'));
+      body.appendChild(el('div', 'sm-empty', D.shopping.emptyText));
     } else {
       var inProds = Object.keys(D.prods).filter(function (k) { return D.prods[k].miss.length; }).length;
       var s = el('div', 'sm-sum'); s.innerHTML = '';
-      s.appendChild(document.createTextNode('You are missing ')); s.appendChild(el('b', '', D.missing.length + ' of ' + cards.length));
+      s.appendChild(document.createTextNode('You are missing ')); s.appendChild(el('b', '', D.missing.length + ' of ' + D.total));
       s.appendChild(document.createTextNode(' JP Event cards. They can be found in ' + inProds + ' different products.'));
       var onN = orderedCards().length; if (onN) s.appendChild(document.createTextNode(' ' + onN + ' more ' + (onN === 1 ? 'is' : 'are') + ' already on order and not counted.'));
       body.appendChild(s);
-      var pl = el('div', 'plan'); pl.appendChild(el('h4', '', 'Shortest shopping list' + (sumKind === 'all' ? '' : ': ' + KIND_LABEL[sumKind] + ' only')));
+      var pl = el('div', 'plan'); pl.appendChild(el('h4', '', 'Suggested products' + (sumKind === 'all' ? '' : ': ' + KIND_LABEL[sumKind] + ' only')));
       pl.appendChild(el('div', 'small', 'A DECK has fixed contents: you get exactly these cards. A PACK is a random draw, so you may need several. A PROMO was a giveaway, so it usually means buying that single card.'));
       var covered = plan.reduce(function (n, st) { return n + st.gain.length; }, 0);
       if (sumKind !== 'all') pl.appendChild(el('div', 'small', !plan.length ? 'None of your missing cards are in a ' + KIND_LABEL[sumKind].replace(/s$/, '') + '.'
@@ -1257,7 +1310,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     ctl.appendChild(seg([['all', 'All'], ['pack', 'Boosters'], ['deck', 'Starter decks'], ['promo', 'Promos']], sumKind, function (k) { sumKind = k; sumFill(); }, 'Show'));
     var lab = el('label', 'ck'), cb = el('input'); cb.type = 'checkbox'; cb.checked = sumHideDone;
     cb.addEventListener('change', function () { sumHideDone = cb.checked; sumFill(); });
-    lab.appendChild(cb); lab.appendChild(el('span', '', 'Hide finished')); ctl.appendChild(lab);
+    lab.appendChild(cb); lab.appendChild(el('span', '', 'Hide products with nothing to buy')); ctl.appendChild(lab);
     body.appendChild(ctl);
     body.appendChild(el('div', 'small', sumMode === 'find'
       ? 'Counts every product that contains a card you are missing, including reprints, so you can pick where to look. Products are listed by how many of your missing cards they hold. “12 only in OP-12” means 12 of those cards appear in no other product.'
@@ -1308,7 +1361,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   }
   function doneRow(d) {
     var det = el('details', 'sr'), sm = el('summary'), p = d.p;
-    var cs = cards.filter(function (c) { return c.set === p.code; });
+    var cs = Workflow.projection(cards,col,products.products).cards.filter(function (c) { return c.set === p.code; });
     var fo = cs.filter(function (c) { return tagged(c.num, 'foil'); }).length;
     sm.appendChild(el('span', 'sr-c' + famClass(p), p.code));
     var t = el('div', 'sr-t'); t.appendChild(el('b', '', p.name));
@@ -1332,10 +1385,10 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.addEventListener('click', function () { doneDlg.close(); }); hd.appendChild(x);
     var sets = Object.keys(D.bySet).map(function (k) { return D.bySet[k]; }).filter(function (d) { return d.total; });
     var full = sets.filter(function (d) { return !d.miss.length; });
-    var jpN = cards.length - D.missing.length;
+    var jpN = D.owned;
     var s = el('div', 'sm-sum');
     s.appendChild(el('b', '', full.length + ' of ' + sets.length)); s.appendChild(document.createTextNode(' sets are complete. That is '));
-    s.appendChild(el('b', '', jpN + ' of ' + cards.length)); s.appendChild(document.createTextNode(' JP Event cards in hand.'));
+    s.appendChild(el('b', '', jpN + ' of ' + D.total)); s.appendChild(document.createTextNode(' JP Event cards in hand.'));
     body.appendChild(s);
     if (!full.length) {
       body.appendChild(el('div', 'sm-empty', 'No set is complete yet.'));
@@ -1438,7 +1491,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     cards.forEach(function (c) { (c.alt || []).forEach(function (a) { out.push({ c: c, a: a, st: altState(c.num, a) }); }); });
     return out;
   }
-  function altWantList() { return allVersions().filter(function (v) { return v.st === 'want'; }); }
+  function altWantList() { return Workflow.wishlist(cards,col,false,products.products).filter(function(x){return x.variant}).map(function(x){return{c:x.card,a:x.version,st:'want'}}); }
   function altText(list) {
     var out = ['Alt-art / Manga versions I am collecting (' + list.length + '):', ''];
     list.forEach(function (v) { out.push('- ' + v.c.num + ' ' + v.c.name + ' (' + verLabel(v.c, v.a) + ')'); });
@@ -1447,7 +1500,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   function altCell(v, pending) {
     var cell = el('div', 'ac'), main = el('button', 'ab'); main.type = 'button'; main.dataset.st = v.st;
     main.setAttribute('aria-label', v.c.name + ', ' + verLabel(v.c, v.a) + ', ' + (v.st || 'not marked') + '. Press to change.');
-    var im = el('div', 'im'), img = el('img'); img.alt = ''; img.dataset.src = 'card_images_jp/' + v.c.num + '_' + v.a + '.png'; im.appendChild(img); pending.push(img);
+    var im = el('div', 'im'), img = el('img'); img.alt = ''; img.dataset.src = artUrls(v.c.num,'jp',v.a)[0]; im.appendChild(img); pending.push(img);
     if (v.st) im.appendChild(el('span', 'st', ALT_TXT[v.st]));
     if (v.c.altstar && v.c.altstar.indexOf(v.a) >= 0 && v.c.manga !== v.a) im.appendChild(el('span', 'sf', '★'));
     main.title = v.c.name + ' · ' + verLabel(v.c, v.a) + (verNote(v.c, v.a) ? ' · ' + verNote(v.c, v.a) : '');
@@ -1455,7 +1508,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var ty = (v.c.alttype && v.c.alttype[v.a] || '') + (verSame(v.c, v.a) ? ' · same art as the regular card' : (v.c.altdup && v.c.altdup[v.a]) ? ' · same art as ' + verBase(v.c, v.c.altdup[v.a]) : '');
     if (ty) cp.appendChild(el('span', 'ty', ty));
     main.appendChild(im); main.appendChild(cp);
-    main.addEventListener('click', function () { setAlt(v.c.num, v.a, ALT_NEXT[v.st]); altFill(); });
+    main.addEventListener('click', function () { openInfo(v.c.num,v.a); });
     var info = el('button', 'ai', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Open ' + v.c.name);
     info.addEventListener('click', function () { openInfo(v.c.num, v.a); });
     cell.appendChild(main); cell.appendChild(info);
@@ -1476,8 +1529,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var altCards = {}; altV.forEach(function (v) { altCards[v.c.num] = 1; });
     var s = el('div', 'sm-sum');
     s.appendChild(document.createTextNode('Which cards have alternate arts and a Manga version, in two sections. '));
-    s.appendChild(el('b', '', 'Tap a picture to cycle: Want, On order, Have, clear.'));
-    s.appendChild(document.createTextNode(' Marks never change whether a card counts as complete.'));
+    s.appendChild(el('b', '', 'Open a picture to view and mark that print.'));
+    s.appendChild(document.createTextNode(' Owning a parallel fills the binder slot; missing bases remain wanted.'));
     body.appendChild(s);
     body.appendChild(chipRow([['★ ' + cnt.want + ' wanted', cnt.want ? 'only' : ''], [cnt.ordered + ' on order', ''], ['✓ ' + cnt.have + ' have', cnt.have ? 'own' : ''], [cnt[''] + ' not marked', '']]));
     var ctl = el('div', 'sm-ctl');
@@ -1605,14 +1658,21 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   }
 
   function rebuild() {
-    bySlot = {};
-    cards.forEach(function (c) { if ((c.binder || 'main') === currentBinder) bySlot[c.slot] = c; });
+    bySlot = {}; byNum = {}; firstPage = {};
+    cards = cards.map(Workflow.card);
+    var ss=$('setsel'); ss.replaceChildren();
+    cards.forEach(function(c){ byNum[c.num]=c; if((c.binder||'main')===currentBinder && c.slot!=null){bySlot[c.slot]=c;if(!firstPage[c.set]){firstPage[c.set]=pageOf(c.slot);var o=el('option','',c.set+' · p.'+firstPage[c.set]);o.value=firstPage[c.set];ss.appendChild(o);}} });
+    if(typeof PROD!=='undefined') PROD=products;
     render(0);
   }
-  function saveCards() { return putJSON('/api/cards', cards).then(function () { setStatus('cards saved ✓'); }, function () { setStatus('cards NOT SAVED', true); }); }
-  function saveProducts() { return putJSON('/api/products', products).then(function () { setStatus('products saved ✓'); }, function () { setStatus('products NOT SAVED', true); }); }
-  function saveShare() { return putJSON('/api/share-data', share).then(function () { setStatus('share saved ✓'); }, function () { setStatus('share NOT SAVED', true); }); }
-  function saveBinders() { return putJSON('/api/binders', binders).then(function () { setStatus('binders saved ✓'); }, function () { setStatus('binders NOT SAVED', true); }); }
+  function saveCatalog() {
+    catalog.cards=cards; catalog.products=products; catalog.share=share; catalog.binders=binders;
+    return catalogStore.save(catalog).then(function(){setStatus('catalog saved ✓');rebuild();}).catch(function(e){setStatus(e.message,true);throw e;});
+  }
+  function saveCards(){return saveCatalog();}
+  function saveProducts(){return saveCatalog();}
+  function saveShare(){return saveCatalog();}
+  function saveBinders(){return saveCatalog();}
 
   function renderBinders() {
     var bs = $('bindersel'); bs.textContent = '';
@@ -1643,27 +1703,23 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   function edCheck(label, id, on) { var i = el('input'); i.id = id; i.type = 'checkbox'; i.checked = !!on; var w = el('div'); w.appendChild(i); w.appendChild(el('span', '', ' ' + label)); var l = el('label', 'ed-row'); l.appendChild(w); return l; }
   function edHead(t) { var d = el('div', 'sm-h2', t); d.style.marginTop = '8px'; return d; }
 
-  function uploadImage(file, path) {
-    var reader = new FileReader();
-    reader.onload = function () {
-      var data = String(reader.result).split(',')[1] || '';
-      fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path, data: data }) })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function () { setStatus('image saved ✓'); })
-        .catch(function () { setStatus('image NOT SAVED', true); });
-    };
-    reader.readAsDataURL(file);
+  async function uploadImage(file, path) {
+    if(!['image/png','image/jpeg'].includes(file.type))throw Error('Choose PNG or JPEG artwork');
+    var data=await new Promise(function(resolve,reject){var reader=new FileReader();reader.onload=function(){resolve(String(reader.result).split(',')[1])};reader.onerror=reject;reader.readAsDataURL(file)});
+    var response=await fetch('/api/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path,data:data})});
+    if(!response.ok)throw Error('Artwork upload failed ('+response.status+')');
+    return response.json();
   }
 
   function openCardEditor(slot) {
     var c = bySlot[slot] || null, adding = !c;
-    var num = c ? c.num : '';
+    var num = c ? c.num : '', addedNumber=null;
     var se = share[num] || { jp: '', sid: null, alt: [] };
     var root = el('div', 'dl');
     root.appendChild(el('h3', '', adding ? 'Add card · slot ' + slot : 'Edit ' + num + ' · slot ' + slot));
-    root.appendChild(el('div', 'small', adding ? 'Fill it in and Save. Art and the Japanese name are optional.' : 'Changes write to cards.json and share_data.json.'));
+    root.appendChild(el('div', 'small', adding ? 'Fill it in and Save. Art and the Japanese name are optional.' : 'Changes save together to the catalog. Card numbers remain permanent.'));
 
-    var g1 = el('div', 'ed-grid'); g1.appendChild(edInput('Name', 'ed-name', c ? c.name : '')); g1.appendChild(edInput('Number', 'ed-num', num));
+    var g1 = el('div', 'ed-grid'); g1.appendChild(edInput('Name', 'ed-name', c ? c.name : '')); g1.appendChild(edInput('Number', 'ed-num', num)); if(c)g1.querySelector('#ed-num').readOnly=true;
     var g2 = el('div', 'ed-grid'); g2.appendChild(edSelect('Rarity', 'ed-rar', RARS, c ? c.rar : 'C'));
     var setIn = el('input'); setIn.id = 'ed-set'; setIn.value = c ? c.set : ''; g2.appendChild(edRow('Set', setIn));
     var sidIn = el('input'); sidIn.id = 'ed-sid'; sidIn.type = 'number'; sidIn.value = se.sid == null ? '' : se.sid;
@@ -1676,7 +1732,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 
     root.appendChild(edHead('Japanese name (share page)'));
     root.appendChild(edInput('JP name', 'ed-jp', se.jp));
-    root.appendChild(edHead('Alt art / Manga'));
+    var advanced=el('details');advanced.appendChild(el('summary','','Legacy version metadata (advanced)'));root.appendChild(advanced);
+    var legacyRoot=root;root=advanced;root.appendChild(edHead('Alt art / Manga'));
     root.appendChild(edInput('Alt ids (p1,p2)', 'ed-alt', listOf(c, 'alt')));
     root.appendChild(edInput('Alt sources (id=where)', 'ed-altsrc', mapOf(c, 'altsrc')));
     root.appendChild(edInput('Alt types (id=Comic/Original/Animation/Other)', 'ed-alttype', mapOf(c, 'alttype')));
@@ -1685,17 +1742,17 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     root.appendChild(edInput('Same as another print (id=id)', 'ed-altdup', mapOf(c, 'altdup')));
     root.appendChild(edInput('Manga alt id', 'ed-manga', c && c.manga ? c.manga : ''));
 
-    root.appendChild(edHead('Card art'));
+    root=legacyRoot;root.appendChild(edHead('Card art'));
     var jpImg = el('input'); jpImg.type = 'file'; jpImg.accept = 'image/png,image/jpeg';
-    jpImg.addEventListener('change', function () { if (jpImg.files[0]) uploadImage(jpImg.files[0], 'card_images_jp/' + $('ed-num').value.trim() + '.png'); });
+
     var enImg = el('input'); enImg.type = 'file'; enImg.accept = 'image/png,image/jpeg';
-    enImg.addEventListener('change', function () { if (enImg.files[0]) uploadImage(enImg.files[0], 'card_images/' + $('ed-num').value.trim() + '.jpg'); });
-    root.appendChild(edRow('Japanese art (PNG)', jpImg));
-    root.appendChild(edRow('English art (JPG)', enImg));
-    root.appendChild(el('div', 'ed-note', 'Art is saved to card_images_jp/<num>.png and card_images/<num>.jpg.'));
+
+    root.appendChild(edRow('Japanese art (PNG/JPEG)', jpImg));
+    root.appendChild(edRow('English art (PNG/JPEG)', enImg));
+    root.appendChild(el('div', 'ed-note', 'Artwork is staged until Save. Cancel leaves stored artwork unchanged.'));
 
     function collect() {
-      var o = { name: $('ed-name').value.trim(), num: $('ed-num').value.trim(), rar: $('ed-rar').value, set: $('ed-set').value.trim(), col: $('ed-col').value, foil: $('ed-foil').checked };
+      var o = Object.assign({}, c || {}, { name: $('ed-name').value.trim(), num: $('ed-num').value.trim(), rar: $('ed-rar').value, set: $('ed-set').value.trim(), col: $('ed-col').value, foil: $('ed-foil').checked });
       if ($('ed-noen').checked) o.noen = true;
       var alt = parseList($('ed-alt').value); if (alt.length) o.alt = alt;
       var altsrc = parseMap($('ed-altsrc').value); if (Object.keys(altsrc).length) o.altsrc = altsrc;
@@ -1704,22 +1761,28 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
       var altstar = parseList($('ed-altstar').value); if (altstar.length) o.altstar = altstar;
       var altdup = parseMap($('ed-altdup').value); if (Object.keys(altdup).length) o.altdup = altdup;
       var manga = $('ed-manga').value.trim(); if (manga) o.manga = manga;
+      o.variants=(c&&c.variants||[]).map(function(v){return Object.assign({},v,{source:altsrc[v.id]||v.source||'',artType:alttype[v.id]||v.artType||''})});
       return o;
     }
 
     var acts = el('div', 'ed-acts');
     var save = el('button', 'btn pri', 'Save'); save.type = 'button';
-    save.addEventListener('click', function () {
+    save.addEventListener('click', async function () {
       var o = collect();
       if (!o.name || !o.num) { setStatus('name + number required', true); return; }
+      save.disabled=true;
+      try{
+      if(jpImg.files[0]){var jf=jpImg.files[0];var ji=await uploadImage(jf,'card_images_jp/'+o.num+(jf.type==='image/png'?'.png':'.jpg'));o.image=ji.image||ji.path;jpArt[o.num]=true;}
+      if(enImg.files[0]){var ef=enImg.files[0];var ei=await uploadImage(ef,'card_images/'+o.num+(ef.type==='image/png'?'.png':'.jpg'));o.enImage=ei.image||ei.path;}
       var oldNum = c ? c.num : null;
-      if (adding) { o.slot = slot; if (currentBinder !== 'main') o.binder = currentBinder; cards.push(o); }
-      else { o.slot = c.slot; if (c.binder) o.binder = c.binder; cards[cards.indexOf(c)] = o; }
+      if (adding) { if(cards.some(function(x){return x.num===o.num&&x.num!==addedNumber}))throw Error('Card number already exists'); o.slot = slot; if (currentBinder !== 'main') o.binder = currentBinder; var added=cards.findIndex(function(x){return x.num===addedNumber});if(addedNumber&&addedNumber!==o.num)delete share[addedNumber];if(added>=0)cards[added]=o;else cards.push(o);addedNumber=o.num; }
+      else { o.slot = c.slot; if (c.binder) o.binder = c.binder; cards=Workflow.upsert(cards,o,'num'); }
       if (oldNum && oldNum !== o.num) delete share[oldNum];
       var sidV = parseInt($('ed-sid').value, 10);
       share[o.num] = { jp: $('ed-jp').value.trim(), sid: isNaN(sidV) ? (deriveSid(o.set) || 0) : sidV, alt: (o.alt || []).slice() };
       rebuild();
-      Promise.all([saveCards(), saveShare()]).then(function () { edDlg.close(); });
+      await saveCatalog();edDlg.close();
+      }catch(e){setStatus(e.message,true);var msg=root.querySelector('.editor-error')||el('p','err editor-error');msg.textContent=e.message;msg.setAttribute('role','alert');root.appendChild(msg)}finally{save.disabled=false;}
     });
     var cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button';
     cancel.addEventListener('click', function () { edDlg.close(); });
@@ -1731,7 +1794,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
         cards = cards.filter(function (x) { return x.num !== num; });
         delete share[num];
         rebuild();
-        Promise.all([saveCards(), saveShare()]).then(function () { edDlg.close(); });
+        saveCatalog().then(function () { edDlg.close(); }).catch(function(){});
       });
       acts.appendChild(del);
     }
@@ -1767,7 +1830,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     function setForm(p) {
       var root = el('div', 'dl');
       root.appendChild(el('h3', '', p ? 'Edit ' + p.code : 'Add set'));
-      root.appendChild(edInput('Code', 'st-code', p ? p.code : ''));
+      root.appendChild(edInput('Code', 'st-code', p ? p.code : ''));if(p)root.querySelector('#st-code').readOnly=true;
       root.appendChild(edInput('Name', 'st-name', p ? p.name : ''));
       root.appendChild(edInput('Family', 'st-family', p ? p.family : ''));
       root.appendChild(edInput('Kind', 'st-kind', p ? p.kind : ''));
@@ -1777,9 +1840,8 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
       save.addEventListener('click', function () {
         var code = $('st-code').value.trim();
         if (!code) return;
-        var entry = { code: code, name: $('st-name').value.trim(), family: $('st-family').value.trim(), kind: $('st-kind').value.trim(), date: $('st-date').value };
-        if (p) { var i = products.products.indexOf(p); if (i >= 0) products.products[i] = entry; else products.products.push(entry); }
-        else { products.products.push(entry); }
+        var entry = Workflow.mergeProduct(p||{}, { code: code, name: $('st-name').value.trim(), family: $('st-family').value.trim(), kind: $('st-kind').value.trim(), date: $('st-date').value });
+        products.products=Workflow.upsert(products.products,entry,'code');
         saveProducts().then(function () { manageSets(); });
       });
       var cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', function () { manageSets(); });
@@ -1805,10 +1867,809 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
   edDlg.addEventListener('click', function (e) { if (e.target === edDlg) edDlg.close(); });
   setDlg.addEventListener('click', function (e) { if (e.target === setDlg) setDlg.close(); });
 
+  function recoverPending() {
+    [collectionStore, catalogStore].forEach(function (store) {
+      var pending = store.recovery();
+      if (!pending) return;
+      var recoveryId = "recovery-" + store.url.split("/").pop();
+      if ($(recoveryId)) return;
+      var box = el("div", "warn");
+      box.id = recoveryId;
+      box.textContent =
+        "Unsaved " + store.url.split("/").pop() + " edits found. ";
+      var restore = el("button", "btn", "Restore draft"),
+        discard = el("button", "btn", "Discard"),
+        exportBtn = el("button", "btn", "Export pending JSON");
+      box.append(restore, discard, exportBtn);
+      grid.before(box);
+      restore.onclick = function () {
+        try {
+          var data = store.restore(pending);
+          if (store === collectionStore) col = data;
+          else {
+            catalog = data;
+            cards = data.cards;
+            products = data.products;
+            share = data.share;
+            binders = data.binders;
+          }
+          rebuild();
+          box.remove();
+          setStatus("Draft restored. Review, then Retry save.");
+        } catch (e) {
+          setStatus(e.message, true);
+        }
+      };
+      discard.onclick = function () {
+        store.discard();
+        box.remove();
+      };
+      exportBtn.onclick = function () {
+        var a = el("a");
+        a.href = URL.createObjectURL(
+          new Blob([JSON.stringify(pending, null, 2)], {
+            type: "application/json",
+          }),
+        );
+        a.download = "evento-pending.json";
+        a.click();
+        setTimeout(function () {
+          URL.revokeObjectURL(a.href);
+        }, 1000);
+      };
+    });
+  }
+  function setupWorkflow() {
+    var nav = el("nav", "workflow-nav"),
+      panel = el("section", "workflow-panel"),
+      mode = "Collection",
+      search = "",
+      upcoming = false,
+      selected = new Set(),
+      undo = null,
+      listPage = 0;
+    var searchInput = el("input");
+    searchInput.placeholder = "Search name, number, set or source";
+    searchInput.setAttribute("aria-label", "Search collection");
+    var statusFilter = el("select"),
+      kindFilter = el("select"),
+      setFilter = el("select"),
+      colourFilter = el("select"),
+      sourceFilter = el("select"),
+      stateFilter = el("select");
+    function options(s, values, label) {
+      var previous = s.value;
+      s.replaceChildren();
+      s.setAttribute("aria-label", label);
+      s.appendChild(new Option("All " + label, ""));
+      values.forEach(function (v) {
+        s.appendChild(
+          new Option(
+            {
+              want: "Wanted",
+              ordered: "Ordered",
+              have: "Have",
+              untracked: "Untracked",
+              skip: "Skipped",
+              announced: "Upcoming",
+              released: "Released",
+            }[v] || v,
+            v,
+          ),
+        );
+      });
+      if (values.includes(previous)) s.value = previous;
+      s.onchange = function () {
+        listPage = 0;
+        draw();
+      };
+    }
+    options(
+      stateFilter,
+      ["want", "ordered", "have", "untracked", "skip"],
+      "collection states",
+    );
+    options(statusFilter, ["released", "announced"], "release states");
+    options(kindFilter, ["base", "parallel", "manga"], "print kinds");
+    options(
+      setFilter,
+      Array.from(new Set(cards.map((c) => c.set)))
+        .filter(Boolean)
+        .sort(),
+      "sets",
+    );
+    options(
+      colourFilter,
+      Array.from(new Set(cards.map((c) => c.col)))
+        .filter(Boolean)
+        .sort(),
+      "colours",
+    );
+    options(
+      sourceFilter,
+      Array.from(
+        new Set(cards.flatMap((c) => (c.variants || []).map((v) => v.source))),
+      )
+        .filter(Boolean)
+        .sort(),
+      "sources",
+    );
+    ["Collection", "Wishlist", "Orders", "Binder", "Settings"].forEach(
+      function (name) {
+        var b = el("button", "btn", name);
+        b.onclick = function () {
+          mode = name;
+          listPage = 0;
+          selected.clear();
+          draw();
+        };
+        nav.appendChild(b);
+      },
+    );
+    var retry = el("button", "btn", "Retry save");
+    retry.id = "workflow-retry";
+    retry.hidden = !(collectionStore.pending || catalogStore.pending);
+    retry.onclick = function () {
+      Promise.all([collectionStore.save(), catalogStore.save()])
+        .then(function () {
+          setStatus("saved ✓");
+        })
+        .catch(function (e) {
+          setStatus(e.message, true);
+          recoverPending();
+        });
+    };
+    nav.appendChild(retry);
+    document.querySelector(".top").prepend(nav);
+    document.querySelector(".stage").prepend(panel);
+    searchInput.oninput = function () {
+      search = this.value;
+      listPage = 0;
+      var caret = this.selectionStart;
+      draw();
+      searchInput.focus();
+      searchInput.setSelectionRange(caret, caret);
+    };
+    function mark(items, state) {
+      var changed = Workflow.change(col, items, state);
+      col = changed.collection;
+      undo = changed.patches;
+      scheduleSave();
+      rebuild();
+      draw();
+    }
+    function draw() {
+      options(
+        setFilter,
+        Array.from(new Set(cards.map((c) => c.set)))
+          .filter(Boolean)
+          .sort(),
+        "sets",
+      );
+      options(
+        sourceFilter,
+        Array.from(
+          new Set(cards.flatMap((c) => (c.variants || []).map((v) => v.source))),
+        )
+          .filter(Boolean)
+          .sort(),
+        "sources",
+      );
+      retry.hidden = !(collectionStore.pending || catalogStore.pending);
+      panel.replaceChildren();
+      grid.hidden = mode !== "Binder";
+      document.querySelector(".board").hidden = mode !== "Binder";
+      panel.hidden = mode === "Binder";
+      [
+        "editbtn",
+        "setsbtn",
+        "shbtn",
+        "pricebtn",
+        "sumbtn",
+        "donebtn",
+        "ordbtn",
+        "altbtn",
+      ].forEach(function (id) {
+        var b = $(id);
+        if (b) b.hidden = mode !== "Settings";
+      });
+      document
+        .querySelectorAll(".ph-head,.pg,.pv,.row.ctl")
+        .forEach(function (e) {
+          e.hidden = mode !== "Binder";
+        });
+      nav.querySelectorAll("button").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.textContent === mode ? "true" : "false");
+      });
+      if (mode === "Binder") return;
+      panel.appendChild(el("h2", "", mode));
+      if (mode === "Settings") {
+        var version = el("button", "btn", "Add version"),
+          release = el("button", "btn", "Add release"),
+          card = el("button", "btn", "Add card / draft");
+        version.onclick = function () {
+          versionEditor();
+        };
+        release.onclick = function () {
+          releaseEditor();
+        };
+        card.onclick = function () {
+          cardEditor();
+        };
+        panel.append(version, release, card);
+        (products.products || []).forEach(function (p) {
+          var edit = el("button", "btn", p.code + " · Edit release");
+          edit.onclick = function () {
+            releaseEditor(p);
+          };
+          panel.appendChild(edit);
+        });
+        cards
+          .filter(function (c) {
+            return c.status === "announced" || c.status === "draft";
+          })
+          .forEach(function (c) {
+            var edit = el("button", "btn", c.num + " · Edit status");
+            edit.onclick = function () {
+              cardEditor(c);
+            };
+            panel.appendChild(edit);
+          });
+        var drafts = catalog.drafts || [];
+        panel.appendChild(
+          el(
+            "p",
+            "small",
+            drafts.length +
+              " private drafts · " +
+              cards.filter((c) => c.slot == null).length +
+              " unplaced cards",
+          ),
+        );
+        drafts.forEach(function (d) {
+          var b = el("button", "btn", (d.name || "Untitled") + " · Edit draft");
+          b.onclick = function () {
+            cardEditor(d);
+          };
+          panel.appendChild(b);
+        });
+        cards
+          .filter((c) => c.slot == null)
+          .forEach(function (c) {
+            var b = el("button", "btn", c.num + " · Place");
+            b.onclick = function () {
+              placement(c);
+            };
+            panel.appendChild(b);
+          });
+        return;
+      }
+      panel.append(
+        searchInput,
+        statusFilter,
+        kindFilter,
+        setFilter,
+        colourFilter,
+        sourceFilter,
+        stateFilter,
+      );
+      stateFilter.hidden = mode !== "Collection";
+      var up = el("input");
+      up.type = "checkbox";
+      up.checked = upcoming;
+      up.onchange = function () {
+        upcoming = this.checked;
+        draw();
+      };
+      var upl = el("label", "", "Include upcoming ");
+      upl.appendChild(up);
+      panel.appendChild(upl);
+      var all = Workflow.items(cards, col, upcoming, products.products),
+        items = all.filter(function (x) {
+          var c = x.card,
+            v = x.variant || {},
+            kind = x.version === "std" ? "base" : v.kind;
+          return (
+            (mode !== "Wishlist" || x.state === "want") &&
+            (mode !== "Orders" || x.state === "ordered") &&
+            (mode !== "Collection" ||
+              !stateFilter.value ||
+              x.state === stateFilter.value) &&
+            (!search ||
+              (c.num + " " + c.name + " " + c.set + " " + (v.source || ""))
+                .toLowerCase()
+                .includes(search.toLowerCase())) &&
+            (!statusFilter.value || x.status === statusFilter.value) &&
+            (!kindFilter.value || kind === kindFilter.value) &&
+            (!setFilter.value || c.set === setFilter.value) &&
+            (!colourFilter.value || c.col === colourFilter.value) &&
+            (!sourceFilter.value || v.source === sourceFilter.value)
+          );
+        });
+      panel.appendChild(
+        el(
+          "p",
+          "small",
+          Workflow.items(cards, col, false, products.products).filter(
+            function (x) {
+              return x.version === "std" && x.state === "have";
+            },
+          ).length +
+            " base prints owned · " +
+            Workflow.items(cards, col, false, products.products).filter(
+              function (x) {
+                return (
+                  x.version === "std" && x.card.slot != null && complete(x.num)
+                );
+              },
+            ).length +
+            " binder slots filled · " +
+            items.length +
+            " matching prints",
+        ),
+      );
+      var bulk = el("div", "workflow-bulk");
+      bulk.hidden = !selected.size;
+      panel.appendChild(bulk);
+      ["want", "ordered", "have", "skip", "untracked"].forEach(function (st) {
+        var labels = {
+          want: "Mark wanted",
+          ordered: "Mark ordered",
+          have: "Received",
+          skip: "Skip base",
+          untracked: "Clear parallel mark",
+        };
+        var b = el("button", "btn", labels[st]);
+        b.onclick = function () {
+          var targets = items.filter((x) => selected.has(x.id));
+          if (!targets.length) return;
+          if (st === "skip") targets = targets.filter((x) => x.version === "std");
+          if (st === "untracked")
+            targets = targets.filter((x) => x.version !== "std");
+          mark(targets, st);
+        };
+        bulk.appendChild(b);
+      });
+      var ub = el("button", "btn", "Undo");
+      ub.disabled = !undo;
+      ub.hidden = !undo;
+      ub.onclick = function () {
+        if (!undo) return;
+        col = Workflow.undo(col, undo);
+        undo = null;
+        scheduleSave();
+        rebuild();
+        draw();
+      };
+      panel.appendChild(ub);
+      var list = el("div", "workflow-list");
+      var pageSize = 40,
+        totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+      listPage = Math.min(listPage, totalPages - 1);
+      var pager = el("div", "workflow-pages"),
+        previous = el("button", "btn", "Previous prints"),
+        next = el("button", "btn", "Next prints");
+      previous.disabled = listPage === 0;
+      next.disabled = listPage >= totalPages - 1;
+      previous.onclick = function () {
+        listPage--;
+        draw();
+      };
+      next.onclick = function () {
+        listPage++;
+        draw();
+      };
+      pager.append(
+        previous,
+        el("span", "small", "Page " + (listPage + 1) + " / " + totalPages),
+        next,
+      );
+      panel.appendChild(pager);
+      items
+        .slice(listPage * pageSize, (listPage + 1) * pageSize)
+        .forEach(function (item) {
+          var c = item.card,
+            v = item.variant,
+            row = el("article", "workflow-row"),
+            check = el("input");
+          check.type = "checkbox";
+          check.checked = selected.has(item.id);
+          check.setAttribute("aria-label", "Select " + item.id);
+          check.onchange = function () {
+            if (this.checked) selected.add(item.id);
+            else selected.delete(item.id);
+            bulk.hidden = !selected.size;
+          };
+          var img = el("img");
+          img.alt = c.name + " " + (v ? v.label || v.kind : "base");
+          img.loading = "lazy";
+          img.src = artUrls(c.num, "jp", v && v.id)[0];
+          img.onerror = function () {
+            this.hidden = true;
+          };
+          img.onclick = function () {
+            openInfo(c.num, v && v.id);
+          };
+          var name = el(
+            "button",
+            "btn",
+            c.num +
+              " · " +
+              c.name +
+              " · " +
+              (v ? v.label || v.kind : "Base") +
+              " · " +
+              ({
+                want: "Wanted",
+                ordered: "Ordered",
+                have: "Have",
+                skip: "Skipped",
+                untracked: "Untracked",
+              }[item.state] || item.state) +
+              " · " +
+              ({ announced: "Upcoming", released: "Released", draft: "Draft" }[
+                item.status
+              ] || item.status) +
+              " · " +
+              ((binders.find((b) => b.id === (c.binder || "main")) || {}).name ||
+                "Main"),
+          );
+          name.onclick = function () {
+            openInfo(c.num, v && v.id);
+          };
+          row.append(check, img, name);
+          var have = el(
+            "button",
+            "btn",
+            item.state === "have" ? "Have ✓" : "Mark Have",
+          );
+          have.onclick = function () {
+            mark(
+              [item],
+              item.state === "have" ? (v ? "untracked" : "want") : "have",
+            );
+          };
+          row.appendChild(have);
+          if (mode === "Orders") {
+            var note = el("input");
+            note.placeholder = "Private order note";
+            note.setAttribute("aria-label", "Private order note " + item.id);
+            var e = col[item.num] || {};
+            note.value = v ? (e.altNotes || {})[v.id] || "" : e.note || "";
+            note.maxLength = 200;
+            note.oninput = function () {
+              col = Workflow.orderNote(col, item, this.value);
+              scheduleSave();
+            };
+            row.appendChild(note);
+          }
+          var add = el("button", "btn", "Add version");
+          add.onclick = function () {
+            versionEditor(c);
+          };
+          row.appendChild(add);
+          list.appendChild(row);
+        });
+      panel.appendChild(list);
+    }
+    function modal(title) {
+      var root = el("div", "dl");
+      root.appendChild(el("h3", "", title));
+      edDlg.replaceChildren(root);
+      if (!edDlg.open) edDlg.showModal();
+      return root;
+    }
+    function control(root, label, type, value) {
+      var i = el("input");
+      i.type = type || "text";
+      i.value = value || "";
+      root.appendChild(edRow(label, i));
+      return i;
+    }
+    function choose(root, label, values, value) {
+      var i = el("select");
+      values.forEach((v) => i.appendChild(new Option(v, v)));
+      i.value = value || values[0];
+      root.appendChild(edRow(label, i));
+      return i;
+    }
+    function submit(root, action) {
+      var error = el("p", "err");
+      error.setAttribute("role", "alert");
+      root.appendChild(error);
+      var save = el("button", "btn pri", "Save"),
+        cancel = el("button", "btn", "Cancel");
+      save.onclick = async function () {
+        save.disabled = true;
+        try {
+          await action();
+          edDlg.close();
+          rebuild();
+          draw();
+        } catch (e) {
+          error.textContent = e.message;
+          setStatus(e.message, true);
+        } finally {
+          save.disabled = false;
+        }
+      };
+      cancel.onclick = function () {
+        edDlg.close();
+      };
+      root.append(save, cancel);
+    }
+    function versionEditor(c) {
+      var root = modal("Add Japanese print version"),
+        number = control(root, "Card number", "text", c && c.num),
+        label = control(root, "Label", "text", "Custom parallel"),
+        kind = choose(root, "Kind", ["parallel", "manga"]),
+        source = control(root, "Product / source (leave blank if unknown)"),
+        state = choose(root, "Collection state", [
+          "untracked",
+          "want",
+          "ordered",
+          "have",
+        ]),
+        status = choose(root, "Release status", [
+          "inherit",
+          "released",
+          "announced",
+          "draft",
+        ]),
+        date = control(root, "Release date", "date"),
+        sourceUrl = control(root, "Source URL", "url"),
+        file = control(root, "Optional artwork", "file");
+      file.accept = "image/png,image/jpeg";
+      var id = Workflow.id();
+      if (c) number.readOnly = true;
+      root.appendChild(
+        el(
+          "p",
+          "small",
+          "Stable ID " +
+            id +
+            ". Artwork uploads only when Save is pressed. Unknown source stays unspecified.",
+        ),
+      );
+      submit(root, async function () {
+        var target = byNum[number.value.trim()];
+        if (!target) throw Error("Choose an existing card number");
+        var variant = {
+          id: id,
+          kind: kind.value,
+          label: label.value.trim() || "Custom parallel",
+          source: source.value.trim(),
+        };
+        if (status.value !== "inherit") variant.status = status.value;
+        if (date.value) variant.releaseDate = date.value;
+        if (sourceUrl.value) variant.sourceUrl = sourceUrl.value;
+        if (file.files[0]) {
+          var f = file.files[0];
+          if (!["image/png", "image/jpeg"].includes(f.type))
+            throw Error("Choose PNG or JPEG artwork");
+          var data = await new Promise((resolve, reject) => {
+            var reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(",")[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(f);
+          });
+          var r = await fetch("/api/image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path:
+                "card_images_jp/" +
+                target.num +
+                "_" +
+                id +
+                (f.type === "image/png" ? ".png" : ".jpg"),
+              data: data,
+            }),
+          });
+          if (!r.ok) throw Error("Artwork upload failed (" + r.status + ")");
+          var image = await r.json();
+          variant.image = image.image || image.reference || image.path;
+        }
+        var old = JSON.parse(JSON.stringify(target));
+        target.variants = target.variants || [];
+        var existing = target.variants.findIndex((v) => v.id === id);
+        if (existing < 0) target.variants.push(variant);
+        else target.variants[existing] = variant;
+        target.alt = target.variants.map((v) => v.id);
+        try {
+          await saveCatalog();
+        } catch (e) {
+          Object.assign(target, old);
+          throw e;
+        }
+        if (state.value !== "untracked") {
+          setAlt(target.num, id, state.value);
+          await flush();
+          if (collectionStore.pending)
+            throw Error(
+              "Version saved. Collection state remains pending. Retry save.",
+            );
+        }
+      });
+    }
+    function releaseEditor(existing) {
+      var root = modal(existing ? "Edit release" : "Add release"),
+        id = control(
+          root,
+          "Release ID (e.g. OP-15)",
+          "text",
+          existing && existing.code,
+        ),
+        name = control(root, "Name", "text", existing && existing.name),
+        status = choose(
+          root,
+          "Release status",
+          ["announced", "released", "draft"],
+          existing && existing.status,
+        ),
+        date = control(
+          root,
+          "Release date",
+          "date",
+          existing && (existing.releaseDate || existing.date),
+        ),
+        url = control(
+          root,
+          "Official source URL",
+          "url",
+          existing && existing.sourceUrl,
+        );
+      if (existing) id.readOnly = true;
+      var originalCode = existing && existing.code;
+      submit(root, async function () {
+        if (!id.value.trim() || !name.value.trim())
+          throw Error("Release ID and name are required");
+        products.products = products.products || [];
+        var code = id.value.trim(),
+          current = products.products.find((p) => p.code === code);
+        if (current && !originalCode) throw Error("Release ID already exists");
+        var record = Object.assign({}, current || { kind: "Other", sid: 0 }, {
+          code: code,
+          name: name.value.trim(),
+          status: status.value,
+          date: date.value,
+          releaseDate: date.value,
+          sourceUrl: url.value,
+        });
+        if (current)
+          products.products[products.products.indexOf(current)] = record;
+        else {
+          products.products.push(record);
+          originalCode = code;
+        }
+        await saveCatalog();
+      });
+    }
+    function cardEditor(draft) {
+      var root = modal(
+          draft ? "Edit card / private draft" : "Add card / private draft",
+        ),
+        num = control(
+          root,
+          "Official card number (optional)",
+          "text",
+          draft && draft.num,
+        ),
+        name = control(root, "Name", "text", draft && draft.name),
+        set = control(root, "Release / set", "text", draft && draft.set),
+        colour = choose(
+          root,
+          "Colour",
+          ["Red", "Green", "Blue", "Purple", "Black", "Yellow"],
+          draft && draft.col,
+        ),
+        status = choose(
+          root,
+          "Release status",
+          ["draft", "inherit", "announced", "released"],
+          draft && draft.status,
+        ),
+        url = control(root, "Source URL", "url", draft && draft.sourceUrl),
+        identity = (draft && draft.id) || Workflow.id();
+      if (draft && byNum[draft.num]) num.readOnly = true;
+      submit(root, async function () {
+        if (!name.value.trim()) throw Error("Name is required");
+        var official = num.value.trim(),
+          prior = cards.find((x) => x.num === official);
+        if (prior && prior.id !== identity && (!draft || draft.num !== official))
+          throw Error("Card number already exists");
+        var c = Object.assign(
+          {},
+          draft || prior || { slot: null, rar: "C", foil: false },
+          {
+            id: identity,
+            foil: !!(draft || prior || {}).foil,
+            name: name.value.trim(),
+            set: set.value.trim(),
+            col: colour.value,
+            sourceUrl: url.value,
+          },
+        );
+        c = Workflow.prepareCard(c, status.value);
+        if (official) {
+          if (!/^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$/.test(official))
+            throw Error("Use an official card number such as OP12-018");
+          c.num = official;
+        } else {
+          delete c.num;
+          if (status.value !== "draft")
+            throw Error(
+              "Cards need an official number before announcement or release",
+            );
+        }
+        var staged = Workflow.stageCard(
+          cards,
+          catalog.drafts || [],
+          c,
+          draft && draft.num,
+        );
+        cards = staged.cards;
+        catalog.drafts = staged.drafts;
+        await saveCatalog();
+      });
+    }
+    function placement(c) {
+      var root = modal("Place " + c.num),
+        binder = choose(
+          root,
+          "Binder",
+          binders.map((b) => b.id),
+          currentBinder,
+        ),
+        slot = control(root, "Physical slot", "number"),
+        preview = el("p", "small");
+      slot.min = 1;
+      slot.max = SLOTS;
+      slot.oninput = binder.onchange = function () {
+        var n = Number(slot.value),
+          occupied = cards.find(
+            (x) =>
+              x !== c && (x.binder || "main") === binder.value && x.slot === n,
+          );
+        preview.textContent = occupied
+          ? "Occupied by " + occupied.num
+          : "Preview: " +
+            c.num +
+            " → " +
+            binder.value +
+            " · page " +
+            pageOf(n) +
+            " · slot " +
+            n;
+      };
+      root.appendChild(preview);
+      submit(root, async function () {
+        var n = Number(slot.value);
+        if (!Number.isInteger(n) || n < 1 || n > SLOTS)
+          throw Error("Choose a valid physical slot");
+        if (
+          cards.some(
+            (x) =>
+              x !== c && (x.binder || "main") === binder.value && x.slot === n,
+          )
+        )
+          throw Error("Slot is occupied");
+        if (!window.confirm(preview.textContent + "?")) return;
+        c.slot = n;
+        c.binder = binder.value;
+        await saveCatalog();
+      });
+    }
+    workflowRedraw = draw;
+    workflowVersionEditor = versionEditor;
+    document.body.classList.add("workflow-ready");
+    draw();
+  }
+
   /* ---------- boot ---------- */
   Promise.all([
-    fetch('cards.json').then(function (r) { return r.json(); }),
-    fetch('/api/collection', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }),
+    catalogStore.load().then(function(c){catalog=c;return c.cards;}),
+    collectionStore.load(),
     fetch('card_images_jp/manifest.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
     fetch('products.json').then(function (r) { return r.json(); }),
     fetch('aws/share_data.json').then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
@@ -1819,9 +2680,9 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     cards.forEach(function (c) { byNum[c.num] = c; if ((c.binder || 'main') === currentBinder) bySlot[c.slot] = c; });
     col = migrate(res[1]);
     (Array.isArray(res[2]) ? res[2] : []).forEach(function (n) { jpArt[n] = true; });
-    products = res[3] || { products: [], sources: {} };
-    share = res[4] || {};
-    binders = res[5] || [{ id: 'main', name: 'Main' }];
+    products = catalog.products || res[3] || { products: [], sources: {} };
+    share = catalog.share || res[4] || {};
+    binders = catalog.binders && catalog.binders.length ? catalog.binders : res[5] || [{ id: 'main', name: 'Main' }];
     if (typeof PROD !== 'undefined') PROD = products;   // keep "What to buy" in sync with edits
     renderBinders();
     makeArtSeg($('artseg'));
@@ -1833,7 +2694,7 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
     var m = /p=(\d+)/.exec(location.hash), start = m ? +m[1] : 0;
     if (!start) { try { start = +localStorage.getItem('binderPage') || 1; } catch (e) { start = 1; } }
     page = Math.max(1, Math.min(N, start));
-    setStatus('loaded'); render(0); pkRefresh();
+    cards=cards.map(Workflow.card);rebuild();setStatus('loaded'); render(0); pkRefresh(); setupWorkflow(); recoverPending();
   }).catch(function () {
     setStatus('NOT SAVED', true);
     grid.textContent = 'This page needs the binder server. Close this tab and double-click "Start Binder.bat".';

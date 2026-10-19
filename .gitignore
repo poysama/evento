@@ -14,3 +14,8 @@ aws/__pycache__/
 
 # Japanese card art (Bandai) - local only
 card_images_jp/
+
+# Editable local catalog and atomic-save backups
+catalog.json
+catalog.json.bak
+catalog.json.tmp

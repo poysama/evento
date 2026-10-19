@@ -58,7 +58,7 @@ $trustFile = Join-Path $env:TEMP 'evento-trust.json'; $trust | Set-Content $trus
 $newRole = -not (Exists { aws iam get-role --role-name $Role })
 if ($newRole) { Run iam create-role --role-name $Role --assume-role-policy-document "file://$trustFile" | Out-Null }
 Run iam attach-role-policy --role-name $Role --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-$pol = @{Version='2012-10-17';Statement=@(@{Effect='Allow';Action=@('s3:GetObject','s3:PutObject');Resource="arn:aws:s3:::$Bucket/*"})} | ConvertTo-Json -Depth 5 -Compress
+$pol = @{Version='2012-10-17';Statement=@(@{Effect='Allow';Action=@('s3:GetObject','s3:PutObject');Resource="arn:aws:s3:::$Bucket/*"},@{Effect='Allow';Action='s3:ListBucket';Resource="arn:aws:s3:::$Bucket"})} | ConvertTo-Json -Depth 5 -Compress
 $polFile = Join-Path $env:TEMP 'evento-s3.json'; $pol | Set-Content $polFile -Encoding ascii
 Run iam put-role-policy --role-name $Role --policy-name evento-bucket-access --policy-document "file://$polFile"
 $RoleArn = Run iam get-role --role-name $Role --query Role.Arn --output text
@@ -73,7 +73,7 @@ $py = if (Get-Command py -ErrorAction SilentlyContinue) { @('py', '-3') } else {
 & $py[0] $py[1..($py.Length - 1)] -m pip install --quiet --target $stage -r "$PSScriptRoot\requirements.txt" `
   --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 --python-version 3.12 --implementation cp --only-binary=:all:
 if ($LASTEXITCODE -ne 0) { throw 'pip install of Lambda dependencies failed' }
-Copy-Item "$PSScriptRoot\lambda_function.py","$PSScriptRoot\share_data.json","$App\index.html","$App\cards.json","$App\products.json","$App\binders.json" $stage
+Copy-Item "$PSScriptRoot\lambda_function.py","$PSScriptRoot\share_data.json","$App\workflow.py","$App\workflow.js","$App\save.js","$App\index.html","$App\cards.json","$App\products.json","$App\binders.json" $stage
 Get-ChildItem $stage -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
 
