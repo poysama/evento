@@ -699,6 +699,13 @@ check(
     and not _re.search(r'src="https?://(?!fake-bucket\.s3)', body),
 )
 check(
+    "shared wishlist contains complete cards in consistent 600 by 838 frames",
+    "--card-aspect:600/838" in body
+    and "aspect-ratio:var(--card-aspect)" in body
+    and ".c img{display:block;width:100%;height:100%;object-fit:contain}" in body
+    and body.count('width="300" height="419"') == len(direct),
+)
+check(
     "each card links out to its page on Bandai's official list",
     body.count(
         'href="https://www.onepiece-cardgame.com/cardlist/?search=true&amp;series=55'
@@ -987,7 +994,10 @@ def pic(path_tok, name):
     return h(ev("GET", f"/w/{path_tok}/img/{name}"), None)
 
 
-store["images_jp/OP01-027.png"] = b"\x89PNG\r\n\x1a\nmissing-card"
+odd_aspect_image = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+store["images_jp/OP01-027.png"] = odd_aspect_image
 store["images_jp/OP01-026.png"] = b"\x89PNG\r\n\x1a\nOWNED-card"
 store["images_jp/OP01-029_p2.png"] = b"\x89PNG\r\n\x1a\nalt-art"
 p1 = pic(tok, "OP01-027.png")
@@ -999,6 +1009,12 @@ check(
     and "Expires=300" in p1["headers"]["Location"],
 )
 check("the picture bytes do not pass through the function", p1["body"] == "")
+check(
+    "odd-aspect artwork opens its original unmodified asset",
+    "/images_jp/OP01-027.png?" in p1["headers"]["Location"]
+    and store["images_jp/OP01-027.png"] == odd_aspect_image,
+)
+
 check(
     "picture responses are private, uncrawlable and leak no referrer",
     "private" in p1["headers"]["Cache-Control"]

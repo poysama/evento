@@ -987,7 +987,7 @@ def _figure(c, info, alt, token, pics, ph=(), price=None):
         # the page itself carries a 1-hour direct link, so the pictures load from S3 without touching the function
         pic = (
             f'<a class="p" href="{_e(src)}" target="_blank" rel="noopener noreferrer"><img src="{_e(_sign_image(_image_ref(c,alt), 3600))}" '
-            f'data-s="{_e(src)}" alt="{_e(c["name"])}" width="300" height="420" loading="lazy" decoding="async"></a>'
+            f'data-s="{_e(src)}" alt="{_e(c["name"])}" width="300" height="419" loading="lazy" decoding="async"></a>'
         )
     link = ""
     if info.get("sid"):
@@ -1093,7 +1093,7 @@ def _alt_sections(pairs, info, token, pics, prices=None, by="set"):
     return nav, body
 
 
-SHARE_CSS = """:root{--bg:#E6ECF2;--card:#F9FBFD;--ink:#13202E;--mute:#5B6B7D;--line:#B7C3D0;--acc:#1E7F5C;--accbg:#DDF1E7;--amber:#8A5A16;--amberbg:#F6E7C8}
+SHARE_CSS = """:root{--card-aspect:600/838;--bg:#E6ECF2;--card:#F9FBFD;--ink:#13202E;--mute:#5B6B7D;--line:#B7C3D0;--acc:#1E7F5C;--accbg:#DDF1E7;--amber:#8A5A16;--amberbg:#F6E7C8}
 @media(prefers-color-scheme:dark){:root{--bg:#0D141C;--card:#151E29;--ink:#E3E9F0;--mute:#93A2B3;--line:#2E3B4A;--acc:#5ED1A0;--accbg:#12362A;--amber:#E0B16B;--amberbg:#3A2C10}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;padding:16px}
 main{max-width:1000px;margin:0 auto}h1{font-size:24px;line-height:1.2;margin:8px 0 4px}h2{font-size:18px;margin:26px 0 10px;letter-spacing:.04em}
@@ -1103,8 +1103,8 @@ h2 small{color:var(--mute);font-weight:500}.sub{color:var(--mute);margin:0 0 14p
 nav.chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 0}nav.chips a{border:1.5px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--ink);text-decoration:none;font-size:14px;background:var(--card)}
 nav.chips i{font-style:normal;color:var(--mute);margin-left:4px}
 .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px 10px}.g.t{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
-.c{margin:0}.c a.p{display:block;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);background:var(--card);aspect-ratio:63/88}
-.c img{display:block;width:100%;height:100%;object-fit:cover}
+.c{margin:0}.c a.p{display:block;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);background:var(--card);aspect-ratio:var(--card-aspect)}
+.c img{display:block;width:100%;height:100%;object-fit:contain}
 figcaption{display:flex;flex-direction:column;gap:1px;padding-top:6px;font-size:13.5px}figcaption b{line-height:1.25}
 .t figcaption{padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card)}
 .jp{color:var(--mute);font-size:12.5px}code{font:12px ui-monospace,Consolas,monospace;color:var(--mute)}
