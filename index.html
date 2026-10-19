@@ -448,7 +448,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   var PER = 16, PAGES = 64, SLOTS = PAGES * PER, cards = [], col = {}, page = 1, N = PAGES, firstPage = {};
   var saveTimer = null, saving = false, dirty = false, openNum = null;
   var bySlot = {}, share = {}, products = {}, binders = [], currentBinder = 'main', editMode = false;
-  var workflowRedraw=function(){}, workflowVersionEditor=null;
+  var workflowRedraw=function(){}, workflowVersionEditor=null, workflowCardEditor=null;
   var canEdit = false;
   var storeOptions = {canWrite:function(){return canEdit;}};
   var catalog = {schema:2,drafts:[]}, catalogStore = new RevisionStore('/api/catalog',storeOptions), collectionStore = new RevisionStore('/api/collection',storeOptions);
@@ -591,7 +591,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         }
         j.img.onload = function () { fin(true); }; j.img.onerror = function () { fin(false); };
         setTimeout(function () { fin(false); }, 20000);          // never hold a slot forever
-        j.img.src = j.src + (j.tries ? '?r=' + j.tries : '');
+        j.img.src = j.src + (j.tries ? (j.src.includes('?') ? '&' : '?') + 'r=' + j.tries : '');
       })(j);
     }
   }
@@ -600,8 +600,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     var variant = c && (c.variants||[]).find(function(v){return v.id===ver;});
     if(ver && (mode||artMode)==='jp') return [variant&&variant.image || 'card_images_jp/'+n+'_'+ver+'.png',jpU,enU];
     var wantJP = (mode ? mode === 'jp' : artMode === 'jp') && !!(jpArt[n] || c&&c.image);
-    if (!wantJP && c && c.noen && jpArt[n]) wantJP = true;      // a few promos have no English print
-    return wantJP ? (ver ? ['card_images_jp/' + n + '_' + ver + '.png'] : []).concat([jpU, enU]) : [enU].concat(jpArt[n] ? [jpU] : []);
+    if (!wantJP && c && c.noen && (jpArt[n] || c.image)) wantJP = true;      // a few promos have no English print
+    return wantJP ? (ver ? ['card_images_jp/' + n + '_' + ver + '.png'] : []).concat([jpU, enU]) : [enU].concat(jpArt[n] || c&&c.image ? [jpU] : []);
   }
   function artImg(img, n, mode, ver) {
     var u = artUrls(n, mode, ver), stale = function () { return !img.isConnected; };
@@ -658,8 +658,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   }
   function emptyTile(i, slot) {
     var card = el('div', 'card empty');
-    var art = el('div', 'art', editMode ? '+ add card' : 'reserved\nR' + (Math.floor(i / 4) + 1) + 'C' + (i % 4 + 1));
-    if (editMode) {
+    var art = el(canEdit ? 'button' : 'div', 'art', canEdit ? '+ add card' : 'reserved\nR' + (Math.floor(i / 4) + 1) + 'C' + (i % 4 + 1));
+    if (canEdit) {
+      art.type = 'button';
+      art.setAttribute('aria-label', 'Add card to slot ' + slot);
       art.classList.add('add');
       art.setAttribute('role', 'button');
       art.setAttribute('tabindex', '0');
@@ -977,9 +979,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     r.artseg = el('span', 'seg2'); buildVwSeg(r.artseg);
     var x = el('button', 'vx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close card viewer');
     x.addEventListener('click', function () { vwClose(); });
+    var editCard=el('button','btn','Edit card');editCard.type='button';editCard.onclick=function(){if(workflowCardEditor){var target=cards[vidx];vwClose();workflowCardEditor(target)}};
     var addVersion=el('button','btn','Add version');addVersion.type='button';addVersion.onclick=function(){if(workflowVersionEditor)workflowVersionEditor(cards[vidx])};
     var editVersion=el('button','btn','Edit version');editVersion.type='button';editVersion.onclick=function(){if(workflowVersionEditor&&vwAlt)workflowVersionEditor(cards[vidx],vwAlt)};r.editVersion=editVersion;
-    hd.appendChild(tt); hd.appendChild(r.artseg);if(canEdit){hd.appendChild(addVersion);hd.appendChild(editVersion);} hd.appendChild(x);
+    hd.appendChild(tt); hd.appendChild(r.artseg);if(canEdit){hd.appendChild(editCard);hd.appendChild(addVersion);hd.appendChild(editVersion);} hd.appendChild(x);
 
     var stage = el('div', 'vs');
     r.prev = el('button', 'vn vp', '‹'); r.prev.type = 'button'; r.prev.setAttribute('aria-label', 'Previous card');
@@ -1871,98 +1874,9 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     return response.json();
   }
 
-  function openCardEditor(slot) { if (!canEdit) return;
-    var c = bySlot[slot] || null, adding = !c;
-    var num = c ? c.num : '', addedNumber=null;
-    var se = share[num] || { jp: '', sid: null, alt: [] };
-    var root = el('div', 'dl');
-    root.appendChild(el('h3', '', adding ? 'Add card · slot ' + slot : 'Edit ' + num + ' · slot ' + slot));
-    root.appendChild(el('div', 'small', adding ? 'Fill it in and Save. Art and the Japanese name are optional.' : 'Changes save together to the catalog. Card numbers remain permanent.'));
-
-    var g1 = el('div', 'ed-grid'); g1.appendChild(edInput('Name', 'ed-name', c ? c.name : '')); g1.appendChild(edInput('Number', 'ed-num', num)); if(c)g1.querySelector('#ed-num').readOnly=true;
-    var g2 = el('div', 'ed-grid'); g2.appendChild(edSelect('Rarity', 'ed-rar', RARS, c ? c.rar : 'C'));
-    var setIn = el('input'); setIn.id = 'ed-set'; setIn.value = c ? c.set : ''; setIn.placeholder='OP-12, ST-01 or P-2207'; g2.appendChild(edRow('Set', setIn));
-    var sidIn = el('input'); sidIn.id = 'ed-sid'; sidIn.type = 'number'; sidIn.value = se.sid == null ? '' : se.sid;
-    var g3 = el('div', 'ed-grid'); g3.appendChild(edSelect('Colour', 'ed-col', ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'], c ? c.col : 'Red')); g3.appendChild(edRow('Series id (sid)', sidIn));
-    root.appendChild(g1); root.appendChild(g2); root.appendChild(g3);
-    var g4 = el('div', 'ed-grid'); g4.appendChild(edCheck('Foil printing', 'ed-foil', c && c.foil)); g4.appendChild(edCheck('No English print', 'ed-noen', c && c.noen));
-    root.appendChild(g4);
-
-    setIn.addEventListener('input', function () { var s = deriveSid(this.value.trim()); if (s != null && !sidIn.value) sidIn.value = s; });
-
-    root.appendChild(edHead('Japanese name (share page)'));
-    root.appendChild(edInput('JP name', 'ed-jp', se.jp));
-    var advanced=el('details');advanced.appendChild(el('summary','','Legacy version metadata (advanced)'));root.appendChild(advanced);
-    var legacyRoot=root;root=advanced;root.appendChild(edHead('Alt art / Manga'));
-    root.appendChild(edInput('Alt ids (p1,p2)', 'ed-alt', listOf(c, 'alt')));
-    root.appendChild(edInput('Alt sources (id=where)', 'ed-altsrc', mapOf(c, 'altsrc')));
-    root.appendChild(edInput('Alt types (id=Comic/Original/Animation/Other)', 'ed-alttype', mapOf(c, 'alttype')));
-    root.appendChild(edInput('Same drawing ids', 'ed-altsame', listOf(c, 'altsame')));
-    root.appendChild(edInput('Special foil ids (★)', 'ed-altstar', listOf(c, 'altstar')));
-    root.appendChild(edInput('Same as another print (id=id)', 'ed-altdup', mapOf(c, 'altdup')));
-    root.appendChild(edInput('Manga alt id', 'ed-manga', c && c.manga ? c.manga : ''));
-
-    root=legacyRoot;root.appendChild(edHead('Card art'));
-    var jpImg = el('input'); jpImg.type = 'file'; jpImg.accept = 'image/png,image/jpeg';
-
-    var enImg = el('input'); enImg.type = 'file'; enImg.accept = 'image/png,image/jpeg';
-
-    root.appendChild(edRow('Japanese art (PNG/JPEG)', jpImg));
-    root.appendChild(edRow('English art (PNG/JPEG)', enImg));
-    root.appendChild(el('div', 'ed-note', 'Artwork is staged until Save. Cancel leaves stored artwork unchanged.'));
-
-    function collect() {
-      var o = Object.assign({}, c || {}, { name: $('ed-name').value.trim(), num: $('ed-num').value.trim().toUpperCase(), rar: $('ed-rar').value, set: releaseCode($('ed-set').value,true), col: $('ed-col').value, foil: $('ed-foil').checked });
-      if ($('ed-noen').checked) o.noen = true;
-      var alt = parseList($('ed-alt').value); if (alt.length) o.alt = alt;
-      var altsrc = parseMap($('ed-altsrc').value); if (Object.keys(altsrc).length) o.altsrc = altsrc;
-      var alttype = parseMap($('ed-alttype').value); if (Object.keys(alttype).length) o.alttype = alttype;
-      var altsame = parseList($('ed-altsame').value); if (altsame.length) o.altsame = altsame;
-      var altstar = parseList($('ed-altstar').value); if (altstar.length) o.altstar = altstar;
-      var altdup = parseMap($('ed-altdup').value); if (Object.keys(altdup).length) o.altdup = altdup;
-      var manga = $('ed-manga').value.trim(); if (manga) o.manga = manga;
-      o.variants=(c&&c.variants||[]).map(function(v){return Object.assign({},v,{source:altsrc[v.id]||v.source||'',artType:alttype[v.id]||v.artType||''})});
-      return o;
-    }
-
-    var acts = el('div', 'ed-acts');
-    var save = el('button', 'btn pri', 'Save'); save.type = 'button';
-    save.addEventListener('click', async function () {
-      var o;
-      try{o=collect();}catch(error){setStatus(error.message,true);var validation=root.querySelector('.editor-error')||el('p','err editor-error');validation.textContent=error.message;validation.setAttribute('role','alert');root.appendChild(validation);return;}
-      if (!o.name || !o.num) { setStatus('name + number required', true); return; }
-      if (!confirmEdit(adding ? 'Add card' : 'Save card changes', o.num + ' · ' + o.name)) return;
-      save.disabled=true;
-      try{
-      if(jpImg.files[0]){var jf=jpImg.files[0];var ji=await uploadImage(jf,'card_images_jp/'+o.num+(jf.type==='image/png'?'.png':'.jpg'));o.image=ji.image||ji.path;jpArt[o.num]=true;}
-      if(enImg.files[0]){var ef=enImg.files[0];var ei=await uploadImage(ef,'card_images/'+o.num+(ef.type==='image/png'?'.png':'.jpg'));o.enImage=ei.image||ei.path;}
-      var oldNum = c ? c.num : null;
-      if (adding) { if(cards.some(function(x){return x.num===o.num&&x.num!==addedNumber}))throw Error('Card number already exists'); o.slot = slot; if (currentBinder !== 'main') o.binder = currentBinder; var added=cards.findIndex(function(x){return x.num===addedNumber});if(addedNumber&&addedNumber!==o.num)delete share[addedNumber];if(added>=0)cards[added]=o;else cards.push(o);addedNumber=o.num; }
-      else { o.slot = c.slot; if (c.binder) o.binder = c.binder; cards=Workflow.upsert(cards,o,'num'); }
-      if (oldNum && oldNum !== o.num) delete share[oldNum];
-      var sidV = parseInt($('ed-sid').value, 10);
-      share[o.num] = { jp: $('ed-jp').value.trim(), sid: isNaN(sidV) ? (deriveSid(o.set) || 0) : sidV, alt: (o.alt || []).slice() };
-      rebuild();
-      await saveCatalog();edDlg.close();
-      }catch(e){setStatus(e.message,true);var msg=root.querySelector('.editor-error')||el('p','err editor-error');msg.textContent=e.message;msg.setAttribute('role','alert');root.appendChild(msg)}finally{save.disabled=false;}
-    });
-    var cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button';
-    cancel.addEventListener('click', function () { edDlg.close(); });
-    acts.appendChild(save); acts.appendChild(cancel);
-    if (!adding) {
-      var del = el('button', 'btn dng', 'Delete'); del.type = 'button';
-      del.addEventListener('click', function () {
-        if (!window.confirm('Delete ' + num + ' (' + c.name + ')?')) return;
-        cards = cards.filter(function (x) { return x.num !== num; });
-        delete share[num];
-        rebuild();
-        saveCatalog().then(function () { edDlg.close(); }).catch(function(){});
-      });
-      acts.appendChild(del);
-    }
-    root.appendChild(acts);
-    edDlg.replaceChildren(root);
-    if (!edDlg.open) edDlg.showModal();
+  function openCardEditor(slot) {
+    if (!canEdit || !workflowCardEditor) return;
+    workflowCardEditor(bySlot[slot] || null, {slot:slot,binder:currentBinder});
   }
 
   function manageSets() { if (!canEdit) return;
@@ -2210,10 +2124,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       document.querySelectorAll(".ph-head,.pg,.pv,.row.ctl").forEach(e=>e.hidden = mode !== "Binder");
       nav.querySelectorAll("button").forEach(function(b) { b.setAttribute("aria-pressed",String(b.textContent === mode)); });
       if (mode === "Binder") {
-        if (editMode) {
+        if (canEdit) {
           var editButton=legacyActions.editbtn;
           document.querySelector(".top>.row").appendChild(editButton);
-          editButton.textContent="Done editing"; editButton.hidden=false;
+          editButton.textContent=editMode ? "Done editing" : "Edit binder"; editButton.hidden=false;
         }
         ["minebtn","pkbtn"].forEach(function(id) {
           var b=legacyActions[id]; if(b) { document.querySelector(".top>.row").appendChild(b); b.hidden=!canEdit||accountHidden[id]; }
@@ -2529,78 +2443,85 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         await saveCatalog();
       });
     }
-    function cardEditor(draft) {
-      var root = modal(
-          draft ? "Edit card / private draft" : "Add card / private draft",
-        ),
-        num = control(
-          root,
-          "Official card number (optional)",
-          "text",
-          draft && draft.num,
-        ),
-        name = control(root, "Name", "text", draft && draft.name),
-        set = control(root, "Release / set", "text", draft && draft.set),
-        colour = choose(
-          root,
-          "Colour",
-          ["Red", "Green", "Blue", "Purple", "Black", "Yellow"],
-          draft && draft.col,
-        ),
-        status = choose(
-          root,
-          "Release status",
-          ["draft", "inherit", "announced", "released"],
-          draft && draft.status,
-        ),
-        url = control(root, "Source URL", "url", draft && draft.sourceUrl),
-        identity = (draft && draft.id) || Workflow.id(),
-        editingActive = activeCardRecord(cards,draft);
-      set.placeholder = 'OP-12, ST-01 or P-2207';
-      root.appendChild(el('p','small','Use a release code, not a release name. OP12 is accepted as OP-12. Unknown release? Keep this as a private draft with the release blank.'));
-      if (editingActive) num.readOnly = true;
-      submit(root, async function () {
-        if (!name.value.trim()) throw Error("Name is required");
-        var official = num.value.trim().toUpperCase(),
-          prior = cards.find((x) => x.num === official);
-        if (prior && prior !== editingActive)
-          throw Error("Card number already exists");
-        var c = Object.assign(
-          {},
-          draft || prior || { slot: null, rar: "C", foil: false },
-          {
-            id: identity,
-            foil: !!(draft || prior || {}).foil,
-            name: name.value.trim(),
-            set: releaseCode(set.value,status.value !== "draft"),
-            col: colour.value,
-            sourceUrl: url.value,
-          },
-        );
-        c = Workflow.prepareCard(c, status.value);
-        if (official) {
-          if (!/^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$/.test(official))
-            throw Error("Use an official card number such as OP12-018");
-          c.num = official;
-        } else {
-          delete c.num;
-          if (status.value !== "draft")
-            throw Error(
-              "Cards need an official number before announcement or release",
-            );
-        }
-        var staged = Workflow.stageCard(
-          cards,
-          catalog.drafts || [],
-          c,
-          editingActive && editingActive.num,
-          draft,
-        );
-        if(!confirmEdit(draft ? "Save card changes" : "Add card",(official || "Private draft")+" · "+c.name))return false;
-        cards = staged.cards;
-        catalog.drafts = staged.drafts;
+    function cardEditor(draft, context) {
+      context=context || {};
+      var editingActive=activeCardRecord(cards,draft), identity=(draft && draft.id)||Workflow.id();
+      var root=modal(draft ? "Edit card" : "Add card"), original=draft || {};
+      var num=control(root,"Official card number (optional)","text",original.num),
+          name=control(root,"Name","text",original.name),
+          set=control(root,"Release / set","text",original.set),
+          status=choose(root,"Release status",["draft","inherit","announced","released"],original.status || (draft ? "inherit" : "draft"));
+      if(editingActive)num.readOnly=true;
+      set.placeholder='OP-12, ST-01 or P-2207';
+      root.appendChild(el('p','small','Unknown number or release? Save a private draft. Artwork is uploaded only after you confirm Save.'));
+      var artwork=el('details');artwork.open=true;artwork.appendChild(el('summary','','Card artwork'));root.appendChild(artwork);
+      function imageInput(label,ref) {
+        var file=control(artwork,label,"file");file.accept="image/png,image/jpeg";
+        var preview=el('img');preview.alt=label+' preview';preview.style.cssText='max-width:120px;max-height:170px;object-fit:contain';
+        if(ref)preview.src=ref;else preview.hidden=true;artwork.appendChild(preview);
+        var objectUrl=null;file.onchange=function(){if(objectUrl)URL.revokeObjectURL(objectUrl);if(file.files[0]){objectUrl=URL.createObjectURL(file.files[0]);preview.src=objectUrl;preview.hidden=false;}else{preview.hidden=!ref;if(ref)preview.src=ref;}};
+        return file;
+      }
+      var jpFile=imageInput("Japanese image (PNG/JPEG)",original.image || (original.num && jpArt[original.num] ? 'card_images_jp/'+original.num+'.png' : '')),
+          enFile=imageInput("English image (PNG/JPEG)",original.enImage || (original.num && !original.noen ? 'card_images/'+original.num+'.jpg' : ''));
+      var details=el('details');details.appendChild(el('summary','','Card details & placement'));root.appendChild(details);
+      var colour=choose(details,"Colour",["Red","Green","Blue","Purple","Black","Yellow"],original.col),
+          rarity=choose(details,"Rarity",RARS,original.rar),
+          url=control(details,"Source URL","url",original.sourceUrl),
+          jpName=control(details,"Japanese name","text",original.status==='draft' && Object.prototype.hasOwnProperty.call(original,'jpName') ? original.jpName : (share[original.num]||{}).jp),
+          sid=control(details,"Series id (optional)","number",original.status==='draft' && Object.prototype.hasOwnProperty.call(original,'sid') ? original.sid : (share[original.num]||{}).sid),
+          foil=control(details,"Foil printing","checkbox"),noen=control(details,"No English print","checkbox"),
+          binder=choose(details,"Binder",binders.map(b=>b.id),context.binder || original.binder || currentBinder),
+          slot=control(details,"Physical slot (optional)","number",context.slot == null ? original.slot : context.slot);
+      foil.checked=!!original.foil;noen.checked=!!original.noen;slot.min=1;slot.max=SLOTS;
+      var placementNote=el('p','small');root.appendChild(placementNote);
+      function explainPlacement(){placementNote.textContent=status.value==='draft' ? 'Private drafts stay in Settings → Private drafts. The selected binder slot is remembered but not reserved until you announce or release this card.' : slot.value.trim() ? 'This card will appear in the selected binder slot after Save.' : 'This card will appear in Collection. Assign a physical slot to show it in the binder.';}
+      status.onchange=slot.oninput=explainPlacement;explainPlacement();
+      submit(root,async function(){
+        if(catalogStore.pending || catalogStore.running || (catalogStore.recovery && catalogStore.recovery()))throw Error('Save or resolve pending catalog edits before editing a card.');
+        if(!name.value.trim())throw Error('Name is required');
+        var official=num.value.trim().toUpperCase();
+        if(official && !/^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$/.test(official))throw Error('Use an official card number such as OP12-018');
+        if(editingActive && official!==editingActive.num)throw Error('Card numbers remain permanent');
+        if(!official && status.value!=='draft')throw Error('Cards need an official number before announcement or release');
+        if(!binders.some(b=>b.id===binder.value))throw Error('Choose an existing binder');
+        if(url.value.trim()){var sourceUrl;try{sourceUrl=new URL(url.value.trim());}catch(error){throw Error('Enter a valid source URL');}if(!['http:','https:'].includes(sourceUrl.protocol))throw Error('Source URL must use http or https');}
+        if(sid.value.trim()!=='' && (!Number.isInteger(Number(sid.value)) || Number(sid.value)<0))throw Error('Series id must be a positive whole number');
+        var n=slot.value.trim()==='' ? null : Number(slot.value);
+        if(n!==null && (!Number.isInteger(n)||n<1||n>SLOTS))throw Error('Choose a valid physical slot');
+        if(n!==null && cards.some(c=>c!==editingActive && (c.binder||'main')===binder.value && c.slot===n))throw Error('That binder slot is already occupied');
+        var c=Workflow.prepareCard(Object.assign({},original,{id:identity,name:name.value.trim(),set:releaseCode(set.value,status.value!=='draft'),col:colour.value,rar:rarity.value,foil:foil.checked,sourceUrl:url.value.trim(),slot:n,binder:binder.value}),status.value);
+        if(official)c.num=official;else delete c.num;
+        if(c.status==='draft'){c.jpName=jpName.value.trim();c.sid=sid.value.trim()==='' ? null : Number(sid.value);}
+        if(noen.checked)c.noen=true;else delete c.noen;
+        for(var file of [jpFile.files[0],enFile.files[0]].filter(Boolean))if(!['image/png','image/jpeg'].includes(file.type))throw Error('Choose PNG or JPEG artwork');
+        var staged=Workflow.stageCard(cards,catalog.drafts||[],c,editingActive&&editingActive.num,draft);
+        if(!confirmEdit(draft ? 'Save card changes' : 'Add card',(official||'Private draft')+' · '+c.name))return false;
+        var filename=official||identity;
+        if(jpFile.files[0]){var jf=jpFile.files[0],ji=await uploadImage(jf,'card_images_jp/'+filename+'_'+Workflow.id()+'_jp'+(jf.type==='image/png'?'.png':'.jpg'));c.image=ji.image||ji.path;}
+        if(enFile.files[0]){var ef=enFile.files[0],ei=await uploadImage(ef,'card_images/'+filename+'_'+Workflow.id()+'_en'+(ef.type==='image/png'?'.png':'.jpg'));c.enImage=ei.image||ei.path;}
+        cards=staged.cards;catalog.drafts=staged.drafts;
+        if(official && c.status!=='draft'){share[official]=Object.assign({},share[official]||{},{jp:jpName.value.trim(),sid:sid.value.trim()==='' ? (deriveSid(c.set)||0) : Number(sid.value),alt:(c.alt||[]).slice()});if(c.image)jpArt[official]=true;}
         await saveCatalog();
+        if(c.status==='draft')setStatus('Saved private draft. Open Settings → Private drafts to announce it and place it in the binder.');
       });
+      if(draft){
+        var remove=el('button','btn dng','Delete card');
+        remove.onclick=async function(){
+          var finish=beginEditorWrite(root);if(!finish)return;
+          try{
+            if(catalogStore.pending || catalogStore.running || (catalogStore.recovery && catalogStore.recovery()))throw Error('Save or resolve pending catalog edits before deleting a card.');
+            if(!confirmEdit('Delete card',(original.num||'Private draft')+' · '+original.name+' · collection marks and history are kept'))return;
+            var oldCards=cards,oldDrafts=catalog.drafts,oldShare=Object.assign({},share),oldCatalog=JSON.parse(JSON.stringify(catalog));
+            cards=cards.filter(c=>c!==editingActive);catalog.drafts=(catalog.drafts||[]).filter(c=>c.id!==identity);
+            if(editingActive)delete share[editingActive.num];
+            try{await saveCatalog();}catch(error){cards=oldCards;catalog=oldCatalog;catalog.drafts=oldDrafts;share=oldShare;catalogStore.discard();rebuild();throw error;}
+            edDlg.close();draw();
+          }catch(error){var message=el('p','err',error.message);message.setAttribute('role','alert');root.appendChild(message);}
+          finally{finish();}
+        };
+        root.appendChild(remove);
+      }
     }
     function placement(c) {
       var root = modal("Place " + c.num),
@@ -2651,6 +2572,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     }
     workflowRedraw = draw;
     workflowVersionEditor = versionEditor;
+    workflowCardEditor = cardEditor;
     document.body.classList.add("workflow-ready");
     draw();
   }

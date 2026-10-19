@@ -156,6 +156,25 @@ check(
     "missing public image is 404",
     h(ev("GET", "/card_images/OP01-026.jpg"), None)["statusCode"] == 404,
 )
+image_test_catalog = L.wf.normalize_catalog({
+    "cards": [{"num": "OP01-001", "image": "card_images_jp/v_uploaded.png?v=abc", "enImage": "card_images/v_uploaded.jpg?v=def"}, {"num": "P-134", "status": "draft", "enImage": "card_images/v_private.jpg"}],
+    "drafts": [{"id": "v_pending", "status": "draft", "image": "card_images_jp/v_pending.png"}],
+})
+store["data/catalog.json"] = json.dumps(image_test_catalog).encode()
+for key in ("images/v_uploaded.jpg", "images_jp/v_uploaded.png", "images/v_private.jpg", "images_jp/v_pending.png"):
+    store[key] = b"image-test"
+check("public catalog retains custom EN image", json.loads(h(ev("GET", "/api/catalog"), None)["body"])["cards"][0]["enImage"] == "card_images/v_uploaded.jpg?v=def")
+check("anonymous custom EN artwork is readable", h(ev("GET", "/card_images/v_uploaded.jpg"), None)["statusCode"] == 200)
+check("anonymous custom JP artwork is readable", h(ev("GET", "/card_images_jp/v_uploaded.png"), None)["statusCode"] == 200)
+check("anonymous numbered draft EN image denied", h(ev("GET", "/card_images/v_private.jpg"), None)["statusCode"] == 404)
+check("anonymous private draft JP image denied", h(ev("GET", "/card_images_jp/v_pending.png"), None)["statusCode"] == 404)
+image_test_catalog["cards"][0]["enImage"] = "card_images/v_replacement.jpg"
+store["data/catalog.json"] = json.dumps(image_test_catalog).encode()
+store["images/v_replacement.jpg"] = b"replacement"
+check("replaced custom EN image denied", h(ev("GET", "/card_images/v_uploaded.jpg"), None)["statusCode"] == 404)
+check("replacement custom EN image allowed", h(ev("GET", "/card_images/v_replacement.jpg"), None)["statusCode"] == 200)
+for key in ("data/catalog.json", "images/v_uploaded.jpg", "images_jp/v_uploaded.png", "images/v_private.jpg", "images_jp/v_pending.png", "images/v_replacement.jpg"):
+    store.pop(key, None)
 check(
     "wrong passcode is 401",
     h(ev("POST", "/login", json.dumps({"passcode": "nope"})), None)["statusCode"]

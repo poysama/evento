@@ -321,6 +321,7 @@ def _valid_catalog(c):
             or not d["id"]
             or d.get("status", "draft") != "draft"
             or d["id"] in draft_ids
+            or any(field in d and not safe_image(d[field]) for field in ("image", "enImage"))
         ):
             return False
         draft_ids.add(d["id"])

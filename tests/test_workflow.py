@@ -59,6 +59,19 @@ class WorkflowTests(unittest.TestCase):
         catalog["cards"][0]["set"] = "P-2026"
         self.assertTrue(w.valid_catalog(catalog))
 
+    def test_private_draft_language_image_validation(self):
+        import json
+        draft = {"id": "v_spoiler", "status": "draft", "image": "card_images_jp/v_spoiler.png?v=abc123", "enImage": "card_images/v_spoiler.jpg?v=def456"}
+        catalog = w.normalize_catalog({"cards": [], "drafts": [draft]})
+        self.assertTrue(w.valid_catalog(catalog))
+        self.assertEqual(w.normalize_catalog(json.loads(json.dumps(catalog))), catalog)
+        for field in ("image", "enImage"):
+            for value in ("https://external.test/card.png", "../card.png", "card_images/../secret.png", "card_images/card.svg", "card_images/card.png?other=1", None, {}, 1):
+                with self.subTest(field=field, value=value):
+                    invalid = __import__("copy").deepcopy(catalog)
+                    invalid["drafts"][0][field] = value
+                    self.assertFalse(w.valid_catalog(invalid))
+
     def test_base(self):
         c = w.normalize_catalog(
             {

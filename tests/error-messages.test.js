@@ -41,7 +41,7 @@ test('release shorthand is normalized and invalid published releases fail before
   for(const [input,expected] of [[' op12 ','OP-12'],['st01','ST-01'],['PRB02','PRB-02'],['eb04','EB-04'],['P-2207','P-2207']]) assert.equal(releaseCode(input,true),expected);
   assert.equal(releaseCode('',false),'');
   for(const code of ['', 'Romance Dawn', 'P-134-card']) assert.throws(()=>releaseCode(code,true),/Release \/ set/);
-  assert.match(html,/set: releaseCode\(set.value,status.value !== "draft"\)/);
+  assert.match(html,/set:\s*releaseCode\(set.value,status.value\s*!==\s*["']draft["']\)/);
 });
 
 
@@ -64,7 +64,7 @@ test('card editor distinguishes an active record from private drafts sharing its
   assert.equal(activeCardRecord(rows,{num:'P-134',id:'v_draft'}),null);
   assert.equal(activeCardRecord(rows,{num:'P-135',id:'v_otherdraft'}),null);
   assert.equal(activeCardRecord(rows,{num:'P-134'}),null);
-  assert.match(html,/if \(prior && prior !== editingActive\)/);
-  assert.match(html,/editingActive && editingActive.num,\s+draft,/);
+  assert.match(html,/Workflow.stageCard\(cards,catalog.drafts\|\|\[\],c,editingActive&&editingActive.num,draft\)/);
+  assert.match(html,/if\(editingActive && official!==editingActive.num\)/);
   assert.doesNotMatch(html,/prior.id !== identity && \(!draft \|\| draft.num !== official\)/);
 });

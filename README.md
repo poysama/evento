@@ -213,6 +213,10 @@ card as complete, same as any other alt-art version.
 
 ## Collection workflow and safe editing
 
+After unlocking editing, **Edit binder** stays visible on the Binder page. An empty slot opens **Add card** directly, even outside edit mode. To edit an occupied slot, turn on Edit binder or open its viewer and choose **Edit card**. Collection, Settings, the viewer and binder slots use the same editor; binder slots simply prefill placement.
+
+The shared editor accepts separate Japanese and English PNG/JPEG images for new and existing cards. Current artwork is previewed and replacements upload only after confirming Save. Private draft images stay private; publishing preserves their image references. Draft placement is remembered but does not reserve a binder slot until publication.
+
 The Collection, Wishlist and Orders views track individual print versions. Missing Japanese base cards stay on the wishlist even when an alternate print fills their binder slot. Ordered bases and prints are excluded from actionable wants. Announced releases are opt-in; drafts are excluded. Existing cards default to released.
 
 Catalog edits use one canonical catalog document and conditional ETag saves. Legacy packaged catalogs remain fallback input; canonical saved data takes precedence. Existing numbers, print IDs, collection marks and physical slots are preserved. New cards remain unplaced until explicitly assigned. Per-print notes and history are private. Select an image in the editor, then Save to commit its catalog reference.

@@ -120,6 +120,33 @@ class PublicProjectionTests(unittest.TestCase):
         self.assertNotIn("card_images_jp/OP01-001_v_draft.png", paths)
         self.assertNotIn("card_images_jp/OP01-002.png", paths)
 
+    def test_custom_language_images_roundtrip_and_replacement(self):
+        import json
+        source = self.fixture()
+        source["cards"][0].update(image="card_images_jp/v_custom_jp.png?v=abc123", enImage="card_images/v_custom_en.jpg?v=def456")
+        visible = public.catalog(json.loads(json.dumps(source)))
+        self.assertEqual(visible["cards"][0]["enImage"], source["cards"][0]["enImage"])
+        self.assertEqual(visible["cards"][0]["image"], source["cards"][0]["image"])
+        paths = public.image_paths(visible)
+        self.assertIn("card_images/v_custom_en.jpg", paths)
+        self.assertIn("card_images_jp/v_custom_jp.png", paths)
+        source["cards"][0]["enImage"] = "card_images/v_replacement.png?v=789"
+        paths = public.image_paths(public.catalog(source))
+        self.assertIn("card_images/v_replacement.png", paths)
+        self.assertNotIn("card_images/v_custom_en.jpg", paths)
+
+    def test_private_draft_images_stay_private(self):
+        source = self.fixture()
+        source["cards"][1].update(image="card_images_jp/v_private.png", enImage="card_images/v_private.jpg")
+        source["drafts"] = [{"id": "v_unreleased", "status": "draft", "image": "card_images_jp/v_unreleased.png", "enImage": "card_images/v_unreleased.jpg"}]
+        visible = public.catalog(source)
+        paths = public.image_paths(visible)
+        self.assertFalse(any("v_private" in p or "v_unreleased" in p for p in paths))
+        self.assertEqual(visible["drafts"], [])
+        source["drafts"][0]["enImage"] = "card_images/OP01-001.jpg"
+        self.assertIn("card_images/OP01-001.jpg", public.image_paths(public.catalog(source)))
+        self.assertEqual(public.image_paths(public.catalog({})), set())
+
     def test_private_binder_cards_are_hidden(self):
         source = self.fixture()
         source["binders"][0]["status"] = "draft"
