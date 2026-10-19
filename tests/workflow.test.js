@@ -392,3 +392,47 @@ test("stale legacy Manga marker cannot fill a binder slot", () => {
   assert.equal(W.projection([c], { A: { manga: true } }).binderOwned, 0);
   assert.equal(W.complete({ manga: true }, c), false);
 });
+
+test("numbered private draft retains identity until published and can return to draft", () => {
+  const draft = W.prepareCard({ id: "v_p134", num: "P-134", name: "Spoiled event", set: "", col: "Red" }, "draft");
+  let state = W.stageCard([], [], draft);
+  assert.equal(state.cards.length, 0);
+  assert.equal(state.drafts[0].num, "P-134");
+  state = W.stageCard(state.cards, state.drafts, { ...draft, name: "Edited draft" });
+  assert.equal(state.drafts.length, 1);
+  assert.equal(state.drafts[0].id, "v_p134");
+  const published = { ...draft, status: "announced", set: "P-2026" };
+  state = W.stageCard(state.cards, state.drafts, published);
+  state = W.stageCard(state.cards, state.drafts, published, "P-134");
+  assert.equal(state.cards.length, 1);
+  assert.equal(state.drafts.length, 0);
+  assert.throws(() => W.stageCard(state.cards, [], { ...draft, id: "v_other" }), /already exists/);
+  state = W.stageCard(state.cards, state.drafts, draft, "P-134");
+  assert.equal(state.cards.length, 0);
+  assert.equal(state.drafts.length, 1);
+});
+
+test("publishing a second numbered private draft cannot replace another identity", () => {
+  const a = { id: "v_a", num: "P-134", name: "A", status: "draft" };
+  const b = { id: "v_b", num: "P-134", name: "B", status: "draft" };
+  let state = W.stageCard([], [], a);
+  state = W.stageCard(state.cards, state.drafts, b);
+  state = W.stageCard(state.cards, state.drafts, { ...a, status: "announced" }, a.num, a);
+  const before = JSON.stringify(state);
+  assert.throws(() => W.stageCard(state.cards, state.drafts, { ...b, status: "announced" }, b.num, b), /already exists/);
+  assert.equal(JSON.stringify(state), before);
+  state = W.stageCard(state.cards, state.drafts, { ...state.cards[0], name: "Edited A" }, a.num);
+  assert.equal(state.cards.length, 1);
+  assert.equal(state.cards[0].name, "Edited A");
+  assert.equal(state.drafts[0].id, "v_b");
+});
+test("legacy active edits require the actual original record", () => {
+  const legacy = { num: "P-134", name: "Legacy" };
+  const other = { num: "P-135", name: "Other" };
+  const draft = { id: "v_draft", num: "P-134", status: "draft" };
+  assert.throws(() => W.stageCard([legacy, other], [draft], { ...draft, status: "announced" }, "P-134", draft), /already exists/);
+  const state = W.stageCard([legacy, other], [], { ...legacy, id: "v_edit", name: "Edited" }, "P-134", legacy);
+  assert.equal(state.cards.length, 2);
+  assert.equal(state.cards.find(c => c.num === "P-134").name, "Edited");
+  assert.equal(state.cards.find(c => c.num === "P-135"), other);
+});

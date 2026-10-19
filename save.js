@@ -1,5 +1,24 @@
 (function (root) {
   "use strict";
+  async function saveFailure(response) {
+    if (response.status === 401)
+      return Error("Editing access expired. Reload the page, unlock editing, then restore or export your pending changes.");
+    if (response.status === 403)
+      return Error("You do not have permission to save these changes. Reload the page and unlock with authorized access, then restore or export your pending changes.");
+    if (response.status === 400) {
+      let detail = "";
+      try {
+        const body = await response.json();
+        const value = body && (typeof body.error === "string" ? body.error : body.message);
+        if (typeof value === "string")
+          detail = value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 240);
+      } catch (e) {}
+      return Error(detail
+        ? "Changes were not saved. " + detail
+        : "Changes were not saved. Check the card details and try again (400).");
+    }
+    return Error("Save failed (" + response.status + "). Your changes are still pending.");
+  }
   class RevisionStore {
     constructor(url, options = {}) {
       this.url = url;
@@ -86,21 +105,25 @@
         this.onchange("saving");
         let r;
         try {
-          r = await this.fetch(this.url, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              "If-Match": this.etag,
-            },
-            body: JSON.stringify(snapshot),
-          });
+          try {
+            r = await this.fetch(this.url, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                "If-Match": this.etag,
+              },
+              body: JSON.stringify(snapshot),
+            });
+          } catch (e) {
+            throw Error("Cannot connect to the binder server. Your changes are pending. Check your connection and try again.");
+          }
           if (r.status === 409 || r.status === 412) {
             this.conflict = true;
             throw Error(
               "Conflict. Newer server edits were preserved. Export pending changes, reload and reconcile.",
             );
           }
-          if (!r.ok) throw Error("Save failed (" + r.status + ")");
+          if (!r.ok) throw await saveFailure(r);
           const revision = r.headers.get("ETag");
           if (!revision) throw Error("Saved response missing revision");
           this.etag = revision;

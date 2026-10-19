@@ -46,6 +46,19 @@ class WorkflowTests(unittest.TestCase):
             candidate["cards"][0]["variants"] = variants
             self.assertFalse(w.valid_catalog(candidate))
 
+    def test_numbered_private_draft_roundtrip_and_publish_validation(self):
+        import json
+        draft = {"id": "v_p134", "num": "P-134", "name": "Spoiled event", "status": "draft", "set": "", "rar": "C", "foil": False, "col": "Red", "slot": None}
+        catalog = w.normalize_catalog({"cards": [], "drafts": [draft]})
+        self.assertTrue(w.valid_catalog(catalog))
+        self.assertEqual(w.normalize_catalog(json.loads(json.dumps(catalog))), catalog)
+        self.assertEqual(w.wishlist(catalog, {}), [])
+        catalog["drafts"] = []
+        catalog["cards"] = [{**draft, "status": "announced"}]
+        self.assertFalse(w.valid_catalog(catalog))
+        catalog["cards"][0]["set"] = "P-2026"
+        self.assertTrue(w.valid_catalog(catalog))
+
     def test_base(self):
         c = w.normalize_catalog(
             {

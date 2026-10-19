@@ -6,12 +6,33 @@ you're holding until you get the JP copy, and tick foils separately.
 
 ## Run it
 
-Needs Python 3 (standard library only).
+Needs Python 3 on macOS or Linux (standard library only). Run from the repository directory:
 
-    python server.py
+```sh
+python3 server.py
+```
 
-Then open http://127.0.0.1:8765/ (on Windows you can double-click `Start Binder.bat`).
-Your collection is saved to `collection.json` next to `server.py`. Browsing is public and read-only. Set the `BINDER_EDIT_PASSCODE` environment variable before starting the local server to enable **Unlock editing**. An unset or empty passcode leaves editing disabled.
+Open http://127.0.0.1:8765/. Keep the terminal running. Opening `index.html` directly or using a static-file server cannot save edits. Your collection is saved to `collection.json` next to `server.py`.
+
+Browsing is public and read-only. To enable **Unlock editing** locally, enter a passphrase privately in bash or zsh before starting the server:
+
+```sh
+printf 'Local editing passphrase: '
+stty -echo
+read -r BINDER_EDIT_PASSCODE
+stty echo
+printf '\n'
+export BINDER_EDIT_PASSCODE
+python3 server.py
+```
+
+The passphrase is not written into shell history. An unset or empty passphrase disables editing. To use another port, start with `BINDER_PORT=8767 python3 server.py` and open http://127.0.0.1:8767/.
+
+On the [hosted site](https://evento.peonbox.xyz/), use **Unlock editing** with your existing passphrase or passkey. Hosted editing never requires a local server. If saving fails, read the actual error shown on the page; pending edits remain available for retry or export.
+
+### Development conventions
+
+Keep UI instructions platform neutral. Use Unix-first examples with `python3` in documentation. Distinguish validation, session, conflict and network failures; only suggest starting a local server when the page is running locally.
 
 ## Card images
 
@@ -32,9 +53,9 @@ put your own images in `card_images/<CODE>.jpg` (e.g. `card_images/OP01-026.jpg`
 
 `maintain.py` keeps `cards.json` and `products.json` in release-date order as new products come out:
 
-    python maintain.py sort                        # reorder the binder by release date (preview; add --apply to write)
-    python maintain.py add-set OP-19 --name "God Valley" --family OP --kind "Booster pack" --date 2026-12-26
-    python maintain.py add-card OP19-001 --name "..." --rar C --set OP-19 --col Red [--foil] [--also-in PRB-02]
+    python3 maintain.py sort                        # reorder the binder by release date (preview; add --apply to write)
+    python3 maintain.py add-set OP-19 --name "God Valley" --family OP --kind "Booster pack" --date 2026-12-26
+    python3 maintain.py add-card OP19-001 --name "..." --rar C --set OP-19 --col Red [--foil] [--also-in PRB-02]
 
 `sort` orders the sets by the `date` in `products.json` (stable, so sets sharing a release date keep their
 place) and renumbers every `slot`. `add-set` inserts a product in date order; `add-card` inserts a card,
@@ -44,11 +65,11 @@ contiguous. Both `add-*` commands have `--dry-run`, and `sort` is a preview unle
 `add-card` (and `edit-card`) cover the whole card schema, not just the basics - the alt-art / Manga
 metadata and the Japanese name / series id for the share page:
 
-    python maintain.py add-card OP19-001 --name "..." --rar C --set OP-19 --col Red --foil \
+    python3 maintain.py add-card OP19-001 --name "..." --rar C --set OP-19 --col Red --foil \
         --jp "日本語名" --alt p1,p2 --altsrc "p1=Best Selection Vol.7,p2=PRB-02" \
         --alttype "p1=Original,p2=Comic" --altsame p2 --altstar p1 --altdup "p2=p1" --manga p1
 
-    python maintain.py edit-card OP19-001 --jp "直した名前" --noen        # update an existing card
+    python3 maintain.py edit-card OP19-001 --jp "直した名前" --noen        # update an existing card
 
 The alt-art flags take comma lists (`--alt`, `--altsame`, `--altstar`) or `id=value` maps (`--altsrc`,
 `--alttype`, `--altdup`); `--manga` names the Manga alt id. `--jp` writes the Japanese name and the `sid`
@@ -82,7 +103,7 @@ Editing access is remembered in a Secure, HttpOnly cookie for one year. **Lock e
 
 ## Passkey sign-in
 
-The hosted site signs you in with a **passkey** (Face ID, Windows Hello, Touch ID or a security key) instead of
+The hosted site signs you in with a **passkey** (device biometrics or a security key) instead of
 typing the passcode. Open the site with the passcode once, use the **Passkeys** button (or the banner) to add
 each device, and from then on sign in with one tap. The passcode keeps working as a backup and as the way to
 add a passkey on a brand-new device. Passkeys are checked with the `webauthn` library (user verification
@@ -109,10 +130,10 @@ one-day expiry of `used/`, because S3 replaces the whole lifecycle configuration
 
 If a bad save ever wipes your data, list the versions and copy an older one back (use your default AWS profile):
 
-```powershell
-$B = 'evento-binder-861276084535'
-aws s3api list-object-versions --bucket $B --prefix data/collection.json --region ap-southeast-1 --query "Versions[].[VersionId,LastModified,Size,IsLatest]" --output table
-aws s3api copy-object --bucket $B --key data/collection.json --copy-source "$B/data/collection.json?versionId=THE_VERSION_ID" --region ap-southeast-1
+```sh
+binder_bucket='evento-binder-861276084535'
+aws s3api list-object-versions --bucket "$binder_bucket" --prefix data/collection.json --region ap-southeast-1 --query "Versions[].[VersionId,LastModified,Size,IsLatest]" --output table
+aws s3api copy-object --bucket "$binder_bucket" --key data/collection.json --copy-source "${binder_bucket}/data/collection.json?versionId=THE_VERSION_ID" --region ap-southeast-1
 ```
 
 Pick the newest version whose size looks right, then reload the site. (An old `null` version is the copy from before
@@ -199,8 +220,8 @@ Catalog edits use one canonical catalog document and conditional ETag saves. Leg
 For local verification:
 
 ```sh
-python -m unittest discover -s tests
-python aws/test_handler.py
+python3 -m unittest discover -s tests
+python3 aws/test_handler.py
 node --test tests/*.test.js
 ```
 
@@ -211,7 +232,7 @@ node --test tests/*.test.js
 Start the local server, then preview:
 
 ```sh
-python import_catalog.py preview --source-url 'https://www.onepiece-cardgame.com/cardlist/?search=true&series=550112' --html /path/to/official.html --out /tmp/catalog-review.json
+python3 import_catalog.py preview --source-url 'https://www.onepiece-cardgame.com/cardlist/?search=true&series=550112' --html /path/to/official.html --out /tmp/catalog-review.json
 ```
 
 Inspect `changes`, `review` and the resulting `catalog` in the proposal file. Existing manual names, variants, slots and collection data are retained. Provenance aliases are recorded under `officialPrints`, with a hash of the supplied HTML in the proposal. Unknown parallel prints require explicit identity and kind review; a print suffix never establishes Manga. New bases are unplaced. The importer never removes cards or reorders slots. Empty/unrecognized source pages fail closed.
@@ -219,7 +240,7 @@ Inspect `changes`, `review` and the resulting `catalog` in the proposal file. Ex
 After review, apply the proposal explicitly:
 
 ```sh
-python import_catalog.py apply /tmp/catalog-review.json
+python3 import_catalog.py apply /tmp/catalog-review.json
 ```
 
 The proposal records the catalog endpoint and ETag. Apply sends one conditional catalog PUT; a concurrent edit rejects the proposal instead of overwriting newer data. Generate a fresh preview after a conflict. Hosted endpoints can be selected with `--endpoint`; authenticated requests accept `--cookie` (avoid storing cookies in shared shell history). Ambiguous review records are excluded from automatic changes and need manual version editing. Saved HTML provenance relies on the supplied source URL; this tool cannot authenticate an offline file's origin.

@@ -381,7 +381,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 </style>
 </head>
 <body class="view-only">
-<div class="warn" id="warn" hidden>Can't reach the binder server, so changes are NOT being saved. Re-open "Start Binder.bat".</div>
+<div class="warn" id="warn" hidden></div>
 
 <div class="app">
 <aside class="side">
@@ -782,7 +782,31 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     if (v) e.note = v; else delete e.note;
     scheduleSave(); return true;
   }
-  function setStatus(t, err) { var retry=$('workflow-retry');if(retry)retry.hidden=!(collectionStore.pending||catalogStore.pending);$('status').textContent = t; $('status').className = err ? 'err' : ''; $('warn').hidden = !err; }
+  function activeCardRecord(rows, record) {
+    return record && rows.find(function(row){return row===record || (record.id && row.id===record.id);}) || null;
+  }
+  function releaseCode(value, required) {
+    var code=String(value || '').trim().toUpperCase().replace(/^(OP|ST|PRB|EB)(\d{2})$/, '$1-$2');
+    if ((!code && required) || (code && !/^(?:[A-Z]{2,3}-\d{2}|P-\d{3,4})$/.test(code)))
+      throw Error('Release / set must use a code such as OP-12, ST-01 or P-2207. Leave it blank only for a private draft.');
+    return code;
+  }
+  function errorGuidance(message, context, pending, loading) {
+    var text = String(message || 'Unknown error');
+    var local = context.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(context.hostname);
+    var network = /failed to fetch|networkerror|network request failed|load failed$|fetch failed|connection refused|cannot connect to the binder server/i.test(text);
+    var prefix = loading ? 'Could not load the binder. ' : pending ? 'Changes are not saved yet. ' : '';
+    var advice = '';
+    if (network || context.protocol === 'file:') {
+      advice = local ? ' Start the local server with python3 server.py in a terminal, then open its localhost URL.' : ' Check your connection and try again. If it continues, the hosted service may be unavailable.';
+    } else if (/401|403|unlock editing|session|sign.?in/i.test(text)) {
+      advice = ' Unlock editing and try again.';
+    } else if (/409|412|conflict/i.test(text)) {
+      advice = ' Export pending changes before reloading and reconciling newer edits.';
+    }
+    return prefix + text + advice;
+  }
+  function setStatus(t, err) { var pending=!!(collectionStore.pending||catalogStore.pending);var retry=$('workflow-retry');if(retry)retry.hidden=!pending;$('status').textContent = t; $('status').className = err ? 'err' : ''; $('warn').hidden = !err;if(err)$('warn').textContent=errorGuidance(t,location,pending,false); }
   collectionStore.onchange = function(t) { dirty = !!collectionStore.pending; setStatus(t, t.indexOf('failed')>=0 || t.indexOf('Conflict')>=0); };
   function flush() { if (!canEdit) return Promise.resolve(); saveTimer=null; saving=true; return collectionStore.save(col).catch(function(e){setStatus(e.message,true);}).finally(function(){saving=false;}); }
   function scheduleSave() { if (!canEdit) return; collectionStore.stage(col); setStatus('unsaved…'); clearTimeout(saveTimer); saveTimer=setTimeout(flush,300); }
@@ -1160,7 +1184,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   function pkFill() {
     var root = el('div', 'dl');
     root.appendChild(el('h3', '', 'Passkeys'));
-    root.appendChild(el('div', 'small', 'Sign in with Face ID, Windows Hello, Touch ID or a security key instead of typing the passcode. The passcode keeps working as a backup.'));
+    root.appendChild(el('div', 'small', 'Sign in with device biometrics or a security key instead of typing the passcode. The passcode keeps working as a backup.'));
     var sec = el('div', 'sec'); sec.appendChild(el('span', '', 'Your passkeys'));
     if (!pkList || !pkList.length) sec.appendChild(el('div', 'small', 'None yet.'));
     (pkList || []).forEach(function (k) {
@@ -1857,7 +1881,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 
     var g1 = el('div', 'ed-grid'); g1.appendChild(edInput('Name', 'ed-name', c ? c.name : '')); g1.appendChild(edInput('Number', 'ed-num', num)); if(c)g1.querySelector('#ed-num').readOnly=true;
     var g2 = el('div', 'ed-grid'); g2.appendChild(edSelect('Rarity', 'ed-rar', RARS, c ? c.rar : 'C'));
-    var setIn = el('input'); setIn.id = 'ed-set'; setIn.value = c ? c.set : ''; g2.appendChild(edRow('Set', setIn));
+    var setIn = el('input'); setIn.id = 'ed-set'; setIn.value = c ? c.set : ''; setIn.placeholder='OP-12, ST-01 or P-2207'; g2.appendChild(edRow('Set', setIn));
     var sidIn = el('input'); sidIn.id = 'ed-sid'; sidIn.type = 'number'; sidIn.value = se.sid == null ? '' : se.sid;
     var g3 = el('div', 'ed-grid'); g3.appendChild(edSelect('Colour', 'ed-col', ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'], c ? c.col : 'Red')); g3.appendChild(edRow('Series id (sid)', sidIn));
     root.appendChild(g1); root.appendChild(g2); root.appendChild(g3);
@@ -1888,7 +1912,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     root.appendChild(el('div', 'ed-note', 'Artwork is staged until Save. Cancel leaves stored artwork unchanged.'));
 
     function collect() {
-      var o = Object.assign({}, c || {}, { name: $('ed-name').value.trim(), num: $('ed-num').value.trim(), rar: $('ed-rar').value, set: $('ed-set').value.trim(), col: $('ed-col').value, foil: $('ed-foil').checked });
+      var o = Object.assign({}, c || {}, { name: $('ed-name').value.trim(), num: $('ed-num').value.trim().toUpperCase(), rar: $('ed-rar').value, set: releaseCode($('ed-set').value,true), col: $('ed-col').value, foil: $('ed-foil').checked });
       if ($('ed-noen').checked) o.noen = true;
       var alt = parseList($('ed-alt').value); if (alt.length) o.alt = alt;
       var altsrc = parseMap($('ed-altsrc').value); if (Object.keys(altsrc).length) o.altsrc = altsrc;
@@ -1904,7 +1928,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     var acts = el('div', 'ed-acts');
     var save = el('button', 'btn pri', 'Save'); save.type = 'button';
     save.addEventListener('click', async function () {
-      var o = collect();
+      var o;
+      try{o=collect();}catch(error){setStatus(error.message,true);var validation=root.querySelector('.editor-error')||el('p','err editor-error');validation.textContent=error.message;validation.setAttribute('role','alert');root.appendChild(validation);return;}
       if (!o.name || !o.num) { setStatus('name + number required', true); return; }
       if (!confirmEdit(adding ? 'Add card' : 'Save card changes', o.num + ' · ' + o.name)) return;
       save.disabled=true;
@@ -2529,13 +2554,16 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           draft && draft.status,
         ),
         url = control(root, "Source URL", "url", draft && draft.sourceUrl),
-        identity = (draft && draft.id) || Workflow.id();
-      if (draft && byNum[draft.num]) num.readOnly = true;
+        identity = (draft && draft.id) || Workflow.id(),
+        editingActive = activeCardRecord(cards,draft);
+      set.placeholder = 'OP-12, ST-01 or P-2207';
+      root.appendChild(el('p','small','Use a release code, not a release name. OP12 is accepted as OP-12. Unknown release? Keep this as a private draft with the release blank.'));
+      if (editingActive) num.readOnly = true;
       submit(root, async function () {
         if (!name.value.trim()) throw Error("Name is required");
-        var official = num.value.trim(),
+        var official = num.value.trim().toUpperCase(),
           prior = cards.find((x) => x.num === official);
-        if (prior && prior.id !== identity && (!draft || draft.num !== official))
+        if (prior && prior !== editingActive)
           throw Error("Card number already exists");
         var c = Object.assign(
           {},
@@ -2544,7 +2572,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
             id: identity,
             foil: !!(draft || prior || {}).foil,
             name: name.value.trim(),
-            set: set.value.trim(),
+            set: releaseCode(set.value,status.value !== "draft"),
             col: colour.value,
             sourceUrl: url.value,
           },
@@ -2565,7 +2593,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           cards,
           catalog.drafts || [],
           c,
-          draft && draft.num,
+          editingActive && editingActive.num,
+          draft,
         );
         if(!confirmEdit(draft ? "Save card changes" : "Add card",(official || "Private draft")+" · "+c.name))return false;
         cards = staged.cards;
@@ -2661,9 +2690,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     if (!start) { try { start = +localStorage.getItem('binderPage') || 1; } catch (e) { start = 1; } }
     page = Math.max(1, Math.min(N, start));
     cards=cards.map(Workflow.card);rebuild();setStatus('loaded'); render(0); pkRefresh(); setupWorkflow(); recoverPending();
-  }).catch(function () {
-    setStatus('NOT SAVED', true);
-    grid.textContent = 'This page needs the binder server. Close this tab and double-click "Start Binder.bat".';
+  }).catch(function (error) {
+    var message=error && error.message || 'Unknown load error';
+    setStatus(message, true);
+    grid.textContent = errorGuidance(message,location,!!(collectionStore.pending||catalogStore.pending),true);
   });
 })();
 </script>

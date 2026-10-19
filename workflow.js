@@ -364,27 +364,29 @@
     change: change,
     undo: undo,
     mergeProduct: (old, fields) => Object.assign({}, old, fields),
-    stageCard: function (rows, drafts, card, originalNumber) {
+    stageCard: function (rows, drafts, card, originalNumber, originalCard) {
+      function sameRecord(row) {
+        if (row.id && card.id) return row.id === card.id;
+        return (
+          row === originalCard &&
+          !row.id &&
+          row.num === originalNumber
+        );
+      }
       if (
         card.num &&
         rows.some(function (row) {
-          return (
-            row.num === card.num &&
-            row.id !== card.id &&
-            row.num !== originalNumber
-          );
+          return row.num === card.num && !sameRecord(row);
         })
       )
         throw Error("Card number already exists");
       var next = rows.filter(function (row) {
-        return (
-          row.id !== card.id && (!originalNumber || row.num !== originalNumber)
-        );
+        return !sameRecord(row);
       });
       var nextDrafts = drafts.filter(function (row) {
         return row.id !== card.id;
       });
-      if (card.num) next.push(card);
+      if (card.num && card.status !== "draft") next.push(card);
       else nextDrafts.push(card);
       return { cards: next, drafts: nextDrafts };
     },
