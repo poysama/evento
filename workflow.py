@@ -35,6 +35,44 @@ def safe_image(value):
     )
 
 
+def artwork_id(card, version):
+    if version in (None, "std"):
+        return "std"
+    rows = {v["id"]: v for v in card.get("variants", [])}
+    original, seen = version, set()
+    while version in rows and version not in seen:
+        seen.add(version)
+        v = rows[version]
+        if v.get("sameDrawing") or version in card.get("altsame", []):
+            return "std"
+        target = v.get("sameAs") or card.get("altdup", {}).get(version)
+        if not target:
+            if v.get("kind") == "reprint" and v.get("artworkId") == "std":
+                return "std"
+            return version
+        if target == "std":
+            return "std"
+        version = target
+    return original
+
+
+def alternate_versions(card):
+    return [v for v in card.get("variants", []) if artwork_id(card, v["id"]) == v["id"]]
+
+
+def print_sources(card, artwork="std"):
+    return [v for v in card.get("variants", []) if artwork_id(card, v["id"]) == artwork]
+
+
+def effective_state(card, row, artwork="std"):
+    states = [row.get("alt", {}).get(v["id"]) for v in print_sources(card, artwork)]
+    if artwork == "std":
+        states.append("have" if row.get("jp") else "ordered" if row.get("ordered") else "skip" if row.get("baseWish") == "skip" else "want")
+    if row.get("manga") and artwork == card.get("manga"):
+        states.append("have")
+    return next((s for s in ("have", "ordered", "want", "skip") if s in states), "untracked")
+
+
 def normalize_catalog(value):
     c = copy.deepcopy(value)
     c.setdefault("schema", 2)
@@ -66,10 +104,21 @@ def normalize_catalog(value):
                     "artType": card.get("alttype", {}).get(a, ""),
                     "sameAs": card.get("altdup", {}).get(a, ""),
                     "specialFoil": a in card.get("altstar", []),
+                    "sameDrawing": a in card.get("altsame", []),
                 }
                 for a in ids
             ]
-        card["alt"] = [v["id"] for v in card["variants"]]
+        for v in card["variants"]:
+            if v["id"] in card.get("altsame", []):
+                v["sameDrawing"] = True
+            if not v.get("sameAs") and card.get("altdup", {}).get(v["id"]):
+                v["sameAs"] = card["altdup"][v["id"]]
+        identities = {v["id"]: artwork_id(card, v["id"]) for v in card["variants"]}
+        for v in card["variants"]:
+            v["artworkId"] = identities[v["id"]]
+            if v["artworkId"] != v["id"]:
+                v["kind"] = "reprint"
+        card["alt"] = [v["id"] for v in alternate_versions(card)]
         info["alt"] = card["alt"][:]
         for key, field in [
             ("altsrc", "source"),
@@ -222,7 +271,7 @@ def _valid_catalog(c):
                 or not isinstance(v.get("id"), str)
                 or not VERSION.fullmatch(v["id"])
                 or v["id"] in ids
-                or v.get("kind") not in {"parallel", "manga"}
+                or v.get("kind") not in {"parallel", "manga", "reprint"}
             ):
                 return False
             ids.add(v["id"])
@@ -236,7 +285,28 @@ def _valid_catalog(c):
             for field in ("officialId", "releaseDate", "artType", "sameAs"):
                 if field in v and not isinstance(v[field], str):
                     return False
+            if v.get("sameAs") and v["sameAs"] != "std" and not VERSION.fullmatch(v["sameAs"]):
+                return False
+            if "sameDrawing" in v and type(v["sameDrawing"]) != bool:
+                return False
+            if "artworkId" in v and (not isinstance(v["artworkId"], str) or (v["artworkId"] != "std" and not VERSION.fullmatch(v["artworkId"]))):
+                return False
             if "specialFoil" in v and type(v["specialFoil"]) != bool:
+                return False
+        variants = {v["id"]: v for v in card.get("variants", [])}
+        for v in variants.values():
+            current, visited = v["id"], set()
+            while current in variants:
+                if current in visited:
+                    return False
+                visited.add(current)
+                target = variants[current].get("sameAs")
+                if not target or target == "std":
+                    break
+                if target not in variants:
+                    return False
+                current = target
+            if v.get("kind") == "reprint" and artwork_id(card, v["id"]) == v["id"]:
                 return False
         if any(
             field in card and not safe_image(card[field])
@@ -351,22 +421,17 @@ def release_status(card, variant=None, catalog=None):
 
 
 def wishlist(catalog, owned, include_upcoming=False, include_parallels=True):
+    catalog = normalize_catalog(catalog)
     owned = normalize_collection(owned, catalog)
     out = []
     for c in catalog["cards"]:
         row = owned.get(c["num"], {})
-        for v in [None] + (c.get("variants", []) if include_parallels else []):
+        for v in [None] + (alternate_versions(c) if include_parallels else []):
             status = release_status(c, v, catalog)
             if status == "draft" or status == "announced" and not include_upcoming:
                 continue
             version = v["id"] if v else "std"
-            wanted = (
-                row.get("alt", {}).get(version) == "want"
-                if v
-                else not row.get("jp")
-                and not row.get("ordered")
-                and row.get("baseWish") != "skip"
-            )
+            wanted = effective_state(c, row, version) == "want"
             if wanted:
                 out.append(
                     {

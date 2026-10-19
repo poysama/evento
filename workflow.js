@@ -15,13 +15,51 @@
           sameDrawing: (c.altsame || []).includes(id),
         };
       });
-    c.alt = c.variants.map((v) => v.id);
+    c.variants.forEach((v) => {
+      if ((c.altsame || []).includes(v.id)) v.sameDrawing = true;
+      if (!v.sameAs && (c.altdup || {})[v.id]) v.sameAs = c.altdup[v.id];
+    });
+    var identities = {};
+    c.variants.forEach((v) => identities[v.id] = artworkId(c, v.id));
+    c.variants.forEach((v) => {
+      v.artworkId = identities[v.id];
+      if (v.artworkId !== v.id) v.kind = "reprint";
+    });
+    c.alt = alternateVersions(c).map((v) => v.id);
     c.altsrc = {};
     c.variants.forEach((v) => {
       c.altsrc[v.id] = v.source || "";
       if (v.kind === "manga") c.manga = v.id;
     });
     return c;
+  }
+  function artworkId(c, version) {
+    if (!version || version === "std") return "std";
+    var original = version, seen = new Set(), rows = new Map((c.variants || []).map(v => [v.id, v]));
+    while (rows.has(version) && !seen.has(version)) {
+      seen.add(version);
+      var v = rows.get(version);
+      if (v.sameDrawing || (c.altsame || []).includes(version)) return "std";
+      var target = v.sameAs || (c.altdup || {})[version];
+      if (!target) return v.kind === "reprint" && v.artworkId === "std" ? "std" : version;
+      if (target === "std") return "std";
+      version = target;
+    }
+    return original;
+  }
+  function alternateVersions(c) {
+    if (!Array.isArray(c.variants)) c = card(c);
+    return c.variants.filter(v => artworkId(c, v.id) === v.id);
+  }
+  function printSources(c, artwork = "std") {
+    if (!Array.isArray(c.variants)) c = card(c);
+    return c.variants.filter(v => artworkId(c, v.id) === artwork);
+  }
+  function effectiveState(c, e, artwork = "std") {
+    var states = printSources(c, artwork).map(v => (e.alt || {})[v.id]);
+    if (artwork === "std") states.push(e.jp ? "have" : e.ordered ? "ordered" : e.baseWish === "skip" ? "skip" : "want");
+    if (e.manga && artwork === c.manga) states.push("have");
+    return ["have", "ordered", "want", "skip"].find(s => states.includes(s)) || "untracked";
   }
   function state(collection, num) {
     var e = collection[num];
@@ -42,7 +80,7 @@
   function eligible(s, up) {
     return s === "released" || (up && s === "announced");
   }
-  function items(cards, collection, up, products) {
+  function items(cards, collection, up, products, rawPrints) {
     var out = [];
     cards.forEach((raw) => {
       var c = card(raw),
@@ -59,15 +97,11 @@
           version: "std",
           status: s,
           card: c,
-          state: e.jp
-            ? "have"
-            : e.ordered
-              ? "ordered"
-              : e.baseWish === "skip"
-                ? "skip"
-                : "want",
+          state: rawPrints
+            ? e.jp ? "have" : e.ordered ? "ordered" : e.baseWish === "skip" ? "skip" : "want"
+            : effectiveState(c, e, "std"),
         });
-      c.variants.forEach((v) => {
+      (rawPrints ? c.variants : alternateVersions(c)).forEach((v) => {
         var vs = status(c, v, products);
         if (eligible(vs, up))
           out.push({
@@ -77,7 +111,7 @@
             status: vs,
             card: c,
             variant: v,
-            state: (e.alt || {})[v.id] || "untracked",
+            state: rawPrints ? (e.alt || {})[v.id] || "untracked" : effectiveState(c, e, v.id),
           });
       });
     });
@@ -249,6 +283,11 @@
     };
   }
   var api = {
+    artworkId: artworkId,
+    alternateVersions: alternateVersions,
+    printSources: printSources,
+    effectiveState: effectiveState,
+    printItems: (cards, col, up, products) => items(cards, col, up, products, true),
     projection: projection,
     shoppingSummary: function (projection) {
       var complete = projection.baseOwned === projection.total;

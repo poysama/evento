@@ -53,7 +53,7 @@ jobs:
           python -m pip install --quiet --target build -r aws/requirements.txt \
             --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 \
             --python-version 3.12 --implementation cp --only-binary=:all:
-          cp aws/lambda_function.py aws/share_data.json workflow.py workflow.js save.js index.html cards.json products.json binders.json build/
+          cp aws/lambda_function.py aws/share_data.json workflow.py public_access.py workflow.js save.js index.html cards.json products.json binders.json build/
           find build -name __pycache__ -type d -prune -exec rm -rf {} +
           (cd build && zip -q -r ../evento-lambda.zip .)
           ls -l evento-lambda.zip
@@ -80,6 +80,8 @@ jobs:
 
       - name: Smoke test the site
         run: |
-          curl -fsS --retry 3 --retry-delay 3 "$SITE_URL/" | grep -q 'Passcode'
-          test "$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/api/collection")" = "401"
-          echo "site is up and locked"
+          curl -fsS --retry 3 --retry-delay 3 "$SITE_URL/" -o /tmp/evento-smoke.html
+          grep -q 'JP Event Binder' /tmp/evento-smoke.html
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/api/collection")" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: application/json' --data '{}' "$SITE_URL/api/collection")" = "401"
+          echo "site is public and edits are locked"

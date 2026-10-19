@@ -11,7 +11,7 @@ Needs Python 3 (standard library only).
     python server.py
 
 Then open http://127.0.0.1:8765/ (on Windows you can double-click `Start Binder.bat`).
-Your collection is saved to `collection.json` next to `server.py`.
+Your collection is saved to `collection.json` next to `server.py`. Browsing is public and read-only. Set the `BINDER_EDIT_PASSCODE` environment variable before starting the local server to enable **Unlock editing**. An unset or empty passcode leaves editing disabled.
 
 ## Card images
 
@@ -65,7 +65,7 @@ The config in `maintain_config.json` controls the sort:
 ## Hosting (AWS) and auto-deploy
 
 The same app runs on AWS at https://evento.peonbox.xyz - one Lambda (`aws/lambda_function.py`) behind an
-API Gateway HTTP API, with your collection and card art in a private S3 bucket, all behind a passcode.
+API Gateway HTTP API, with your collection and card art in a private S3 bucket. Binder, Collection and Wishlist are publicly viewable. Editing requires **Unlock editing** with the existing passcode or an enrolled passkey. Notes, history, private drafts and account tools remain available only to editors.
 
 **Every push to `main` deploys automatically** (`.github/workflows/deploy.yml`): it runs the tests in
 Python and Node suites, packages the Python domain module, UI scripts and catalog fallbacks, updates the Lambda,
@@ -75,6 +75,10 @@ credentials for a role that only `main` of this repo can assume - no keys are st
 One-time setup scripts (run from a machine with AWS credentials): `aws/deploy.ps1` (bucket, role, function,
 uploads local card art), `aws/setup-domain.ps1` (certificate, API, DNS), `aws/setup-ci.ps1` (GitHub deploy role).
 Card art is uploaded only by `deploy.ps1` from your local `card_images/` and is never part of the repo or CI.
+
+## Remembered editing access
+
+Editing access is remembered in a Secure, HttpOnly cookie for one year. **Lock editing** clears this device’s cookie; changing the deployed passcode invalidates existing editing cookies. Passwords and session tokens are not stored in browser local storage or URLs. Unlocking reloads the full editor documents before changes can be saved.
 
 ## Passkey sign-in
 
@@ -221,3 +225,9 @@ python import_catalog.py apply /tmp/catalog-review.json
 The proposal records the catalog endpoint and ETag. Apply sends one conditional catalog PUT; a concurrent edit rejects the proposal instead of overwriting newer data. Generate a fresh preview after a conflict. Hosted endpoints can be selected with `--endpoint`; authenticated requests accept `--cookie` (avoid storing cookies in shared shell history). Ambiguous review records are excluded from automatic changes and need manual version editing. Saved HTML provenance relies on the supplied source URL; this tool cannot authenticate an offline file's origin.
 
 The official OP12-018 search checked during importer development returned only the base print, named 覇王色の覇気, from 師弟の絆【OP-12】. It did not establish an alternate-print ID for a separately supplied picture. Add such artwork as a manual version with source unspecified until an authoritative match is available; never manufacture a pN identity from the picture.
+
+## What counts as alternate art
+
+An AA/parallel is a distinct artwork, not simply another product printing or foil finish. Different drawings can keep the standard text frame, use a bordered full-art layout, or be Manga full art. A rarity star by itself does not establish alternate artwork.
+
+Same-art reprints and foil finishes live under **Print sources / Foil**. Repeated prints of one AA share one artwork entry. Their original print IDs, ownership and order marks are retained, so changing classification does not erase collection history. **Add/Edit version** lets you distinguish different artwork, Manga, and a same-art reprint.

@@ -3,6 +3,7 @@
   class RevisionStore {
     constructor(url, options = {}) {
       this.url = url;
+      this.canWrite = options.canWrite || function () { return true; };
       this.fetch = options.fetch || root.fetch.bind(root);
       this.storage = options.storage || root.localStorage;
       this.key = "evento.pending." + url;
@@ -20,6 +21,7 @@
       return r.json();
     }
     recovery() {
+      if (!this.canWrite()) return null;
       try {
         return JSON.parse(this.storage.getItem(this.key) || "null");
       } catch (e) {
@@ -27,6 +29,7 @@
       }
     }
     stage(data) {
+      if (!this.canWrite()) throw Error("Unlock editing before saving changes.");
       this.pending = JSON.parse(JSON.stringify(data));
       try {
         this.storage.setItem(
@@ -41,6 +44,7 @@
       this.onchange("unsaved");
     }
     discard() {
+      if (!this.canWrite()) return;
       this.pending = null;
       this.conflict = false;
       try {
@@ -49,6 +53,7 @@
       this.onchange("saved");
     }
     restore(saved) {
+      if (!this.canWrite()) throw Error("Unlock editing before restoring changes.");
       if (saved.etag !== this.etag) {
         this.conflict = true;
         throw Error(
@@ -59,6 +64,7 @@
       return saved.data;
     }
     async save(data) {
+      if (!this.canWrite()) throw Error("Unlock editing before saving changes.");
       if (data !== undefined) this.stage(data);
       if (this.conflict)
         throw Error(
@@ -75,6 +81,7 @@
     }
     async drain() {
       while (this.pending) {
+        if (!this.canWrite()) throw Error("Unlock editing before saving changes.");
         const snapshot = this.pending;
         this.onchange("saving");
         let r;

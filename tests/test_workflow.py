@@ -3,6 +3,49 @@ import workflow as w
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_artwork_identity_preserves_sources_and_marks(self):
+        raw = {"cards": [{"num": "ST01-014", "alt": ["p2", "p3"], "altsame": ["p2", "p3"]}, {"num": "OP04-016", "alt": ["p1", "p2", "p3"], "altsame": ["p3"]}]}
+        catalog = w.normalize_catalog(raw)
+        self.assertEqual(catalog["cards"][0]["alt"], [])
+        self.assertEqual(catalog["cards"][1]["alt"], ["p1", "p2"])
+        self.assertEqual(len(w.print_sources(catalog["cards"][0])), 2)
+        self.assertEqual(w.normalize_catalog(catalog), catalog)
+        owned = {"ST01-014": {"foil": True, "alt": {"p2": "ordered", "p3": "have"}}}
+        before = __import__("copy").deepcopy(owned)
+        self.assertEqual(w.effective_state(catalog["cards"][0], owned["ST01-014"]), "have")
+        w.wishlist(catalog, owned)
+        self.assertEqual(owned, before)
+
+    def test_invalid_artwork_links_retain_prints(self):
+        catalog = w.normalize_catalog({"cards": [{"num": "ST01-014", "variants": [{"id": "p1", "kind": "parallel", "sameAs": "p2"}, {"id": "p2", "kind": "parallel", "sameAs": "p1"}, {"id": "p3", "kind": "parallel", "sameAs": "p9"}]}]})
+        self.assertEqual(catalog["cards"][0]["alt"], ["p1", "p2", "p3"])
+
+    def test_known_gold_print_is_same_base_artwork(self):
+        import json
+        from pathlib import Path
+        cards = json.loads((Path(__file__).parent.parent / "cards.json").read_text())
+        card = next(c for c in w.normalize_catalog({"cards": cards})["cards"] if c["num"] == "OP01-030")
+        self.assertNotIn("p1", card["alt"])
+        self.assertEqual(w.artwork_id(card, "p1"), "std")
+
+    def test_invalid_explicit_artwork_links_rejected(self):
+        import json
+        from pathlib import Path
+        base = w.normalize_catalog({"cards": json.loads((Path(__file__).parent.parent / "cards.json").read_text())})
+        self.assertTrue(w.valid_catalog(base))
+        self.assertEqual(w.normalize_catalog(base), base)
+        for variants in [
+            [{"id": "p1", "kind": "reprint", "sameAs": "p1"}],
+            [{"id": "p1", "kind": "reprint"}],
+            [{"id": "p1", "kind": "parallel", "sameAs": "p2"}, {"id": "p2", "kind": "parallel", "sameAs": "p1"}],
+            [{"id": "p1", "kind": "parallel", "sameAs": "p9"}],
+        ]:
+            for v in variants:
+                v.update(label="Print", source="")
+            candidate = __import__("copy").deepcopy(base)
+            candidate["cards"][0]["variants"] = variants
+            self.assertFalse(w.valid_catalog(candidate))
+
     def test_base(self):
         c = w.normalize_catalog(
             {

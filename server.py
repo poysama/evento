@@ -5,6 +5,11 @@ Serves the page and card images, saves your collection to collection.json, and
 data and upload card art. Listens on 127.0.0.1 only (this computer, nobody else).
 """
 
+import hashlib
+import hmac
+from http.cookies import SimpleCookie
+from urllib.parse import urlsplit, unquote
+import public_access as public
 import base64
 import json
 import re
@@ -26,6 +31,8 @@ JP_DIR = os.path.join(HERE, "card_images_jp")
 MANIFEST = os.path.join(JP_DIR, "manifest.json")
 PORT = int(os.environ.get("BINDER_PORT", "8765"))
 LOCK = threading.Lock()
+EDIT_PASSCODE = os.environ.get("BINDER_EDIT_PASSCODE", "")
+COOKIE = "evento_session"
 
 
 # Per card: {"jp": true, "foil": true, "en": true, "kr": true} - only true values are stored.
@@ -240,14 +247,45 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=HERE, **kw)
 
-    def _json(self, code, obj, etag=None):
+    def _authed(self):
+        if not EDIT_PASSCODE:
+            return False
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+            value = cookie[COOKIE].value if COOKIE in cookie else ""
+            token = hmac.new(
+                EDIT_PASSCODE.encode(), b"evento-session-v1", hashlib.sha256
+            ).hexdigest()
+            return hmac.compare_digest(value, token)
+        except (ValueError, KeyError):
+            return False
+
+    def _require_editor(self):
+        allowed = self._authed()
+        print(
+            json.dumps(
+                {
+                    "event": "edit_access",
+                    "action": "protected_request",
+                    "allowed": allowed,
+                    "method": self.command,
+                }
+            )
+        )
+        if not allowed:
+            self._json(401, {"error": "editing access required"})
+        return allowed
+
+    def _json(self, code, obj, etag=None, cookie=None):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         if etag:
             self.send_header("ETag", etag)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -261,7 +299,10 @@ class Handler(SimpleHTTPRequestHandler):
             return None, "bad json"
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        path = unquote(urlsplit(self.path).path)
+        if path == "/api/access":
+            return self._json(200, {"canEdit": self._authed()})
+        editor = self._authed()
         legacy = {
             "/cards.json": "cards",
             "/products.json": "products",
@@ -272,6 +313,16 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 with LOCK:
                     value = load() if path == "/api/collection" else load_catalog()
+                    if not editor:
+                        if path in legacy:
+                            return self._json(401, {"error": "editing access required"})
+                        visible = public.catalog(load_catalog())
+                        projection = (
+                            public.collection(value, visible)
+                            if path == "/api/collection"
+                            else visible
+                        )
+                        return self._json(200, projection, public.revision(projection))
                     return self._json(
                         200,
                         value[legacy[path]] if path in legacy else value,
@@ -279,17 +330,33 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             except (OSError, ValueError):
                 return self._json(503, {"error": "storage unavailable"})
-        if path in (
-            "/collection.json",
-            "/collection.json.bak",
-            "/catalog.json",
-            "/server.py",
-            "/workflow.py",
-        ) or path.startswith("/."):
-            return self.send_error(404)
         return super().do_GET()
 
+    def send_head(self):
+        path = unquote(urlsplit(self.path).path)
+        static = path in ("/", "/index.html", "/workflow.js", "/save.js")
+        image = bool(
+            re.fullmatch(r"/card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png)", path)
+        )
+        if path == "/card_images_jp/manifest.json":
+            manifest = load_json(MANIFEST, [])
+            if not self._authed():
+                nums = {c["num"] for c in public.catalog(load_catalog())["cards"]}
+                manifest = [n for n in manifest if n in nums]
+            self._json(200, manifest)
+            return None
+        if image and not self._authed():
+            image = path.lstrip("/") in public.image_paths(
+                public.catalog(load_catalog())
+            )
+        if not (static or image):
+            self.send_error(404)
+            return None
+        return super().send_head()
+
     def do_PUT(self):
+        if not self._require_editor():
+            return
         path = self.path.split("?")[0]
         if path in ("/api/cards", "/api/products", "/api/share-data", "/api/binders"):
             return self._json(
@@ -323,6 +390,37 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(503, {"error": "storage unavailable"})
 
     def do_POST(self):
+        path = urlsplit(self.path).path
+        if path == "/logout":
+            return self._json(
+                200,
+                {"ok": True},
+                cookie=f"{COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict",
+            )
+        if path == "/login":
+            body, error = self._read_body(4096)
+            if error or not isinstance(body, dict):
+                return self._json(400, {"error": "bad json"})
+            allowed = bool(EDIT_PASSCODE) and hmac.compare_digest(
+                str(body.get("passcode", "")).encode(), EDIT_PASSCODE.encode()
+            )
+            print(
+                json.dumps(
+                    {"event": "edit_access", "action": "login", "allowed": allowed}
+                )
+            )
+            if not allowed:
+                return self._json(401, {"error": "wrong passcode"})
+            token = hmac.new(
+                EDIT_PASSCODE.encode(), b"evento-session-v1", hashlib.sha256
+            ).hexdigest()
+            return self._json(
+                200,
+                {"ok": True},
+                cookie=f"{COOKIE}={token}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Strict",
+            )
+        if not self._require_editor():
+            return
         if self.path.split("?")[0] != "/api/image":
             return self.send_error(404)
         body, err = self._read_body(10_000_000)
@@ -361,11 +459,19 @@ class Handler(SimpleHTTPRequestHandler):
             },
         )
 
+    def do_DELETE(self):
+        if self._require_editor():
+            self._json(404, {"error": "not found"})
+
+    def do_PATCH(self):
+        if self._require_editor():
+            self._json(404, {"error": "not found"})
+
     def end_headers(self):
         # Pages and data must always be re-checked so edits show up on refresh;
         # card images never change, so let the browser keep them.
         if not self.path.split("?")[0].lower().endswith((".jpg", ".png")):
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", "private, no-store")
         super().end_headers()
 
     def log_message(self, fmt, *args):

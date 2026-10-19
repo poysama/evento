@@ -281,3 +281,39 @@ test("ordered and skipped bases never imply shopping completion", () => {
   );
   assert.equal(full.complete, true);
 });
+test('artwork roots exclude base reprints and resolve alias ownership', () => {
+ const c={num:'A',alt:['p1','p2','p3'],altsame:['p1'],altdup:{p2:'p1',p3:'p2'}};
+ assert.deepEqual(W.card(c).alt, []);
+ assert.equal(W.printSources(c).length,3);
+ assert.equal(W.items([c],{A:{alt:{p3:'have'}}})[0].state,'have');
+ const aa={num:'B',variants:[{id:'p1',kind:'parallel'},{id:'p2',kind:'parallel',sameAs:'p1'}]};
+ assert.deepEqual(W.card(aa).alt,['p1']);
+ assert.equal(W.wishlist([aa],{B:{jp:true,alt:{p1:'want',p2:'have'}}}).length,0);
+});
+
+test("source-only orders do not invent a standard print order", () => {
+  const cards = [{ num: "A", variants: [{ id: "p2", kind: "reprint", sameAs: "std" }] }];
+  const collection = { A: { alt: { p2: "ordered" } } };
+  const prints = W.printItems(cards, collection);
+  assert.equal(prints.find(item => item.version === "std").state, "want");
+  const orders = prints.filter(item => item.state === "ordered");
+  assert.deepEqual(orders.map(item => item.version), ["p2"]);
+  const received = W.change(collection, orders, "have").collection;
+  assert.equal(received.A.alt.p2, "have");
+  assert.equal(received.A.jp, undefined);
+  assert.equal(W.printItems(cards, received).filter(item => item.state === "ordered").length, 0);
+  assert.equal(W.items(cards, received)[0].state, "have");
+});
+test("separate duplicate artwork print orders remain distinct", () => {
+  const cards = [{ num: "A", variants: [
+    { id: "p1", kind: "parallel" },
+    { id: "p2", kind: "reprint", sameAs: "p1" },
+    { id: "p3", kind: "reprint", sameAs: "p1" },
+  ] }];
+  const collection = { A: { alt: { p2: "ordered", p3: "ordered" } } };
+  const orders = W.printItems(cards, collection).filter(item => item.state === "ordered");
+  assert.deepEqual(orders.map(item => item.version), ["p2", "p3"]);
+  const received = W.change(collection, [orders[0]], "have").collection;
+  assert.deepEqual(W.printItems(cards, received).filter(item => item.state === "ordered").map(item => item.version), ["p3"]);
+  assert.equal(received.A.jp, undefined);
+});

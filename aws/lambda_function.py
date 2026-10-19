@@ -1,7 +1,7 @@
 """AWS Lambda (API Gateway HTTP API) version of the Evento binder server.
 
 Serves the page, card art (from a private S3 bucket) and saves the collection to S3.
-Everything sits behind a login. Two ways in:
+Browsing is public. Editing requires either:
   * a passkey (WebAuthn: Face ID / Windows Hello / Touch ID / security key), or
   * the passcode - always available as a fallback, and the gate for adding a passkey from a new device.
 A cookie remembers the browser after either.
@@ -26,6 +26,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import workflow as wf
+import public_access as public
 
 import boto3
 from botocore.config import Config
@@ -39,7 +40,7 @@ s3_sign = boto3.client(
     config=Config(signature_version="s3v4"),
 )
 BUCKET = os.environ["BUCKET"]
-PASSCODE = os.environ["PASSCODE"]
+PASSCODE = os.environ.get("PASSCODE", "")
 ORIGIN = os.environ.get("WEBAUTHN_ORIGIN", "https://evento.peonbox.xyz")
 RP_ID = urlparse(ORIGIN).hostname
 RP_NAME = "Evento binder"
@@ -129,6 +130,8 @@ def valid(owned):
 
 
 def authed(event):
+    if not PASSCODE:
+        return False
     for c in event.get("cookies") or []:
         name, _, val = c.partition("=")
         if name.strip() == COOKIE and hmac.compare_digest(val.strip(), TOKEN):
@@ -515,6 +518,8 @@ def webauthn_route(method, path, event):
         UserVerificationRequirement,
     )
 
+    if not PASSCODE:
+        return js(503, {"error": "editing unavailable"})
     sub = path[len("/webauthn/") :]
     logged_in = authed(event)
 
@@ -746,6 +751,8 @@ def _alt_label(c, alts, a):
     if c.get("manga") == a:
         return "Manga"
     variant = next((v for v in c.get("variants", []) if v["id"] == a), None)
+    if variant and variant.get("kind") == "reprint":
+        return "Reprint" + (" · " + variant["source"] if variant.get("source") else "")
     if variant and variant.get("label") not in ("Alt art", "Manga"):
         return variant["label"]
     plain = [x for x in alts if x != c.get("manga")]
@@ -824,15 +831,24 @@ def _load_price_cache():
 
 def _all_alt_wants():
     """Every alt-art / Manga version currently marked "want", regardless of share settings."""
-    cards, _ = _catalog()
-    owned = _owned(0)
-    out = []
-    for c in cards:
-        marks = (owned.get(c["num"]) or {}).get("alt") or {}
-        for a in c.get("alt") or []:
-            if marks.get(a) == "want":
-                out.append((c, a))
-    return out
+    catalog = load_catalog_document()[0]
+    return [
+        (item["card"], item["version"])
+        for item in wf.wishlist(catalog, _owned(0), include_parallels=True)
+        if item["version"] != "std"
+    ]
+
+
+def _price_stale(cache, wants):
+    if not cache:
+        return False
+    desired = {(card["num"], version) for card, version in wants}
+    cached = {
+        (item.get("num"), item.get("ver"))
+        for item in cache.get("items", [])
+        if isinstance(item, dict)
+    }
+    return cache.get("wanted") != len(desired) or cached != desired
 
 
 _HEAD = {"X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer"}
@@ -1135,10 +1151,11 @@ GROUP_JS = (
 )
 
 
-def _price_html(cache, wanted_n):
+def _price_html(cache, wants):
+    wanted_n = len(wants)
     if not cache or cache.get("total") is None:
         return ""
-    stale = cache.get("wanted") != wanted_n
+    stale = _price_stale(cache, wants)
     sub = f'matched {cache["matched"]} of {cache.get("wanted", wanted_n)}'
     if cache.get("sold_out_count"):
         sub += f' &middot; {cache["sold_out_count"]} sold out (price likely higher now)'
@@ -1236,7 +1253,7 @@ def mine_page():
     if alt_wants:
         parts += [
             '<h2 style="margin-top:40px">Alt-art / Manga versions you want</h2>',
-            _price_html(price_cache, len(alt_wants)),
+            _price_html(price_cache, alt_wants),
             '<div class="gb" role="group" aria-label="Group by"><span>Group by</span>'
             '<button type="button" data-g="set" aria-pressed="true">Card set</button>'
             '<button type="button" data-g="src" aria-pressed="false">Collection</button></div>',
@@ -1367,17 +1384,45 @@ def _handler(event, context):
     http = event["requestContext"]["http"]
     method, path = http["method"], event.get("rawPath", "/")
 
+    if path == "/api/access" and method == "GET":
+        return js(200, {"canEdit": authed(event)})
+    if path == "/logout" and method == "POST":
+        print(json.dumps({"event": "edit_access", "action": "logout", "allowed": True}))
+        return resp(
+            200,
+            "ok",
+            cookies=[
+                f"{COOKIE}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict"
+            ],
+        )
     if path == "/login" and method == "POST":
         d = body_json(event)
-        if d is None:
+        if not isinstance(d, dict):
             return js(400, {"error": "bad json"})
-        if hmac.compare_digest(str(d.get("passcode", "")).encode(), PASSCODE.encode()):
+        if PASSCODE and hmac.compare_digest(
+            str(d.get("passcode", "")).encode(), PASSCODE.encode()
+        ):
+            print(
+                json.dumps({"event": "edit_access", "action": "login", "allowed": True})
+            )
             return resp(200, "ok", cookies=[session_cookie()])
+        print(json.dumps({"event": "edit_access", "action": "login", "allowed": False}))
         time.sleep(1)  # slow down guessing
         return js(401, {"error": "wrong passcode"})
 
     if path.startswith("/webauthn/"):
-        return webauthn_route(method, path, event)
+        result = webauthn_route(method, path, event)
+        print(
+            json.dumps(
+                {
+                    "event": "edit_access",
+                    "action": "passkey_request",
+                    "allowed": result["statusCode"] < 400,
+                    "method": method,
+                }
+            )
+        )
+        return result
 
     if method == "GET" and path.startswith("/w/"):
         tok, _, sub = path[3:].partition("/")
@@ -1387,10 +1432,58 @@ def _handler(event, context):
             else (share_page(tok) if not sub else _share_not_found())
         )
 
-    if not authed(event):
-        if method == "GET" and path in ("/", "/index.html"):
-            return resp(200, LOGIN_HTML, "text/html; charset=utf-8")
-        return js(401, {"error": "login required"})
+    editor = authed(event)
+    public_static = path in ("/", "/index.html", "/workflow.js", "/save.js")
+    public_image = path.startswith(("/card_images/", "/card_images_jp/"))
+    public_data = path in ("/api/catalog", "/api/collection")
+    if editor and method not in ("GET", "HEAD"):
+        print(
+            json.dumps(
+                {
+                    "event": "edit_access",
+                    "action": "protected_request",
+                    "allowed": True,
+                    "method": method,
+                }
+            )
+        )
+    if not editor:
+        if method != "GET" or not (public_static or public_image or public_data):
+            print(
+                json.dumps(
+                    {
+                        "event": "edit_access",
+                        "action": "protected_request",
+                        "allowed": False,
+                        "method": method,
+                    }
+                )
+            )
+            return js(401, {"error": "editing access required"})
+        if public_data or public_image:
+            visible = public.catalog(load_catalog_document()[0])
+            if path == "/api/catalog":
+                return resp(
+                    200,
+                    json.dumps(visible),
+                    "application/json",
+                    extra={"ETag": public.revision(visible)},
+                )
+            if path == "/api/collection":
+                owned, _, _ = read_document("data/collection.json", {})
+                projection = public.collection(owned, visible)
+                return resp(
+                    200,
+                    json.dumps(projection),
+                    "application/json",
+                    extra={"ETag": public.revision(projection)},
+                )
+            if path == "/card_images_jp/manifest.json":
+                manifest, _, _ = read_document("images_jp/manifest.json", [])
+                nums = {c["num"] for c in visible["cards"]}
+                return js(200, [n for n in manifest if n in nums])
+            if path.lstrip("/") not in public.image_paths(visible):
+                return js(404, {"error": "not found"})
 
     if method == "GET" and path in ("/", "/index.html"):
         return resp(
@@ -1482,9 +1575,10 @@ def _handler(event, context):
         if method != "GET":
             return js(404, {"error": "not found"})
         cache = _load_price_cache()
-        wanted_now = len(_all_alt_wants())
+        wants = _all_alt_wants()
+        wanted_now = len(wants)
         out = dict(cache) if cache else {"total": None, "fetched": None}
-        out["stale"] = bool(cache) and cache.get("wanted") != wanted_now
+        out["stale"] = _price_stale(cache, wants)
         out["wanted_now"] = wanted_now
         return js(200, out)
 

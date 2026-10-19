@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parent.parent
 pkg = Path(tempfile.mkdtemp())
 for src in (
     REPO / "workflow.py",
+    REPO / "public_access.py",
     REPO / "workflow.js",
     REPO / "save.js",
     REPO / "aws" / "lambda_function.py",
@@ -136,20 +137,24 @@ def ev(method, path, body=None, cookies=None, b64=False):
 
 
 h = L.handler
-check("anonymous / shows the login page", "Passcode" in h(ev("GET", "/"), None)["body"])
 check(
-    "anonymous api is 401", h(ev("GET", "/api/collection"), None)["statusCode"] == 401
+    "anonymous / shows the binder app",
+    "JP Event Binder" in h(ev("GET", "/"), None)["body"],
 )
 check(
-    "workflow static assets require authentication",
+    "anonymous collection is public",
+    h(ev("GET", "/api/collection"), None)["statusCode"] == 200,
+)
+check(
+    "workflow static assets are public",
     all(
-        h(ev("GET", path), None)["statusCode"] == 401
+        h(ev("GET", path), None)["statusCode"] == 200
         for path in ("/workflow.js", "/save.js")
     ),
 )
 check(
-    "anonymous image is 401",
-    h(ev("GET", "/card_images/OP01-026.jpg"), None)["statusCode"] == 401,
+    "missing public image is 404",
+    h(ev("GET", "/card_images/OP01-026.jpg"), None)["statusCode"] == 404,
 )
 check(
     "wrong passcode is 401",
@@ -158,7 +163,10 @@ check(
 )
 check(
     "forged cookie is rejected",
-    "Passcode" in h(ev("GET", "/", cookies=["evento_session=forged"]), None)["body"],
+    json.loads(
+        h(ev("GET", "/api/access", cookies=["evento_session=forged"]), None)["body"]
+    )
+    == {"canEdit": False},
 )
 
 r = h(ev("POST", "/login", json.dumps({"passcode": "test-passcode"})), None)
@@ -444,12 +452,12 @@ png = b"\x89PNG\r\n\x1a\nfakepngdata"
 store["images_jp/OP01-026.png"] = png
 store["images_jp/manifest.json"] = b'["OP01-026"]'
 check(
-    "JP art needs a login",
-    h(ev("GET", "/card_images_jp/OP01-026.png"), None)["statusCode"] == 401,
+    "JP public art needs no login",
+    h(ev("GET", "/card_images_jp/OP01-026.png"), None)["statusCode"] == 200,
 )
 check(
-    "JP manifest needs a login",
-    h(ev("GET", "/card_images_jp/manifest.json"), None)["statusCode"] == 401,
+    "JP manifest is public",
+    h(ev("GET", "/card_images_jp/manifest.json"), None)["statusCode"] == 200,
 )
 jp = h(ev("GET", "/card_images_jp/OP01-026.png", cookies=ck), None)
 check(
@@ -535,10 +543,10 @@ store["data/collection.json"] = json.dumps(
         "OP01-026": {"jp": True, "foil": True},
         "OP01-027": {"kr": True},
         "OP01-029": {
-            "alt": {"p3": "want", "p4": "have"}
+            "alt": {"p2": "want"}
         },  # two alt arts: one wanted, one in hand - the "have" completes the card on its own
         "OP09-020": {"alt": {"p2": "want"}},  # the Manga version, wanted
-        "OP01-030": {"alt": {"p1": "ordered"}},
+        "OP04-016": {"alt": {"p1": "ordered"}},
     }
 ).encode()  # an alt art already on order
 sh = json.loads(
@@ -737,12 +745,12 @@ check(
 )
 alt_part = body2.split("Also collecting these alt-art")[1]
 check(
-    'it lists the wanted versions with product, illustration type and labels (OP01-029 has 3 alt arts: p3 is "Alt art 2 \u00b7 PRB-01"; OP09-020 p2 is the Manga)',
+    'it lists the wanted versions with product, illustration type and labels (OP01-029 has 3 alt arts: p3 is "Alt art \u00b7 Best Selection Vol.1"; OP09-020 p2 is the Manga)',
     "OP01-029 &middot;" in alt_part
-    and '<span class="tag">Alt art 2 \u00b7 PRB-01</span>' in alt_part
+    and '<span class="tag">Alt art \u00b7 Best Selection Vol.1</span>' in alt_part
     and '<span class="tag">Manga</span>' in alt_part
     and "OP09-020 &middot;" in alt_part
-    and "same drawing as the regular card" in alt_part,
+    and "same drawing as the regular card" not in alt_part,
 )
 check(
     "versions in hand or on order are not listed",
@@ -750,7 +758,7 @@ check(
 )
 check(
     "the alt-art pictures are used",
-    "OP01-029_p3" in alt_part
+    "OP01-029_p2" in alt_part
     and "OP09-020_p2" in alt_part
     and "OP01-029_p4" not in alt_part,
 )
@@ -810,12 +818,12 @@ check(
         "matched": 2,
         "wanted": 2,
         "fetched": "2026-09-22T14:19:00Z",
-        "stale": False,
+        "stale": True,
         "wanted_now": 2,
     },
 )
 store["data/collection.json"] = json.dumps(
-    json.loads(store["data/collection.json"]) | {"OP01-030": {"alt": {"p1": "want"}}}
+    json.loads(store["data/collection.json"]) | {"OP04-016": {"alt": {"p1": "want"}}}
 ).encode()
 check(
     "a wishlist that grew since the cache was checked is flagged stale",
@@ -866,7 +874,7 @@ store["data/price_cache.json"] = json.dumps(
         "wanted": 2,
         "fetched": "2026-09-22T14:19:00Z",
         "items": [
-            {"num": "OP01-029", "ver": "p3", "lo": 4800, "oos": False},
+            {"num": "OP01-029", "ver": "p2", "lo": 4800, "oos": False},
             {"num": "OP09-020", "ver": "p2", "lo": 20320, "oos": True},
         ],
     }
@@ -901,7 +909,7 @@ def pic(path_tok, name):
 
 store["images_jp/OP01-027.png"] = b"\x89PNG\r\n\x1a\nmissing-card"
 store["images_jp/OP01-026.png"] = b"\x89PNG\r\n\x1a\nOWNED-card"
-store["images_jp/OP01-029_p3.png"] = b"\x89PNG\r\n\x1a\nalt-art"
+store["images_jp/OP01-029_p2.png"] = b"\x89PNG\r\n\x1a\nalt-art"
 p1 = pic(tok, "OP01-027.png")
 check(
     "a friend gets a short-lived direct link to a wishlist card picture, with no login",
@@ -931,7 +939,7 @@ check(
 )
 check(
     "a wanted alt art is served (option on); one in hand or on order is not",
-    pic(tok, "OP01-029_p3.png")["statusCode"] == 302
+    pic(tok, "OP01-029_p2.png")["statusCode"] == 302
     and pic(tok, "OP09-020_p2.png")["statusCode"] == 302
     and pic(tok, "OP01-029_p4.png")["statusCode"] == 404
     and pic(tok, "OP01-030_p1.png")["statusCode"] == 404,
@@ -1764,7 +1772,179 @@ check(
     L._image_ref({"num": "OP12-018", "enImage": "card_images/PRIVATE.png"})
     == "card_images_jp/OP12-018.png",
 )
+# Artwork identity must also constrain the public image allowlist.
+aa_saved_catalog = store.get("data/catalog.json")
+aa_saved_owned = store.get("data/collection.json")
+aa_catalog = L.wf.normalize_catalog(
+    {
+        "cards": [
+            {
+                "num": "OP01-027",
+                "name": "Artwork identity",
+                "set": "OP-01",
+                "col": "Red",
+                "variants": [
+                    {"id": "p1", "kind": "parallel", "label": "Root AA", "source": ""},
+                    {
+                        "id": "p2",
+                        "kind": "parallel",
+                        "label": "Repeated AA",
+                        "source": "",
+                        "sameAs": "p1",
+                    },
+                    {
+                        "id": "p3",
+                        "kind": "parallel",
+                        "label": "Base print",
+                        "source": "",
+                        "sameDrawing": True,
+                    },
+                ],
+            }
+        ]
+    }
+)
+store["data/catalog.json"] = json.dumps(aa_catalog).encode()
+store["data/collection.json"] = json.dumps(
+    {"OP01-027": {"jp": True, "alt": {"p1": "want", "p2": "have", "p3": "want"}}}
+).encode()
+put_share({"enabled": True, "foil": True, "pics": True})
+check(
+    "AA duplicate have suppresses root want in public image gate",
+    pic(tok, "OP01-027_p1.png")["statusCode"] == 404,
+)
+check(
+    "marked base print is never a public AA image",
+    pic(tok, "OP01-027_p3.png")["statusCode"] == 404,
+)
+store["data/collection.json"] = json.dumps(
+    {"OP01-027": {"jp": True, "alt": {"p2": "want"}}}
+).encode()
+check(
+    "alias want exposes canonical AA artwork",
+    pic(tok, "OP01-027_p1.png")["statusCode"] == 302,
+)
+check(
+    "duplicate source stays outside public unique AA gate",
+    pic(tok, "OP01-027_p2.png")["statusCode"] == 404,
+)
+check(
+    "private price wants use unique canonical artwork",
+    [(c["num"], a) for c, a in L._all_alt_wants()] == [("OP01-027", "p1")],
+)
+check(
+    "equal count with different cached artwork is stale",
+    L._price_stale(
+        {"wanted": 1, "items": [{"num": "OP01-027", "ver": "p2"}]}, L._all_alt_wants()
+    ),
+)
+check(
+    "matching canonical cached artwork stays current",
+    not L._price_stale(
+        {"wanted": 1, "items": [{"num": "OP01-027", "ver": "p1"}]}, L._all_alt_wants()
+    ),
+)
+store["data/collection.json"] = json.dumps(
+    {"OP01-027": {"alt": {"p1": "want", "p2": "have"}}}
+).encode()
+check("alias have suppresses private price want", L._all_alt_wants() == [])
+store["data/catalog.json"] = aa_saved_catalog
+store["data/collection.json"] = aa_saved_owned
 shutil.rmtree(pkg, ignore_errors=True)
+
+
+# Public browsing never grants editing or reveals private document fields.
+check(
+    "anonymous access flag", j(h(ev("GET", "/api/access"), None)) == {"canEdit": False}
+)
+check(
+    "owner access flag",
+    j(h(ev("GET", "/api/access", cookies=ck), None)) == {"canEdit": True},
+)
+for method in ("POST", "PUT", "PATCH", "DELETE"):
+    for path in (
+        "/api/catalog",
+        "/api/collection",
+        "/api/cards",
+        "/api/products",
+        "/api/share-data",
+        "/api/binders",
+        "/api/image",
+        "/api/share",
+        "/api/price",
+        "/mine",
+    ):
+        check(
+            "anonymous mutation denied " + method + " " + path,
+            h(ev(method, path, "{}"), None)["statusCode"] == 401,
+        )
+for path in (
+    "/api/share",
+    "/api/price",
+    "/mine",
+    "/cards.json",
+    "/products.json",
+    "/binders.json",
+    "/aws/share_data.json",
+    "/api/share-data",
+    "/webauthn/passkeys",
+):
+    check("private read denied " + path, h(ev("GET", path), None)["statusCode"] == 401)
+for path in ("/api/catalog", "/api/collection", "/api/access"):
+    response = h(ev("GET", path), None)
+    check(
+        "public data is uncacheable without write revision " + path,
+        response["headers"].get("Cache-Control") == "no-store"
+        and (
+            path == "/api/access"
+            or response["headers"].get("ETag", "").startswith('"public-')
+        ),
+    )
+logged_out = h(ev("POST", "/logout", cookies=ck), None)
+check(
+    "logout clears cached edit cookie",
+    logged_out["statusCode"] == 200
+    and "Max-Age=0" in logged_out["cookies"][0]
+    and "HttpOnly" in logged_out["cookies"][0],
+)
+previous_passcode = L.PASSCODE
+L.PASSCODE = ""
+check(
+    "empty credential cannot log in",
+    h(ev("POST", "/login", '{"passcode":""}'), None)["statusCode"] == 401,
+)
+check(
+    "empty credential rejects existing cookie", not L.authed(ev("GET", "/", cookies=ck))
+)
+check(
+    "empty credential disables passkey authentication",
+    h(ev("POST", "/webauthn/login/options"), None)["statusCode"] == 503,
+)
+L.PASSCODE = previous_passcode
+public_etag = h(ev("GET", "/api/collection"), None)["headers"]["ETag"]
+public_write = ev("PUT", "/api/collection", "{}", cookies=ck)
+public_write["headers"]["if-match"] = public_etag
+check(
+    "public revision cannot write private collection",
+    h(public_write, None)["statusCode"] == 409,
+)
+for path in (
+    "/api/catalog",
+    "/api/collection",
+    "/api/share",
+    "/api/price",
+    "/mine",
+    "/cards.json",
+    "/products.json",
+    "/binders.json",
+    "/aws/share_data.json",
+    "/api/share-data",
+    "/webauthn/passkeys",
+):
+    check(
+        "owner can read private endpoint " + path,
+        h(ev("GET", path, cookies=ck), None)["statusCode"] != 401,
+    )
 if fails:
     print(f"\n{len(fails)} FAILED")
     sys.exit(1)

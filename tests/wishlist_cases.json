@@ -1,7 +1,390 @@
 [
- {"name":"missing base despite AA have","catalog":{"schema":2,"cards":[{"num":"OP12-018","name":"Event","variants":[{"id":"p1","kind":"parallel","label":"Parallel","source":""}]}],"products":{"products":[],"sources":{}},"share":{},"binders":[],"drafts":[]},"collection":{"OP12-018":{"alt":{"p1":"have"}}},"upcoming":false,"expected":["OP12-018:std"]},
- {"name":"draft parent stays private","catalog":{"schema":2,"cards":[{"num":"OP12-018","name":"Event","status":"draft","variants":[{"id":"p1","kind":"parallel","label":"Parallel","source":"","status":"released"}]}],"products":{"products":[],"sources":{}},"share":{},"binders":[],"drafts":[]},"collection":{"OP12-018":{"alt":{"p1":"want"}}},"upcoming":true,"expected":[]},
- {"name":"source release upcoming gate","catalog":{"schema":2,"cards":[{"num":"OP12-018","name":"Event","set":"OLD","variants":[{"id":"v_custom","kind":"parallel","label":"Parallel","source":"NEXT"}]}],"products":{"products":[{"code":"NEXT","status":"announced"}],"sources":{}},"share":{},"binders":[],"drafts":[]},"collection":{"OP12-018":{"jp":true,"alt":{"v_custom":"want"}}},"upcoming":false,"expected":[]},
- {"name":"source release explicit upcoming","catalog":{"schema":2,"cards":[{"num":"OP12-018","name":"Event","set":"OLD","variants":[{"id":"v_custom","kind":"parallel","label":"Parallel","source":"NEXT"}]}],"products":{"products":[{"code":"NEXT","status":"announced"}],"sources":{}},"share":{},"binders":[],"drafts":[]},"collection":{"OP12-018":{"jp":true,"alt":{"v_custom":"want"}}},"upcoming":true,"expected":["OP12-018:v_custom"]},
- {"name":"legacy manga does not fulfill base","catalog":{"schema":2,"cards":[{"num":"OP12-018","name":"Event","manga":"p2","alt":["p2"]}],"products":{"products":[],"sources":{}},"share":{},"binders":[],"drafts":[]},"collection":{"OP12-018":{"manga":true}},"upcoming":false,"expected":["OP12-018:std"]}
+  {
+    "name": "missing base despite AA have",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": ""
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "alt": {
+          "p1": "have"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": [
+      "OP12-018:std"
+    ]
+  },
+  {
+    "name": "draft parent stays private",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "status": "draft",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "",
+              "status": "released"
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "alt": {
+          "p1": "want"
+        }
+      }
+    },
+    "upcoming": true,
+    "expected": []
+  },
+  {
+    "name": "source release upcoming gate",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "set": "OLD",
+          "variants": [
+            {
+              "id": "v_custom",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "NEXT"
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [
+          {
+            "code": "NEXT",
+            "status": "announced"
+          }
+        ],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "v_custom": "want"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "source release explicit upcoming",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "set": "OLD",
+          "variants": [
+            {
+              "id": "v_custom",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "NEXT"
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [
+          {
+            "code": "NEXT",
+            "status": "announced"
+          }
+        ],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "v_custom": "want"
+        }
+      }
+    },
+    "upcoming": true,
+    "expected": [
+      "OP12-018:v_custom"
+    ]
+  },
+  {
+    "name": "legacy manga does not fulfill base",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "manga": "p2",
+          "alt": [
+            "p2"
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "manga": true
+      }
+    },
+    "upcoming": false,
+    "expected": [
+      "OP12-018:std"
+    ]
+  },
+  {
+    "name": "transitive base prints are not AA",
+    "catalog": {
+      "cards": [
+        {
+          "num": "OP12-018",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "sameDrawing": true,
+              "label": "Print",
+              "source": ""
+            },
+            {
+              "id": "p2",
+              "kind": "parallel",
+              "sameAs": "p1",
+              "label": "Print",
+              "source": ""
+            },
+            {
+              "id": "p3",
+              "kind": "parallel",
+              "sameAs": "p2",
+              "label": "Print",
+              "source": ""
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      }
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "p3": "want"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "duplicate AA have dominates root want",
+    "catalog": {
+      "cards": [
+        {
+          "num": "OP12-018",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "label": "Print",
+              "source": ""
+            },
+            {
+              "id": "p2",
+              "kind": "parallel",
+              "sameAs": "p1",
+              "label": "Print",
+              "source": ""
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      }
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "p1": "want",
+          "p2": "have"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "duplicate AA want selects unique root",
+    "catalog": {
+      "cards": [
+        {
+          "num": "OP12-018",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "label": "Print",
+              "source": ""
+            },
+            {
+              "id": "p2",
+              "kind": "parallel",
+              "sameAs": "p1",
+              "label": "Print",
+              "source": ""
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      }
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "p2": "want"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": [
+      "OP12-018:p1"
+    ]
+  },
+  {
+    "name": "base print have satisfies base target",
+    "catalog": {
+      "cards": [
+        {
+          "num": "OP12-018",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "sameDrawing": true,
+              "label": "Print",
+              "source": ""
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      }
+    },
+    "collection": {
+      "OP12-018": {
+        "alt": {
+          "p1": "have"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "base print ordered beats default want",
+    "catalog": {
+      "cards": [
+        {
+          "num": "OP12-018",
+          "variants": [
+            {
+              "id": "p1",
+              "kind": "parallel",
+              "sameDrawing": true,
+              "label": "Print",
+              "source": ""
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [],
+        "sources": {}
+      }
+    },
+    "collection": {
+      "OP12-018": {
+        "alt": {
+          "p1": "ordered"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  }
 ]
