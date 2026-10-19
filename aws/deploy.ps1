@@ -73,21 +73,35 @@ $py = if (Get-Command py -ErrorAction SilentlyContinue) { @('py', '-3') } else {
 & $py[0] $py[1..($py.Length - 1)] -m pip install --quiet --target $stage -r "$PSScriptRoot\requirements.txt" `
   --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 --python-version 3.12 --implementation cp --only-binary=:all:
 if ($LASTEXITCODE -ne 0) { throw 'pip install of Lambda dependencies failed' }
-Copy-Item "$PSScriptRoot\lambda_function.py","$PSScriptRoot\share_data.json","$App\workflow.py","$App\public_access.py","$App\workflow.js","$App\save.js","$App\index.html","$App\cards.json","$App\products.json","$App\binders.json" $stage
+Copy-Item "$PSScriptRoot\lambda_function.py","$PSScriptRoot\share_data.json","$App\workflow.py","$App\public_access.py","$App\recognition.py","$App\recognition_budget.py","$App\workflow.js","$App\save.js","$App\index.html","$App\cards.json","$App\products.json","$App\binders.json" $stage
 Get-ChildItem $stage -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
 
 # --- function
 if (-not (Exists { aws lambda get-function --function-name $Fn })) {
   Run lambda create-function --function-name $Fn --runtime python3.12 --handler lambda_function.handler `
-    --role $RoleArn --zip-file "fileb://$zip" --timeout 10 --memory-size 256 `
-    --environment "Variables={BUCKET=$Bucket,PASSCODE=$Pass}" | Out-Null
+    --role $RoleArn --zip-file "fileb://$zip" --timeout 30 --memory-size 256 `
+    --environment "Variables={BUCKET=$Bucket,PASSCODE=$Pass,RECOGNITION_MODEL_ID=disabled}" | Out-Null
   Run lambda wait function-active-v2 --function-name $Fn
 } else {
   Run lambda update-function-code --function-name $Fn --zip-file "fileb://$zip" | Out-Null
   Run lambda wait function-updated-v2 --function-name $Fn
-  Run lambda update-function-configuration --function-name $Fn --environment "Variables={BUCKET=$Bucket,PASSCODE=$Pass}" | Out-Null
-  Run lambda wait function-updated-v2 --function-name $Fn
+  $existingEnvironment = (Run lambda get-function-configuration --function-name $Fn --query Environment.Variables --output json) | ConvertFrom-Json
+  $variables = @{}
+  if ($existingEnvironment) {
+    $existingEnvironment.PSObject.Properties | ForEach-Object { $variables[$_.Name] = $_.Value }
+  }
+  $variables['BUCKET'] = $Bucket
+  $variables['PASSCODE'] = $Pass
+  if (-not $variables.ContainsKey('RECOGNITION_MODEL_ID')) { $variables['RECOGNITION_MODEL_ID'] = 'disabled' }
+  $environmentFile = [IO.Path]::GetTempFileName()
+  try {
+    [IO.File]::WriteAllText($environmentFile, (@{Variables=$variables} | ConvertTo-Json -Depth 5 -Compress), (New-Object Text.UTF8Encoding($false)))
+    Run lambda update-function-configuration --function-name $Fn --timeout 30 --environment "file://$environmentFile" | Out-Null
+    Run lambda wait function-updated-v2 --function-name $Fn
+  } finally {
+    Remove-Item $environmentFile -Force -ErrorAction SilentlyContinue
+  }
 }
 
 # --- public access is via API Gateway + evento.peonbox.xyz (see setup-domain.ps1); no raw Function URL.

@@ -1,4 +1,4 @@
-﻿# Card art is not redistributed - keep it local
+# Card art is not redistributed - keep it local
 card_images/
 # Your personal collection data
 collection.json
@@ -19,3 +19,8 @@ card_images_jp/
 catalog.json
 catalog.json.bak
 catalog.json.tmp
+
+# Private local recognition spending guard
+.recognition-budget.json
+.recognition-budget.json.lock
+.recognition-budget-*

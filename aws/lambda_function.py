@@ -26,6 +26,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import workflow as wf
+import recognition
+import recognition_budget
 import public_access as public
 
 import boto3
@@ -1385,7 +1387,14 @@ def _handler(event, context):
     method, path = http["method"], event.get("rawPath", "/")
 
     if path == "/api/access" and method == "GET":
-        return js(200, {"canEdit": authed(event)})
+        editor = authed(event)
+        return js(
+            200,
+            {
+                "canEdit": editor,
+                "recognitionAvailable": editor and recognition.configured(),
+            },
+        )
     if path == "/logout" and method == "POST":
         print(json.dumps({"event": "edit_access", "action": "logout", "allowed": True}))
         return resp(
@@ -1606,6 +1615,21 @@ def _handler(event, context):
             if method == "GET"
             else js(404, {"error": "not found"})
         )
+
+    if path == "/api/recognize" and method == "POST":
+        if len(event.get("body") or "") > recognition.MAX_BODY_BYTES:
+            return js(413, {"error": "Card image is too large"})
+        try:
+            return js(
+                200,
+                recognition.recognize(
+                    body_json(event),
+                    load_catalog_document()[0],
+                    reserve=lambda: recognition_budget.reserve_s3(s3, BUCKET),
+                ),
+            )
+        except recognition.RecognitionError as exc:
+            return js(exc.status, {"error": str(exc)})
 
     if path == "/api/image" and method == "POST":
         d = body_json(event) or {}

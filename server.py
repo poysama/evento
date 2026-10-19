@@ -18,6 +18,8 @@ import sys
 import threading
 import webbrowser
 import workflow as wf
+import recognition
+import recognition_budget
 import shutil
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -301,7 +303,14 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = unquote(urlsplit(self.path).path)
         if path == "/api/access":
-            return self._json(200, {"canEdit": self._authed()})
+            editor = self._authed()
+            return self._json(
+                200,
+                {
+                    "canEdit": editor,
+                    "recognitionAvailable": editor and recognition.configured(),
+                },
+            )
         editor = self._authed()
         legacy = {
             "/cards.json": "cards",
@@ -421,6 +430,34 @@ class Handler(SimpleHTTPRequestHandler):
             )
         if not self._require_editor():
             return
+        if path == "/api/recognize":
+            body, error = self._read_body(recognition.MAX_BODY_BYTES)
+            if error:
+                return self._json(
+                    413 if error == "too large" else 400,
+                    {
+                        "error": (
+                            "Card image is too large"
+                            if error == "too large"
+                            else "Invalid recognition request"
+                        )
+                    },
+                )
+            try:
+                return self._json(
+                    200,
+                    recognition.recognize(
+                        body,
+                        load_catalog(),
+                        reserve=lambda: recognition_budget.reserve_local(
+                            os.path.join(HERE, recognition_budget.LOCAL_FILE)
+                        ),
+                    ),
+                )
+            except recognition.RecognitionError as exc:
+                return self._json(exc.status, {"error": str(exc)})
+            except OSError:
+                return self._json(503, {"error": "Catalog unavailable"})
         if self.path.split("?")[0] != "/api/image":
             return self.send_error(404)
         body, err = self._read_body(10_000_000)

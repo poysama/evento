@@ -216,3 +216,23 @@ class SharedPolicyTests(unittest.TestCase):
         self.assertTrue(w.valid_catalog(catalog))
         catalog["cards"][0]["enImage"] = "https://external.test/private.jpg"
         self.assertFalse(w.valid_catalog(catalog))
+
+    def test_variant_language_image_roundtrip_validation(self):
+        import copy
+        import json
+        card = {"num": "OP04-016", "name": "Kick", "set": "OP-04", "rar": "R", "col": "Red", "foil": False, "variants": [
+            {"id": "v_aa", "kind": "parallel", "label": "AA", "source": "", "image": "card_images_jp/v_aa.png?v=jp", "enImage": "card_images/v_aa.jpg?v=en"},
+            {"id": "v_reprint", "kind": "reprint", "label": "Reprint", "source": "", "sameAs": "v_aa", "enImage": "card_images/v_reprint.png"},
+            {"id": "v_manga", "kind": "manga", "label": "Manga", "source": "", "enImage": "card_images/v_manga.png"},
+        ]}
+        catalog = w.normalize_catalog({"cards": [card]})
+        self.assertTrue(w.valid_catalog(catalog))
+        self.assertEqual(w.normalize_catalog(json.loads(json.dumps(catalog))), catalog)
+        self.assertEqual(catalog["cards"][0]["alt"], ["v_aa", "v_manga"])
+        self.assertEqual(w.effective_state(catalog["cards"][0], {}, "v_aa"), "untracked")
+        self.assertEqual(catalog["cards"][0]["variants"][0]["image"], card["variants"][0]["image"])
+        for bad in ("https://external.test/card.png", "../card.png", "card_images/../secret.png", "card_images/card.svg", "card_images/card.png?other=1", None, {}, 1):
+            invalid = copy.deepcopy(catalog)
+            invalid["cards"][0]["variants"][0]["enImage"] = bad
+            with self.subTest(image=bad):
+                self.assertFalse(w.valid_catalog(invalid))

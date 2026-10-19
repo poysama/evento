@@ -19,6 +19,8 @@ REPO = Path(__file__).resolve().parent.parent
 pkg = Path(tempfile.mkdtemp())
 for src in (
     REPO / "workflow.py",
+    REPO / "recognition.py",
+    REPO / "recognition_budget.py",
     REPO / "public_access.py",
     REPO / "workflow.js",
     REPO / "save.js",
@@ -31,7 +33,9 @@ for src in (
 ):
     shutil.copy(src, pkg)
 
-os.environ.update(BUCKET="test-bucket", PASSCODE="test-passcode")
+os.environ.update(
+    BUCKET="test-bucket", PASSCODE="test-passcode", RECOGNITION_MODEL_ID=""
+)
 store = {}
 
 
@@ -156,24 +160,73 @@ check(
     "missing public image is 404",
     h(ev("GET", "/card_images/OP01-026.jpg"), None)["statusCode"] == 404,
 )
-image_test_catalog = L.wf.normalize_catalog({
-    "cards": [{"num": "OP01-001", "image": "card_images_jp/v_uploaded.png?v=abc", "enImage": "card_images/v_uploaded.jpg?v=def"}, {"num": "P-134", "status": "draft", "enImage": "card_images/v_private.jpg"}],
-    "drafts": [{"id": "v_pending", "status": "draft", "image": "card_images_jp/v_pending.png"}],
-})
+image_test_catalog = L.wf.normalize_catalog(
+    {
+        "cards": [
+            {
+                "num": "OP01-001",
+                "image": "card_images_jp/v_uploaded.png?v=abc",
+                "enImage": "card_images/v_uploaded.jpg?v=def",
+            },
+            {"num": "P-134", "status": "draft", "enImage": "card_images/v_private.jpg"},
+        ],
+        "drafts": [
+            {
+                "id": "v_pending",
+                "status": "draft",
+                "image": "card_images_jp/v_pending.png",
+            }
+        ],
+    }
+)
 store["data/catalog.json"] = json.dumps(image_test_catalog).encode()
-for key in ("images/v_uploaded.jpg", "images_jp/v_uploaded.png", "images/v_private.jpg", "images_jp/v_pending.png"):
+for key in (
+    "images/v_uploaded.jpg",
+    "images_jp/v_uploaded.png",
+    "images/v_private.jpg",
+    "images_jp/v_pending.png",
+):
     store[key] = b"image-test"
-check("public catalog retains custom EN image", json.loads(h(ev("GET", "/api/catalog"), None)["body"])["cards"][0]["enImage"] == "card_images/v_uploaded.jpg?v=def")
-check("anonymous custom EN artwork is readable", h(ev("GET", "/card_images/v_uploaded.jpg"), None)["statusCode"] == 200)
-check("anonymous custom JP artwork is readable", h(ev("GET", "/card_images_jp/v_uploaded.png"), None)["statusCode"] == 200)
-check("anonymous numbered draft EN image denied", h(ev("GET", "/card_images/v_private.jpg"), None)["statusCode"] == 404)
-check("anonymous private draft JP image denied", h(ev("GET", "/card_images_jp/v_pending.png"), None)["statusCode"] == 404)
+check(
+    "public catalog retains custom EN image",
+    json.loads(h(ev("GET", "/api/catalog"), None)["body"])["cards"][0]["enImage"]
+    == "card_images/v_uploaded.jpg?v=def",
+)
+check(
+    "anonymous custom EN artwork is readable",
+    h(ev("GET", "/card_images/v_uploaded.jpg"), None)["statusCode"] == 200,
+)
+check(
+    "anonymous custom JP artwork is readable",
+    h(ev("GET", "/card_images_jp/v_uploaded.png"), None)["statusCode"] == 200,
+)
+check(
+    "anonymous numbered draft EN image denied",
+    h(ev("GET", "/card_images/v_private.jpg"), None)["statusCode"] == 404,
+)
+check(
+    "anonymous private draft JP image denied",
+    h(ev("GET", "/card_images_jp/v_pending.png"), None)["statusCode"] == 404,
+)
 image_test_catalog["cards"][0]["enImage"] = "card_images/v_replacement.jpg"
 store["data/catalog.json"] = json.dumps(image_test_catalog).encode()
 store["images/v_replacement.jpg"] = b"replacement"
-check("replaced custom EN image denied", h(ev("GET", "/card_images/v_uploaded.jpg"), None)["statusCode"] == 404)
-check("replacement custom EN image allowed", h(ev("GET", "/card_images/v_replacement.jpg"), None)["statusCode"] == 200)
-for key in ("data/catalog.json", "images/v_uploaded.jpg", "images_jp/v_uploaded.png", "images/v_private.jpg", "images_jp/v_pending.png", "images/v_replacement.jpg"):
+check(
+    "replaced custom EN image denied",
+    h(ev("GET", "/card_images/v_uploaded.jpg"), None)["statusCode"] == 404,
+)
+check(
+    "replacement custom EN image allowed",
+    h(ev("GET", "/card_images/v_replacement.jpg"), None)["statusCode"] == 200,
+)
+for key in (
+    "data/catalog.json",
+    "images/v_uploaded.jpg",
+    "images_jp/v_uploaded.png",
+    "images/v_private.jpg",
+    "images_jp/v_pending.png",
+    "images/v_replacement.jpg",
+):
     store.pop(key, None)
 check(
     "wrong passcode is 401",
@@ -185,7 +238,7 @@ check(
     json.loads(
         h(ev("GET", "/api/access", cookies=["evento_session=forged"]), None)["body"]
     )
-    == {"canEdit": False},
+    == {"canEdit": False, "recognitionAvailable": False},
 )
 
 r = h(ev("POST", "/login", json.dumps({"passcode": "test-passcode"})), None)
@@ -1874,11 +1927,14 @@ shutil.rmtree(pkg, ignore_errors=True)
 
 # Public browsing never grants editing or reveals private document fields.
 check(
-    "anonymous access flag", j(h(ev("GET", "/api/access"), None)) == {"canEdit": False}
+    "anonymous access flag",
+    j(h(ev("GET", "/api/access"), None))
+    == {"canEdit": False, "recognitionAvailable": False},
 )
 check(
     "owner access flag",
-    j(h(ev("GET", "/api/access", cookies=ck), None)) == {"canEdit": True},
+    j(h(ev("GET", "/api/access", cookies=ck), None))
+    == {"canEdit": True, "recognitionAvailable": False},
 )
 for method in ("POST", "PUT", "PATCH", "DELETE"):
     for path in (
@@ -1964,6 +2020,51 @@ for path in (
         "owner can read private endpoint " + path,
         h(ev("GET", path, cookies=ck), None)["statusCode"] != 401,
     )
+os.environ["RECOGNITION_MODEL_ID"] = "apac.amazon.nova-lite-v1:0"
+os.environ["RECOGNITION_REGION"] = "ap-southeast-1"
+check(
+    "recognition capability requires editor",
+    j(h(ev("GET", "/api/access"), None))["recognitionAvailable"] is False,
+)
+check(
+    "recognition capability explicit configuration",
+    j(h(ev("GET", "/api/access", cookies=ck), None))["recognitionAvailable"] is True,
+)
+os.environ["RECOGNITION_MODEL_ID"] = ""
+
+
+# Recognition is private and returns suggestions without writing any S3 objects.
+recognize_original = L.recognition.recognize
+recognize_calls = []
+
+
+def fake_recognition(body, catalog, reserve=None):
+    recognize_calls.append(body)
+    return {
+        "fields": {"num": "P-134"},
+        "match": None,
+        "warnings": [],
+        "reviewRequired": True,
+    }
+
+
+L.recognition.recognize = fake_recognition
+recognition_store_before = dict(store)
+check(
+    "anonymous recognition denied",
+    h(ev("POST", "/api/recognize", "{}"), None)["statusCode"] == 401,
+)
+check("anonymous recognition never invokes provider", not recognize_calls)
+recognition_response = h(ev("POST", "/api/recognize", "{}", cookies=ck), None)
+check(
+    "authenticated recognition allowed",
+    recognition_response["statusCode"] == 200
+    and j(recognition_response)["reviewRequired"],
+)
+check("recognition does not write storage", store == recognition_store_before)
+L.recognition.recognize = recognize_original
+
+
 if fails:
     print(f"\n{len(fails)} FAILED")
     sys.exit(1)

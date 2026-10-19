@@ -1,7 +1,7 @@
 const fs=require('node:fs');const assert=require('node:assert/strict');const test=require('node:test');const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8');
 test('viewer separates artwork chips from collapsed print sources',()=>{assert.match(html,/Workflow\.alternateVersions\(c\)/);assert.match(html,/Print sources \/ Foil/);assert.match(html,/Workflow\.printSources\(c/)});
 test('orders enumerate stored source records',()=>{assert.match(html,/mode === "Orders" \? Workflow\.printItems/)});
-test('manual classification distinguishes artwork and finish',()=>{assert.match(html,/Different artwork AA/);assert.match(html,/Same-art reprint or foil/);assert.match(html,/Same artwork as/);assert.match(html,/function versionEditor\(c, versionId\)/)});
+test('manual classification distinguishes artwork and finish',()=>{assert.match(html,/Different artwork AA/);assert.match(html,/Same-art reprint or foil/);assert.match(html,/Same artwork as/);assert.match(html,/function versionEditor\(c, versionId, context\)/)});
 test('legacy AA filter has no marked-print exemption',()=>{assert.doesNotMatch(html,/repeat\(v\) && !v\.st/)});
 test('inline script parses',()=>{for(const m of html.matchAll(/<script(?: [^>]*)?>([\s\S]*?)<\/script>/g))new Function(m[1]);});
 

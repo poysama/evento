@@ -280,7 +280,7 @@ def _valid_catalog(c):
                 or v.get("status", "released") not in STATUSES
             ):
                 return False
-            if "image" in v and not safe_image(v["image"]):
+            if any(field in v and not safe_image(v[field]) for field in ("image", "enImage")):
                 return False
             for field in ("officialId", "releaseDate", "artType", "sameAs"):
                 if field in v and not isinstance(v[field], str):

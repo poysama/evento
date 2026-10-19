@@ -21,6 +21,7 @@ CARD_FIELDS = {
     "noen",
 }
 VERSION_FIELDS = {
+    "enImage",
     "id",
     "kind",
     "label",
@@ -153,8 +154,9 @@ def image_paths(public_catalog):
                 paths.add(card[field].split("?", 1)[0])
         for version in card.get("variants", []):
             paths.add("card_images_jp/" + num + "_" + version["id"] + ".png")
-            if version.get("image"):
-                paths.add(version["image"].split("?", 1)[0])
+            for field in ("image", "enImage"):
+                if version.get(field):
+                    paths.add(version[field].split("?", 1)[0])
     return {
         p
         for p in paths

@@ -1,0 +1,2 @@
+# Optional local image recognition. AWS Lambda includes boto3 in its runtime.
+boto3==1.40.0

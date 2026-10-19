@@ -20,6 +20,9 @@ class ServerTests(unittest.TestCase):
         )
         self.auth_patcher = patch.object(server, "EDIT_PASSCODE", "test-edit")
         self.auth_patcher.start()
+        self.recognition_config = patch.dict("os.environ", {"RECOGNITION_MODEL_ID": ""})
+        self.recognition_config.start()
+        self.addCleanup(self.recognition_config.stop)
         self.patchers = [
             patch.object(server, k, str(root / v))
             for k, v in {
@@ -90,9 +93,13 @@ class ServerTests(unittest.TestCase):
 
     def test_public_access_and_write_boundary(self):
         self.assertEqual(
-            self.request("GET", "/api/access", anonymous=True)[2], {"canEdit": False}
+            self.request("GET", "/api/access", anonymous=True)[2],
+            {"canEdit": False, "recognitionAvailable": False},
         )
-        self.assertEqual(self.request("GET", "/api/access")[2], {"canEdit": True})
+        self.assertEqual(
+            self.request("GET", "/api/access")[2],
+            {"canEdit": True, "recognitionAvailable": False},
+        )
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             for path in (
                 "/api/catalog",
@@ -132,7 +139,10 @@ class ServerTests(unittest.TestCase):
 
     def test_empty_passcode_denies_editing(self):
         with patch.object(server, "EDIT_PASSCODE", ""):
-            self.assertEqual(self.request("GET", "/api/access")[2], {"canEdit": False})
+            self.assertEqual(
+                self.request("GET", "/api/access")[2],
+                {"canEdit": False, "recognitionAvailable": False},
+            )
             self.assertEqual(
                 self.request("POST", "/login", {"passcode": ""}, anonymous=True)[0], 401
             )
@@ -205,6 +215,47 @@ class ServerTests(unittest.TestCase):
         self.assertIn("Max-Age=0", response.getheader("Set-Cookie"))
         response.read()
         conn.close()
+
+    def test_recognition_requires_editor_before_provider(self):
+        with patch.object(server.recognition, "recognize") as recognize:
+            self.assertEqual(
+                self.request("POST", "/api/recognize", {}, anonymous=True)[0], 401
+            )
+            recognize.assert_not_called()
+
+    def test_recognition_has_no_catalog_or_collection_write(self):
+        expected = {
+            "fields": {"num": "P-134"},
+            "match": None,
+            "warnings": [],
+            "reviewRequired": True,
+        }
+        with patch.object(
+            server.recognition, "recognize", return_value=expected
+        ) as recognize:
+            status, _, result = self.request("POST", "/api/recognize", {"data": "test"})
+            self.assertEqual(status, 200)
+            self.assertEqual(result, expected)
+            recognize.assert_called_once()
+        self.assertFalse(Path(server.CATALOG).exists())
+        self.assertFalse(Path(server.SAVE).exists())
+
+    def test_recognition_access_configuration(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "RECOGNITION_MODEL_ID": "apac.amazon.nova-lite-v1:0",
+                "RECOGNITION_REGION": "ap-southeast-1",
+            },
+        ):
+            self.assertEqual(
+                self.request("GET", "/api/access")[2],
+                {"canEdit": True, "recognitionAvailable": True},
+            )
+            self.assertEqual(
+                self.request("GET", "/api/access", anonymous=True)[2],
+                {"canEdit": False, "recognitionAvailable": False},
+            )
 
 
 class AtomicSaveTests(unittest.TestCase):

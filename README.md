@@ -256,3 +256,37 @@ The official OP12-018 search checked during importer development returned only t
 An AA/parallel is a distinct artwork, not simply another product printing or foil finish. Different drawings can keep the standard text frame, use a bordered full-art layout, or be Manga full art. A rarity star by itself does not establish alternate artwork.
 
 Same-art reprints and foil finishes live under **Print sources / Foil**. Repeated prints of one AA share one artwork entry. Their original print IDs, ownership and order marks are retained, so changing classification does not erase collection history. **Add/Edit version** lets you distinguish different artwork, Manga, and a same-art reprint.
+
+### Card recognition spending limit
+
+Image recognition is editor-only and requires review before saving. It uses Amazon Nova Lite (`apac.amazon.nova-lite-v1:0`) from Singapore (`ap-southeast-1`). Other models and regions are rejected so a configuration change cannot bypass the cost assumptions.
+
+The application reserves **$0.025 before each attempted image recognition**, with a fixed **$1 allowance per calendar month (UTC)**. This permits at most **40 attempts per month**, shared across concurrent requests to the same installation. JP and EN images each count as one attempt. Failed or interrupted requests retain their reservation because billing may be uncertain. There are no automatic model retries. This is a conservative reservation, not a report of actual charges.
+
+Singapore standard Nova Lite pricing is $0.081 per million input tokens and $0.324 per million output tokens. Reserving the model's entire 300,000-token input context plus the configured 700-token maximum output costs at most `300000 × 0.081 / 1000000 + 700 × 0.324 / 1000000 = $0.0245268`, rounded up to $0.025. Pricing sources: [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) and [AWS regional price data](https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/bedrock/USD/current/bedrock.json). These rates were checked on October 19, 2026. Recheck them before changing the model or rate assumptions.
+
+The cap covers model requests made through this recognition endpoint. S3/Lambda overhead and Bedrock requests made elsewhere are separate. Each installation has its own ledger; running recognition locally and on the hosted site gives each installation its own allowance.
+
+Recognition fails closed if its ledger is missing, corrupt, or cannot be updated. Local reservations use a file lock and durable atomic replacement. Hosted reservations use S3 ETag conditional writes on `data/recognition-budget.json`. Preserve this object across deployments and backups. Never delete, overwrite, or reset an existing ledger to provision recognition again.
+
+For a **new local installation**, explicitly create the ledger once:
+
+```sh
+python3 recognition_budget.py init-local
+```
+
+This creates the ignored private `.recognition-budget.json` file and refuses to overwrite it. For a **new hosted installation**, an operator can print the initial ledger and create the S3 object conditionally. These commands are a manual provisioning step, not part of deployment:
+
+```sh
+python3 recognition_budget.py initial-json > /tmp/evento-recognition-budget.json
+AWS_PROFILE=personal aws s3api put-object \
+  --bucket evento-binder-861276084535 \
+  --key data/recognition-budget.json \
+  --body /tmp/evento-recognition-budget.json \
+  --content-type application/json \
+  --if-none-match '*'
+```
+
+Provisioning the ledger does not enable Bedrock model access or increase provider quotas. Those must be configured separately. Recognition stays unavailable until both provider access and the spending guard are ready; manual card entry remains available.
+
+Recognition is disabled by default. After provider quotas/access and the ledger are ready, explicitly configure `RECOGNITION_MODEL_ID=apac.amazon.nova-lite-v1:0` and `RECOGNITION_REGION=ap-southeast-1`. For local use, export both variables before starting the server. Hosted configuration must be set by an operator separately. Leaving the model unset, empty, or `disabled` blocks all model calls. `/api/access` reports `recognitionAvailable` only for an authenticated editor with this supported explicit configuration; this flag does not probe provider quotas or the ledger. Every recognition request still checks its durable spending guard before inference.

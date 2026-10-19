@@ -436,3 +436,17 @@ test("legacy active edits require the actual original record", () => {
   assert.equal(state.cards.find(c => c.num === "P-134").name, "Edited");
   assert.equal(state.cards.find(c => c.num === "P-135"), other);
 });
+
+test("variant JP and EN references survive normalization without ownership or artwork changes", () => {
+  const raw = {num: "OP04-016", variants: [
+    {id: "v_aa", kind: "parallel", image: "card_images_jp/v_aa.png?v=jp", enImage: "card_images/v_aa.jpg?v=en"},
+    {id: "v_reprint", kind: "reprint", sameAs: "v_aa", enImage: "card_images/v_reprint.jpg"},
+    {id: "v_manga", kind: "manga", enImage: "card_images/v_manga.png"},
+  ]};
+  const card = W.card(raw);
+  assert.deepEqual(W.card(JSON.parse(JSON.stringify(card))), card);
+  assert.equal(card.variants[0].image, raw.variants[0].image);
+  assert.equal(card.variants[0].enImage, raw.variants[0].enImage);
+  assert.deepEqual(card.alt, ["v_aa", "v_manga"]);
+  assert.equal(W.effectiveState(card, {}, "v_aa"), "untracked");
+});

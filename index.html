@@ -448,8 +448,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   var PER = 16, PAGES = 64, SLOTS = PAGES * PER, cards = [], col = {}, page = 1, N = PAGES, firstPage = {};
   var saveTimer = null, saving = false, dirty = false, openNum = null;
   var bySlot = {}, share = {}, products = {}, binders = [], currentBinder = 'main', editMode = false;
-  var workflowRedraw=function(){}, workflowVersionEditor=null, workflowCardEditor=null;
-  var canEdit = false;
+  var workflowRedraw=function(){}, workflowVersionEditor=null, workflowCardEditor=null, workflowImageEditor=null;
+  var canEdit = false, recognitionAvailable = true;
   var storeOptions = {canWrite:function(){return canEdit;}};
   var catalog = {schema:2,drafts:[]}, catalogStore = new RevisionStore('/api/catalog',storeOptions), collectionStore = new RevisionStore('/api/collection',storeOptions);
   var $ = function (id) { return document.getElementById(id); };
@@ -598,7 +598,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   function artUrls(n, mode, ver) {     // picture URLs to try in order; mode 'en' | 'jp' (default = the binder's setting); ver = an alt id to show
     var c = byNum[n], jpU = c&&c.image || 'card_images_jp/' + n + '.png', enU = c&&c.enImage || 'card_images/' + n + '.jpg';
     var variant = c && (c.variants||[]).find(function(v){return v.id===ver;});
-    if(ver && (mode||artMode)==='jp') return [variant&&variant.image || 'card_images_jp/'+n+'_'+ver+'.png',jpU,enU];
+    if(ver) {
+      var variantJP=variant&&variant.image || (!variant||!variant.enImage ? 'card_images_jp/'+n+'_'+ver+'.png' : ''),variantEN=variant&&variant.enImage;
+      return (mode||artMode)==='en' && variantEN ? [variantEN] : variantJP ? [variantJP] : variantEN ? [variantEN] : [];
+    }
     var wantJP = (mode ? mode === 'jp' : artMode === 'jp') && !!(jpArt[n] || c&&c.image);
     if (!wantJP && c && c.noen && (jpArt[n] || c.image)) wantJP = true;      // a few promos have no English print
     return wantJP ? (ver ? ['card_images_jp/' + n + '_' + ver + '.png'] : []).concat([jpU, enU]) : [enU].concat(jpArt[n] || c&&c.image ? [jpU] : []);
@@ -1034,7 +1037,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   function vwShowingJP(n) { return vwMode === 'jp' && !!(jpArt[n] || byNum[n]&&byNum[n].image); }
   function syncVwSeg() {
     if (!vw) return;
-    vw.artseg.hidden = !hasJP();
+    vw.artseg.hidden = !vwAlt && !hasJP();
     [].forEach.call(vw.artseg.children, function (b) { b.setAttribute('aria-pressed', b.dataset.m === vwMode ? 'true' : 'false'); });
   }
   function buildVwSeg(host) {
@@ -1049,8 +1052,13 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   var vwAlt = null;                       // which alt-art / Manga picture the viewer is showing (null = the standard card)
   function vwShowArt(c) {
     var img = el('img'); img.alt = c.name;
-    if (vwAlt) loadImg(img, Workflow.artwork(c,vwAlt), { fail: function () { img.remove(); } });
-    else artImg(img, c.num, vwMode);
+    if(vwAlt){
+      var version=(c.variants||[]).find(function(v){return v.id===vwAlt;});
+      if(version&&version.enImage&&!version.image)vwMode='en';
+      else if(vwMode==='en'&&!(version&&version.enImage))vwMode='jp';
+      syncVwSeg();
+    }
+    artImg(img, c.num, vwMode, vwAlt);
     vw.wrap.replaceChildren(img);
   }
   function vwVariants(c) {
@@ -1095,7 +1103,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     vw.en.setAttribute('aria-pressed', has(n, 'en') ? 'true' : 'false'); vw.en.textContent = 'EN copy';
     vw.kr.setAttribute('aria-pressed', has(n, 'kr') ? 'true' : 'false'); vw.kr.textContent = 'KR copy';
     vw.foil.disabled = !jpOwned; vw.foil.setAttribute('aria-pressed', tagged(n, 'foil') ? 'true' : 'false'); vw.foil.textContent = '★ Foil';
-    vw.art.textContent = (vwAlt ? 'Showing the Japanese ' + ((c.variants||[]).some(function(v){return v.id===vwAlt&&v.kind==='reprint'}) ? 'reprint / foil' : c.manga === vwAlt ? 'Manga' : 'alt-art') + ' version. '
+    vw.art.textContent = (vwAlt ? 'Showing the ' + (vwMode==='en'?'English':'Japanese') + ' ' + ((c.variants||[]).some(function(v){return v.id===vwAlt&&v.kind==='reprint'}) ? 'reprint / foil' : c.manga === vwAlt ? 'Manga' : 'alt-art') + ' version. '
       : vwShowingJP(n) ? 'Art shown is the Japanese card. ' : 'Art shown is the English release used as a reference. ') + (jpOwned ? '' : 'Tick Foil after the JP card is complete. ') + 'Swipe or use ‹ › for the next card.';
     var isAlt = !!vwAlt;                 // an alt-art / Manga picture is showing: its own marks replace the standard-card controls
     vw.note.hidden = vw.jp.hidden = vw.row.hidden = isAlt;
@@ -1114,7 +1122,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       vw.ao.setAttribute('aria-pressed', rawState === 'ordered' ? 'true' : 'false'); vw.ao.textContent = 'On order';
       vw.ah.setAttribute('aria-pressed', rawState === 'have' ? 'true' : 'false'); vw.ah.textContent = '✓ Have it';
     }
-    if(!canEdit){[vw.jp,vw.ord,vw.onote,vw.row,vw.ssb,vw.altr,vw.asb].forEach(function(e){e.hidden=true;});vw.art.textContent='View only. Swipe or use ‹ › for the next card.';if(isAlt)vw.altt.textContent=verLabel(c,vwAlt)+': '+({have:'in hand',ordered:'on order',want:'wanted'}[versionDisplayState(c,vwAlt)]||'not marked')+'.';}
+    if(!canEdit){[vw.jp,vw.ord,vw.onote,vw.row,vw.ssb,vw.altr,vw.asb].forEach(function(e){e.hidden=true;});vw.art.textContent='View only. '+(isAlt?'Showing the '+(vwMode==='en'?'English':'Japanese')+' version. ':'')+'Swipe or use ‹ › for the next card.';if(isAlt)vw.altt.textContent=verLabel(c,vwAlt)+': '+({have:'in hand',ordered:'on order',want:'wanted'}[versionDisplayState(c,vwAlt)]||'not marked')+'.';}
   }
   function vstep(d) {
     var k=vidx+d; while(k>=0 && k<cards.length && (cards[k].binder||'main')!==currentBinder)k+=d; if(k<0||k>=cards.length)return;
@@ -1876,6 +1884,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 
   function openCardEditor(slot) {
     if (!canEdit || !workflowCardEditor) return;
+    if(!bySlot[slot] && workflowImageEditor){workflowImageEditor({slot:slot,binder:currentBinder});return;}
     workflowCardEditor(bySlot[slot] || null, {slot:slot,binder:currentBinder});
   }
 
@@ -2098,7 +2107,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       moveAction("editbtn",group,"Edit binder cards"); moveAction("setsbtn",group,"Manage sets & binders");
       moveAction("donebtn",group,"Completed sets");
       group = settingGroup("Card catalog", "Add missing cards, record different artwork, or update a release.");
-      group.append(button("Add card",()=>cardEditor(),true),button("Add version",()=>versionEditor()),button("Add release",()=>releaseEditor()));
+      group.append(button("Add from image",()=>recognitionEditor(),true),button("Add card",()=>cardEditor()),button("Add version",()=>versionEditor()),button("Add release",()=>releaseEditor()));
       searchableDetails(group,"Releases",products.products || [],p=>p.code + (p.name ? " · " + p.name : ""),p=>releaseEditor(p));
       group = settingGroup("Upcoming & drafts", "Prepare future cards, then choose where they belong in your binder.");
       var future = cards.filter(c=>c.status === "announced" || c.status === "draft"), drafts = catalog.drafts || [], unplaced = cards.filter(c=>c.slot == null);
@@ -2143,7 +2152,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       }[mode])); heading.appendChild(title); panel.appendChild(heading);
       if (mode === "Settings") { settings(); return; }
       var actions = el("div", "workflow-heading-actions"); heading.appendChild(actions);
-      if(canEdit && mode === "Collection") actions.appendChild(button("Add card",()=>cardEditor(),true));
+      if(canEdit && mode === "Collection") actions.append(button("Add from image",()=>recognitionEditor(),true),button("Add card",()=>cardEditor()));
       if(canEdit && mode === "Wishlist") { moveAction("shbtn",actions,"Share wishlist"); moveAction("pricebtn",actions,"Estimate price"); }
       searchInput.setAttribute("aria-label","Search " + mode.toLowerCase());
       var toolbar = el("div","workflow-toolbar"), common = el("div","workflow-common-filters");
@@ -2269,9 +2278,92 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       };
       root.append(save, cancel);
     }
-    function versionEditor(c, versionId) {
+    function recognitionEditor(context) {
+      context=context || {};
+      var root=modal("Add from image"), files=control(root,"Card images (one or two PNG/JPEG files)","file");
+      files.multiple=true;files.accept="image/png,image/jpeg";
+      root.appendChild(el("p","small",recognitionAvailable===false ? "AI prefill is not enabled on this server yet. Upload JP/EN images and enter details manually." : "Analyze sends the selected card images to AWS image recognition for a suggested prefill. Review every field. Nothing is uploaded to your binder or saved until you confirm Save in the card editor."));
+      var previews=el("div","row"),review=el("div"),error=el("p","err"),urls=[],selected=[],results=[];
+      error.setAttribute("role","alert");root.append(previews,review,error);
+      var analyze=button("Analyze images",analyzeImages,true),manual=button("Enter details manually",()=>openManual(),recognitionAvailable===false),cancel=button("Cancel",()=>edDlg.close());
+      analyze.disabled=recognitionAvailable===false;
+      root.append(analyze,manual,cancel);
+      var busy=false,closed=false;
+      function clearUrls(){urls.forEach(u=>URL.revokeObjectURL(u));urls=[];}
+      edDlg.addEventListener("close",()=>{closed=true;clearUrls();},{once:true});
+      function retained(){var out={};selected.forEach(item=>{if(item.language.value==="jp"||item.language.value==="en"){if(out[item.language.value])throw Error("Choose one Japanese and one English image. Two images cannot use the same language.");out[item.language.value]=item.file;}});return out;}
+      function openManual(){try{var initial=retained();if(Object.keys(initial).length!==selected.length)throw Error("Choose the language for each image first.");clearUrls();cardEditor(null,Object.assign({},context,{initialFiles:initial}));}catch(e){error.textContent=e.message;}}
+      files.onchange=function(){
+        clearUrls();results=[];selected=[];previews.replaceChildren();review.replaceChildren();error.textContent="";
+        var choices=Array.from(files.files);
+        if(choices.length<1||choices.length>2){error.textContent="Choose one or two card images.";return;}
+        if(choices.some(f=>!["image/png","image/jpeg"].includes(f.type)||f.size>3500000)){error.textContent="Choose PNG or JPEG files, each no larger than 3.5 MB and 8000 pixels per side.";return;}
+        choices.forEach(f=>{var box=el("div"),img=el("img"),url=URL.createObjectURL(f);urls.push(url);img.src=url;img.alt=f.name;img.style.cssText="max-width:150px;max-height:210px;object-fit:contain";box.appendChild(img);var language=choose(box,"Language · "+f.name,["auto","jp","en"],"auto");selected.push({file:f,language:language});previews.appendChild(box);});
+      };
+      async function analyzeImages(){
+        if(recognitionAvailable===false){error.textContent="AI prefill is not enabled on this server yet. Enter details manually.";return;}
+        if(busy)return;
+        if(!selected.length){error.textContent="Choose one or two card images first.";return;}
+        busy=true;analyze.disabled=manual.disabled=files.disabled=true;error.textContent="";analyze.textContent="Analyzing…";
+        try{
+          results=[];
+          for(var item of selected){
+            var data=await new Promise((resolve,reject)=>{var reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.onerror=()=>reject(Error("Could not read the image."));reader.readAsDataURL(item.file);});
+            var response=await fetch("/api/recognize",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:data,mime:item.file.type,languageHint:item.language.value})});
+            var payload=await response.json().catch(()=>({}));
+            if(!response.ok)throw Error(payload.error||payload.message||"Image recognition is unavailable. Retry or enter details manually.");
+            if(!payload.fields||typeof payload.fields!=="object")throw Error("No card details recognized. Enter them manually or try a clearer image.");
+            results.push(payload);
+          }
+          if(closed)return;
+          renderReview();
+        }catch(e){if(!closed)error.textContent=e.message;}
+        finally{busy=false;manual.disabled=files.disabled=false;analyze.disabled=recognitionAvailable===false;analyze.textContent="Analyze images";}
+      }
+      function renderReview(){
+        review.replaceChildren();review.appendChild(el("h4","","Review suggested details"));
+        root.insertBefore(review,error);
+        var checks=[];
+        results.forEach((result,index)=>{
+          var f=result.fields,section=el("fieldset");section.appendChild(el("legend","",selected[index].file.name));review.appendChild(section);
+          if(selected[index].language.value==="auto"&&["jp","en"].includes(f.language))selected[index].language.value=f.language;
+          var number=control(section,"Recognized card number","text",f.num||""),name=control(section,"English name","text",selected[index].language.value==="jp"?"":f.name||""),jpName=control(section,"Japanese name","text",f.jpName||(f.language==="jp"?f.name:"")||""),colour=choose(section,"Colour",["","Red","Green","Blue","Purple","Black","Yellow"],f.col||""),rarity=choose(section,"Rarity",[""].concat(RARS),f.rar||"");
+          section.appendChild(el("p","small","Card type: "+(f.cardType||"Unknown")+". Suggested details may be incorrect."));
+          if(result.confidence!=null)section.appendChild(el("p","small","Recognition confidence: "+String(result.confidence)));
+          (result.warnings||[]).forEach(w=>section.appendChild(el("p","small",String(w))));
+          var confirmEvent=control(section,"I confirm this is an Event card","checkbox");confirmEvent.checked=String(f.cardType||"").toLowerCase()==="event";
+          checks.push({number:number,name:name,jpName:jpName,colour:colour,rarity:rarity,event:confirmEvent});
+        });
+        var choice=choose(review,"When this number already exists",["Choose an action","Update existing base images","Add different artwork AA","Add same-art reprint"],"Choose an action");
+        review.appendChild(el("p","small","A reprint or foil uses the same drawing. Different art is AA. Recognition never chooses this for you. Unknown release information stays blank; new cards start as private drafts."));
+        review.appendChild(button("Continue to card editor",()=>{
+          try{
+            var imageFiles=retained();if(Object.keys(imageFiles).length!==selected.length)throw Error("Choose JP or EN for every image.");
+            if(checks.some(c=>!c.event.checked))throw Error("Only Event cards belong in this binder. Confirm the card type before continuing, or enter details manually.");
+            var nums=checks.map(c=>c.number.value.trim().toUpperCase()).filter(Boolean);
+            if(new Set(nums).size>1)throw Error("These images show different card numbers. Correct the numbers before combining them.");
+            var num=nums[0]||"",draftMatches=(catalog.drafts||[]).filter(c=>c.num===num&&num),existing=byNum[num],prefill={};
+            if(!existing&&draftMatches.length>1)throw Error("Several private drafts use this number. Open the intended draft in Settings → Private drafts and update its images there.");
+            if(!existing)existing=draftMatches[0];
+            checks.forEach(c=>{if(c.name.value.trim())prefill.name=c.name.value.trim();if(c.jpName.value.trim())prefill.jpName=c.jpName.value.trim();if(c.colour.value)prefill.col=c.colour.value;if(c.rarity.value)prefill.rar=c.rarity.value;});
+            if(existing){
+              if(choice.value==="Choose an action")throw Error("This card already exists. Choose whether to update its base images or add a print version.");
+              if(choice.value!=="Update existing base images"){
+                if(!byNum[num])throw Error("Save the existing draft as an announced or released card before adding versions.");
+                clearUrls();versionEditor(existing,null,{initialFiles:imageFiles,kind:choice.value==="Add same-art reprint"?"Same-art reprint or foil":"Different artwork AA",status:"draft"});return;
+              }
+              if(existing.name)prefill.name=existing.name;
+              prefill.jpName=prefill.jpName||existing.jpName||(share[num]||{}).jp||"";
+            }else{prefill.num=num;prefill.status="draft";prefill.set="";}
+            clearUrls();cardEditor(existing||null,Object.assign({},context,{prefill:prefill,initialFiles:imageFiles}));
+          }catch(e){error.textContent=e.message;}
+        },true));
+      }
+    }
+    function versionEditor(c, versionId, context) {
+      context=context || {};
       var previous=c&&(c.variants||[]).find((v)=>v.id===versionId);
-      var root = modal(previous ? "Edit Japanese print version" : "Add Japanese print version"),
+      var root = modal(previous ? "Edit print version" : "Add print version"),
         number = control(root, "Card number", "text", c && c.num),
         label = control(root, "Label", "text", "Custom parallel"),
         kind = choose(root, "Classification", ["Different artwork AA", "Manga", "Same-art reprint or foil"]),
@@ -2289,12 +2381,18 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
           "released",
           "announced",
           "draft",
-        ]),
+        ],context.status || "draft"),
         date = control(root, "Release date", "date"),
         sourceUrl = control(root, "Source URL", "url"),
-        file = control(root, "Optional artwork", "file");
+        file = control(root, "Japanese artwork (optional)", "file"),
+        enFile = control(root, "English artwork (optional)", "file");
+      enFile.accept="image/png,image/jpeg";
+      if(context.kind)kind.value=context.kind;
+      if(context.status)status.value=context.status;
+      var initialFiles=context.initialFiles || {};
+      root.appendChild(el("p","small",Object.keys(initialFiles).length ? "Uploaded images retained: "+Object.keys(initialFiles).join(" + ").toUpperCase() : ""));
       file.accept = "image/png,image/jpeg";
-      sameAs.parentNode.hidden=true;kind.onchange=function(){sameAs.parentNode.hidden=kind.value!=="Same-art reprint or foil"};
+      sameAs.parentNode.hidden=true;kind.onchange=function(){sameAs.parentNode.hidden=kind.value!=="Same-art reprint or foil"};kind.onchange();
       root.appendChild(el("p","small","AA means a different drawing. Borders, frames, stars and foil alone do not make an AA."));
       var id = previous ? previous.id : Workflow.id();
       if(previous){label.value=previous.label||"";kind.value=previous.kind==="reprint"?"Same-art reprint or foil":previous.kind==="manga"?"Manga":"Different artwork AA";source.value=previous.source||"";finish.value=previous.finish||"";sameAs.value=versionReference(c,previous.id);sameAs.parentNode.hidden=previous.kind!=="reprint";status.value=previous.status||"inherit";date.value=previous.releaseDate||"";sourceUrl.value=previous.sourceUrl||"";state.value=altState(c.num,previous.id)||"untracked";}
@@ -2337,32 +2435,12 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         if (date.value) variant.releaseDate = date.value;
         if (sourceUrl.value) variant.sourceUrl = sourceUrl.value;
         if (!confirmEdit(previous ? "Save version changes" : "Add version", editTarget(target.num) + " · " + variant.label + " · " + kind.value + " · " + state.value)) return false;
-        if (file.files[0]) {
-          var f = file.files[0];
-          if (!["image/png", "image/jpeg"].includes(f.type))
-            throw Error("Choose PNG or JPEG artwork");
-          var data = await new Promise((resolve, reject) => {
-            var reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result).split(",")[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(f);
-          });
-          var r = await fetch("/api/image", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              path:
-                "card_images_jp/" +
-                target.num +
-                "_" +
-                id +
-                (f.type === "image/png" ? ".png" : ".jpg"),
-              data: data,
-            }),
-          });
-          if (!r.ok) throw Error("Artwork upload failed (" + r.status + ")");
-          var image = await r.json();
-          variant.image = image.image || image.reference || image.path;
+        for(var language of ["jp","en"]) {
+          var f=(language==="jp"?file:enFile).files[0] || initialFiles[language];
+          if(!f)continue;
+          if(!["image/png","image/jpeg"].includes(f.type))throw Error("Choose PNG or JPEG artwork");
+          var uploaded=await uploadImage(f,(language==="jp"?"card_images_jp/":"card_images/")+target.num+"_"+id+"_"+Workflow.id()+"_"+language+(f.type==="image/png"?".png":".jpg"));
+          variant[language==="jp"?"image":"enImage"]=uploaded.image||uploaded.reference||uploaded.path;
         }
         var old = JSON.parse(JSON.stringify(target));
         target.altsame=(target.altsame||[]).filter((a)=>a!==id);
@@ -2446,7 +2524,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     function cardEditor(draft, context) {
       context=context || {};
       var editingActive=activeCardRecord(cards,draft), identity=(draft && draft.id)||Workflow.id();
-      var root=modal(draft ? "Edit card" : "Add card"), original=draft || {};
+      var root=modal(draft ? "Edit card" : "Add card"), original=Object.assign({},draft || {},context.prefill || {});
+      if(!draft)root.appendChild(button("Add from image",()=>recognitionEditor(context)));
       var num=control(root,"Official card number (optional)","text",original.num),
           name=control(root,"Name","text",original.name),
           set=control(root,"Release / set","text",original.set),
@@ -2459,27 +2538,31 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         var file=control(artwork,label,"file");file.accept="image/png,image/jpeg";
         var preview=el('img');preview.alt=label+' preview';preview.style.cssText='max-width:120px;max-height:170px;object-fit:contain';
         if(ref)preview.src=ref;else preview.hidden=true;artwork.appendChild(preview);
-        var objectUrl=null;file.onchange=function(){if(objectUrl)URL.revokeObjectURL(objectUrl);if(file.files[0]){objectUrl=URL.createObjectURL(file.files[0]);preview.src=objectUrl;preview.hidden=false;}else{preview.hidden=!ref;if(ref)preview.src=ref;}};
+        var objectUrl=null;var retained=(context.initialFiles||{})[label.indexOf("Japanese")===0?"jp":"en"];
+        if(retained){objectUrl=URL.createObjectURL(retained);preview.src=objectUrl;preview.hidden=false;}
+        edDlg.addEventListener("close",function(){if(objectUrl)URL.revokeObjectURL(objectUrl);},{once:true});
+        file.onchange=function(){if(objectUrl)URL.revokeObjectURL(objectUrl);if(file.files[0]){objectUrl=URL.createObjectURL(file.files[0]);preview.src=objectUrl;preview.hidden=false;}else{preview.hidden=!ref;if(ref)preview.src=ref;}};
         return file;
       }
       var jpFile=imageInput("Japanese image (PNG/JPEG)",original.image || (original.num && jpArt[original.num] ? 'card_images_jp/'+original.num+'.png' : '')),
           enFile=imageInput("English image (PNG/JPEG)",original.enImage || (original.num && !original.noen ? 'card_images/'+original.num+'.jpg' : ''));
       var details=el('details');details.appendChild(el('summary','','Card details & placement'));root.appendChild(details);
-      var colour=choose(details,"Colour",["Red","Green","Blue","Purple","Black","Yellow"],original.col),
-          rarity=choose(details,"Rarity",RARS,original.rar),
+      var colour=choose(details,"Colour",["","Red","Green","Blue","Purple","Black","Yellow"],original.col),
+          rarity=choose(details,"Rarity",[""].concat(RARS),original.rar),
           url=control(details,"Source URL","url",original.sourceUrl),
-          jpName=control(details,"Japanese name","text",original.status==='draft' && Object.prototype.hasOwnProperty.call(original,'jpName') ? original.jpName : (share[original.num]||{}).jp),
+          jpName=control(details,"Japanese name","text",Object.prototype.hasOwnProperty.call(context.prefill||{},'jpName') ? context.prefill.jpName : original.status==='draft' && Object.prototype.hasOwnProperty.call(original,'jpName') ? original.jpName : (share[original.num]||{}).jp),
           sid=control(details,"Series id (optional)","number",original.status==='draft' && Object.prototype.hasOwnProperty.call(original,'sid') ? original.sid : (share[original.num]||{}).sid),
           foil=control(details,"Foil printing","checkbox"),noen=control(details,"No English print","checkbox"),
           binder=choose(details,"Binder",binders.map(b=>b.id),context.binder || original.binder || currentBinder),
           slot=control(details,"Physical slot (optional)","number",context.slot == null ? original.slot : context.slot);
-      foil.checked=!!original.foil;noen.checked=!!original.noen;slot.min=1;slot.max=SLOTS;
+      foil.checked=!!original.foil;noen.checked=!!original.noen && !(context.initialFiles||{}).en;slot.min=1;slot.max=SLOTS;
       var placementNote=el('p','small');root.appendChild(placementNote);
       function explainPlacement(){placementNote.textContent=status.value==='draft' ? 'Private drafts stay in Settings → Private drafts. The selected binder slot is remembered but not reserved until you announce or release this card.' : slot.value.trim() ? 'This card will appear in the selected binder slot after Save.' : 'This card will appear in Collection. Assign a physical slot to show it in the binder.';}
       status.onchange=slot.oninput=explainPlacement;explainPlacement();
       submit(root,async function(){
         if(catalogStore.pending || catalogStore.running || (catalogStore.recovery && catalogStore.recovery()))throw Error('Save or resolve pending catalog edits before editing a card.');
         if(!name.value.trim())throw Error('Name is required');
+        if(status.value!=='draft' && (!['Red','Green','Blue','Purple','Black','Yellow'].includes(colour.value)||!RARS.includes(rarity.value)))throw Error('Choose a colour and rarity before announcing or releasing this card.');
         var official=num.value.trim().toUpperCase();
         if(official && !/^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$/.test(official))throw Error('Use an official card number such as OP12-018');
         if(editingActive && official!==editingActive.num)throw Error('Card numbers remain permanent');
@@ -2494,12 +2577,13 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         if(official)c.num=official;else delete c.num;
         if(c.status==='draft'){c.jpName=jpName.value.trim();c.sid=sid.value.trim()==='' ? null : Number(sid.value);}
         if(noen.checked)c.noen=true;else delete c.noen;
-        for(var file of [jpFile.files[0],enFile.files[0]].filter(Boolean))if(!['image/png','image/jpeg'].includes(file.type))throw Error('Choose PNG or JPEG artwork');
+        var chosenJp=jpFile.files[0]||(context.initialFiles||{}).jp,chosenEn=enFile.files[0]||(context.initialFiles||{}).en;
+        for(var file of [chosenJp,chosenEn].filter(Boolean))if(!['image/png','image/jpeg'].includes(file.type))throw Error('Choose PNG or JPEG artwork');
         var staged=Workflow.stageCard(cards,catalog.drafts||[],c,editingActive&&editingActive.num,draft);
         if(!confirmEdit(draft ? 'Save card changes' : 'Add card',(official||'Private draft')+' · '+c.name))return false;
         var filename=official||identity;
-        if(jpFile.files[0]){var jf=jpFile.files[0],ji=await uploadImage(jf,'card_images_jp/'+filename+'_'+Workflow.id()+'_jp'+(jf.type==='image/png'?'.png':'.jpg'));c.image=ji.image||ji.path;}
-        if(enFile.files[0]){var ef=enFile.files[0],ei=await uploadImage(ef,'card_images/'+filename+'_'+Workflow.id()+'_en'+(ef.type==='image/png'?'.png':'.jpg'));c.enImage=ei.image||ei.path;}
+        if(chosenJp){var jf=chosenJp,ji=await uploadImage(jf,'card_images_jp/'+filename+'_'+Workflow.id()+'_jp'+(jf.type==='image/png'?'.png':'.jpg'));c.image=ji.image||ji.path;}
+        if(chosenEn){var ef=chosenEn,ei=await uploadImage(ef,'card_images/'+filename+'_'+Workflow.id()+'_en'+(ef.type==='image/png'?'.png':'.jpg'));c.enImage=ei.image||ei.path;}
         cards=staged.cards;catalog.drafts=staged.drafts;
         if(official && c.status!=='draft'){share[official]=Object.assign({},share[official]||{},{jp:jpName.value.trim(),sid:sid.value.trim()==='' ? (deriveSid(c.set)||0) : Number(sid.value),alt:(c.alt||[]).slice()});if(c.image)jpArt[official]=true;}
         await saveCatalog();
@@ -2573,6 +2657,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     workflowRedraw = draw;
     workflowVersionEditor = versionEditor;
     workflowCardEditor = cardEditor;
+    workflowImageEditor = recognitionEditor;
     document.body.classList.add("workflow-ready");
     draw();
   }
@@ -2581,7 +2666,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   fetch('/api/access',{cache:'no-store'}).then(function(response){
     if(!response.ok)return {canEdit:false};return response.json();
   }).catch(function(){return {canEdit:false};}).then(function(access){
-    canEdit=access.canEdit===true;document.body.classList.toggle('view-only',!canEdit);
+    canEdit=access.canEdit===true;recognitionAvailable=access.recognitionAvailable!==false;document.body.classList.toggle('view-only',!canEdit);
     $('access-state').textContent=canEdit?'Editing enabled':'View only';$('access-btn').textContent=canEdit?'Lock editing':'Unlock editing';
     return Promise.all([
     catalogStore.load().then(function(c){catalog=c;return c.cards;}),

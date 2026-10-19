@@ -151,3 +151,25 @@ class PublicProjectionTests(unittest.TestCase):
         source = self.fixture()
         source["binders"][0]["status"] = "draft"
         self.assertEqual(public.catalog(source)["cards"], [])
+
+    def test_variant_language_images_public_replacement_and_draft_denial(self):
+        import json
+        source = self.fixture()
+        source["cards"][0]["variants"][0]["enImage"] = "card_images/v_public_en.jpg?v=first"
+        source["cards"][0]["variants"][1]["enImage"] = "card_images/v_secret_en.png"
+        visible = public.catalog(json.loads(json.dumps(source)))
+        variant = visible["cards"][0]["variants"][0]
+        self.assertEqual(variant["enImage"], "card_images/v_public_en.jpg?v=first")
+        self.assertEqual(variant["image"], "card_images_jp/public.png")
+        paths = public.image_paths(visible)
+        self.assertIn("card_images/v_public_en.jpg", paths)
+        self.assertNotIn("card_images/v_secret_en.png", paths)
+        source["cards"][0]["variants"][0]["enImage"] = "card_images/v_replacement_en.png?v=second"
+        paths = public.image_paths(public.catalog(source))
+        self.assertIn("card_images/v_replacement_en.png", paths)
+        self.assertNotIn("card_images/v_public_en.jpg", paths)
+        source["cards"][0]["variants"] = []
+        self.assertNotIn("card_images/v_replacement_en.png", public.image_paths(public.catalog(source)))
+        source["cards"][0]["variants"] = [{"id": "v_hidden", "kind": "parallel", "label": "Hidden", "source": "", "enImage": "card_images/v_hidden.png"}]
+        source["cards"][0]["status"] = "draft"
+        self.assertNotIn("card_images/v_hidden.png", public.image_paths(public.catalog(source)))
