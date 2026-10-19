@@ -208,7 +208,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 #dlg{padding:0;overflow:hidden;width:min(640px,96vw);height:min(94dvh,880px);max-height:none}
 #dlg[open]{display:flex}
 @media (max-width:560px){#dlg{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0}}
-.vw{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;overflow:auto}.vw>.vh,.vw>.vf,.vw>.vv,.vw>details{flex:none}
+.vw{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:88px minmax(80px,1fr) clamp(132px,26%,220px);width:100%;height:100%;min-height:0;overflow:auto;overflow-x:hidden}.viewer-controls{min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain}#dlg>.vx{position:absolute;top:10px;right:10px;z-index:3}.vw>.vh{min-width:0;min-height:0;overflow:auto;padding-right:78px}@media(max-width:560px){.vw{grid-template-rows:132px minmax(80px,1fr) clamp(132px,26%,220px)}}
 .vh{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 10px 8px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
 .vt{flex:1;min-width:0}.vt b{display:block;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vt span{display:block;font:11.5px var(--mono);color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -218,7 +218,7 @@ a.mini{display:inline-flex;align-items:center;text-decoration:none;color:inherit
 .seg2 button+button{border-left:1.5px solid var(--ink)}
 .seg2 button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
 .vx{flex:none;width:54px;height:54px;border-radius:50%;border:2px solid var(--ink);background:var(--ink);color:var(--sheet);font-size:26px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
-.vs{flex:1 0 120px;min-height:120px;container-type:size;position:relative;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:pan-y}
+.vs{min-height:0;container-type:size;position:relative;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:pan-y}
 .vi{position:relative;flex:none;width:min(600px,100%,calc(100cqh * var(--card-ratio)));height:auto;max-height:100%;aspect-ratio:var(--card-aspect)}
 .vi img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;border-radius:10px;box-shadow:0 4px 22px rgba(0,0,0,.35)}
 .vi.sl-n img{animation:vsn .2s ease-out}.vi.sl-p img{animation:vsp .2s ease-out}
@@ -986,7 +986,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     var editCard=el('button','btn','Edit card');editCard.type='button';editCard.onclick=function(){if(workflowCardEditor){var target=cards[vidx];vwClose();workflowCardEditor(target)}};
     var addVersion=el('button','btn','Add version');addVersion.type='button';addVersion.onclick=function(){if(workflowVersionEditor)workflowVersionEditor(cards[vidx])};
     var editVersion=el('button','btn','Edit version');editVersion.type='button';editVersion.onclick=function(){if(workflowVersionEditor&&vwAlt)workflowVersionEditor(cards[vidx],vwAlt)};r.editVersion=editVersion;
-    hd.appendChild(tt); hd.appendChild(r.artseg);if(canEdit){hd.appendChild(editCard);hd.appendChild(addVersion);hd.appendChild(editVersion);} hd.appendChild(x);
+    hd.appendChild(tt); hd.appendChild(r.artseg);if(canEdit){hd.appendChild(editCard);hd.appendChild(addVersion);hd.appendChild(editVersion);}
 
     var stage = el('div', 'vs');
     r.prev = el('button', 'vn vp', '‹'); r.prev.type = 'button'; r.prev.setAttribute('aria-label', 'Previous card');
@@ -1030,8 +1030,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     r.art = el('div', 'small');
     ft.appendChild(r.note); ft.appendChild(r.jp); ft.appendChild(r.ord); ft.appendChild(r.onote); ft.appendChild(r.row); ft.appendChild(r.ssb); ft.appendChild(r.altp); ft.appendChild(r.art);
 
-    root.appendChild(hd); root.appendChild(stage); root.appendChild(r.vv); root.appendChild(r.sources); root.appendChild(ft);
-    dlg.replaceChildren(root);
+    var controls=el('div','viewer-controls');r.controls=controls;r.header=hd;r.root=root;
+    controls.appendChild(r.vv); controls.appendChild(r.sources); controls.appendChild(ft);
+    root.appendChild(hd); root.appendChild(stage); root.appendChild(controls);
+    dlg.replaceChildren(root,x);
     vw = r;
   }
   var vwMode = 'jp';                    // the viewer's own EN | JP choice: switching it here never touches the binder behind
@@ -1078,10 +1080,14 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     vw.sources.hidden=!sources.length;
     sources.forEach(function(v){button(vw.sourceButtons,v.id,verLabel(c,v.id)+({have:' ✓',ordered:' (on order)',want:' (want)'}[altState(c.num,v.id)]||''))});
   }
+  function resetViewerControls() {
+    [vw.header,vw.controls].forEach(function(region){if(region){region.scrollTop=0;region.scrollLeft=0;}});
+  }
   function vwUpdate(newCard, dir) {
     var c = cards[vidx], n = c.num, j = (c.slot - 1) % PER;
     openNum = n;
     if (newCard) {
+      resetViewerControls();
       vw.name.textContent = c.name;
       vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
       vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + (c.slot==null?' · Unplaced':' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1));
@@ -1136,7 +1142,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     vwMode = artMode; syncVwSeg();      // starts from the binder's setting; changing it here stays here
     vwUpdate(true, 0);
     if (alt) { var c0 = cards[vidx]; vwAlt = alt; vwShowArt(c0); vwVariants(c0); vwUpdate(false); }
-    if (!dlg.open) dlg.showModal();
+    if (!dlg.open) {vw.root.scrollTop=0;vw.root.scrollLeft=0;dlg.showModal();}
   }
   function fillInfo() { if (vw && dlg.open) vwUpdate(false); }
   dlg.addEventListener('keydown', function (e) {

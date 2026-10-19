@@ -40,7 +40,7 @@ Card art is **not included** in this repository (it belongs to Bandai and is not
 Without images the grid shows blank tiles, with the card name and code still shown. To see art locally,
 put your own images in `card_images/<CODE>.jpg` (e.g. `card_images/OP01-026.jpg`).
 
-Card artwork uses the same **600:838 aspect ratio** throughout the binder, collection, viewers, previews and shared pages. Responsive frames show the whole image with `object-fit: contain`; original image files keep their resolution and are not cropped or stretched. This applies equally to base, alternate art and Manga prints in both languages.
+Card artwork uses the same **600:838 aspect ratio** throughout the binder, collection, viewers, previews and shared pages. Responsive frames show the whole image with `object-fit: contain`; original image files keep their resolution and are not cropped or stretched. This applies equally to base, alternate art and Manga prints in both languages. At a fixed viewport, viewer artwork keeps identical dimensions across cards and versions; variant chips and ownership controls scroll separately and never resize the artwork.
 
 ## Files
 
