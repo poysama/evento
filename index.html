@@ -1080,10 +1080,21 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     vw.sources.hidden=!sources.length;
     sources.forEach(function(v){button(vw.sourceButtons,v.id,verLabel(c,v.id)+({have:' ✓',ordered:' (on order)',want:' (want)'}[altState(c.num,v.id)]||''))});
   }
+  function defaultViewerVersion(c, requested) {
+    if(requested === 'std')return null;
+    if(requested && (c.variants || []).some(function(v){return v.id === requested;}))return requested;
+    var owned=Workflow.alternateVersions(c).filter(function(v){return artworkState(c,v.id) === 'have';});
+    var preferred=(col[c.num] || {}).show;
+    if(preferred && preferred !== 'std') {
+      var artwork=Workflow.artworkId(c,preferred);
+      if(owned.some(function(v){return v.id === artwork;}))return artwork;
+    }
+    return owned.length ? owned[0].id : null;
+  }
   function resetViewerControls() {
     [vw.header,vw.controls].forEach(function(region){if(region){region.scrollTop=0;region.scrollLeft=0;}});
   }
-  function vwUpdate(newCard, dir) {
+  function vwUpdate(newCard, dir, requestedVersion) {
     var c = cards[vidx], n = c.num, j = (c.slot - 1) % PER;
     openNum = n;
     if (newCard) {
@@ -1091,7 +1102,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       vw.name.textContent = c.name;
       vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
       vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + (c.slot==null?' · Unplaced':' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1));
-      vwAlt = null;
+      vwAlt = defaultViewerVersion(c,requestedVersion);
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
       vwShowArt(c); vwVariants(c);
       vw.prev.disabled = !cards.slice(0,vidx).some(function(x){return (x.binder||'main')===currentBinder}); vw.next.disabled = !cards.slice(vidx+1).some(function(x){return (x.binder||'main')===currentBinder});
@@ -1140,8 +1151,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     vidx = Math.max(0, cards.findIndex(function (c) { return c.num === n; }));
     if (!vw) vwBuild();
     vwMode = artMode; syncVwSeg();      // starts from the binder's setting; changing it here stays here
-    vwUpdate(true, 0);
-    if (alt) { var c0 = cards[vidx]; vwAlt = alt; vwShowArt(c0); vwVariants(c0); vwUpdate(false); }
+    vwUpdate(true, 0, alt);
     if (!dlg.open) {vw.root.scrollTop=0;vw.root.scrollLeft=0;dlg.showModal();}
   }
   function fillInfo() { if (vw && dlg.open) vwUpdate(false); }
@@ -2217,19 +2227,19 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         var c=item.card,v=item.variant,row=el("article","workflow-row"),kind=v ? v.kind === "reprint" ? "Reprint / foil" : v.kind === "manga" ? "Manga" : "Alt art" : "Base";
         row.classList.toggle("is-selected",selected.has(item.id));
         if(selecting) {var check=el("input","workflow-select");check.type="checkbox";check.checked=selected.has(item.id);check.setAttribute("aria-label","Select " + c.num + " " + kind);check.setAttribute("data-artwork-id",item.id);check.onchange=function(){if(this.checked)selected.add(item.id);else selected.delete(item.id);draw();var replacement=Array.from(panel.querySelectorAll("input")).find(x=>x.getAttribute("data-artwork-id") === item.id);if(replacement)replacement.focus();};row.appendChild(check);}
-        var art=button("",()=>openInfo(c.num,v && v.id));art.className="workflow-art";art.setAttribute("aria-label","View " + c.num + " " + c.name + " " + kind);
+        var art=button("",()=>openInfo(c.num,item.version));art.className="workflow-art";art.setAttribute("aria-label","View " + c.num + " " + c.name + " " + kind);
         var img=el("img");img.alt="";img.loading="lazy";img.src=artUrls(c.num,"jp",v && v.id)[0];img.onerror=function(){this.hidden=true;art.classList.add("art-unavailable");};
         art.append(img,el("span","workflow-art-fallback",c.num));row.appendChild(art);
-        var info=el("div","workflow-card-info"),number=el("div","workflow-card-code",c.num),name=button(c.name,()=>openInfo(c.num,v && v.id));name.className="workflow-card-name";
+        var info=el("div","workflow-card-info"),number=el("div","workflow-card-code",c.num),name=button(c.name,()=>openInfo(c.num,item.version));name.className="workflow-card-name";
         var meta=el("div","workflow-card-meta");meta.append(el("span","workflow-kind",kind),el("span","",v && v.source || c.set));
         if(item.status === "announced")meta.appendChild(el("span","workflow-upcoming","Upcoming"));
         info.append(number,name,meta);row.appendChild(info);
         var stateLabel={want:"Wanted",ordered:"On order",have:"Owned ✓",skip:"Skipped",untracked:"Untracked"}[item.state] || item.state;
         var rowActions=el("div","workflow-card-actions");rowActions.appendChild(el("span","workflow-state state-"+item.state,stateLabel));
-        if(!canEdit)rowActions.appendChild(button("View card",()=>openInfo(c.num,v && v.id)));
+        if(!canEdit)rowActions.appendChild(button("View card",()=>openInfo(c.num,item.version)));
         else if(mode === "Wishlist")rowActions.appendChild(button("Mark ordered",()=>mark([item],"ordered"),true));
         else if(item.state !== "have")rowActions.appendChild(button(mode === "Orders" ? "Received" : "Mark owned",()=>mark([item],"have"),true));
-        else rowActions.appendChild(button("View card",()=>openInfo(c.num,v && v.id)));
+        else rowActions.appendChild(button("View card",()=>openInfo(c.num,item.version)));
         if(canEdit && mode === "Orders") {
           var note=el("input","workflow-order-note");note.placeholder="Seller, tracking or arrival note…";note.setAttribute("aria-label","Order note for " + c.num + " " + kind);var e=col[item.num] || {};note.value=v ? (e.altNotes || {})[v.id] || "" : e.note || "";note.maxLength=200;note.onchange=function(){var before=v ? ((col[item.num]||{}).altNotes||{})[v.id]||"" : (col[item.num]||{}).note||"";if(this.value===before)return;if(!confirmEdit("Save order note",editTarget(item.num,v&&v.id))){this.value=before;return;}col=Workflow.orderNote(col,item,this.value);scheduleSave();};note.onkeydown=function(event){if(event.key==="Enter")this.blur();};info.appendChild(note);
         }

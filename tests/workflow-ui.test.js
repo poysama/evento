@@ -36,11 +36,12 @@ function workspace(canEdit = true, extraCards = [], storedCollection = null) {
   let col = storedCollection || {'T-001':{jp:true},'T-002':{ordered:true}};
   const stores={pending:null};
   let editor;
+  const opened=[];
   const execute = new Function('el','$','document','Option','cards','col','products','catalog','binders','Workflow','grid','collectionStore','catalogStore','setStatus','recoverPending','scheduleSave','rebuild','artUrls','openInfo','edDlg', 'var canEdit='+JSON.stringify(canEdit)+';var workflowRedraw, workflowVersionEditor, editMode=false;'+setup+'setupWorkflow();return {redraw:()=>workflowRedraw(),collection:()=>col};');
-  const state=execute((t,c,s)=>new Node(t,c,s),id=>ids[id] || null,document,function(t,v){const o=new Node('option','',t);o.value=v;return o;},cards,col,{products:[]},{drafts:[]},[],Workflow,new Node('div'),stores,stores,()=>{},()=>{},()=>{},()=>{},()=>['x'],()=>{},new Node('dialog'));
+  const state=execute((t,c,s)=>new Node(t,c,s),id=>ids[id] || null,document,function(t,v){const o=new Node('option','',t);o.value=v;return o;},cards,col,{products:[]},{drafts:[]},[],Workflow,new Node('div'),stores,stores,()=>{},()=>{},()=>{},()=>{},()=>['x'],(num,version)=>opened.push({num,version}),new Node('dialog'));
   const panel=stage.children[0], nav=top.children[0];
   const find=(text,parent=root)=>parent.querySelectorAll('button').find(b=>b.textContent===text);
-  return {root,panel,nav,ids,state,find,accessButton,accessBar,active:()=>active, input:label=>panel.querySelectorAll('input').find(i=>i.getAttribute('aria-label')===label), select:label=>panel.querySelectorAll('select').find(i=>i.getAttribute('aria-label')===label)};
+  return {root,panel,nav,ids,state,find,opened,accessButton,accessBar,active:()=>active, input:label=>panel.querySelectorAll('input').find(i=>i.getAttribute('aria-label')===label), select:label=>panel.querySelectorAll('select').find(i=>i.getAttribute('aria-label')===label)};
 }
 
 test('Binder is the default route and preserves hash handling outside workspace',()=>{
@@ -120,4 +121,19 @@ test('modal Want on announced artwork appears in Wishlist and survives refresh',
   w.find('Wishlist').onclick();assert.ok(w.find('Chosen upcoming AA'));assert.equal(w.find('Unselected upcoming base'),undefined);
   const refreshed=workspace(true,[announced,implicit],JSON.parse(saved));refreshed.find('Wishlist').onclick();assert.ok(refreshed.find('Chosen upcoming AA'));assert.equal(refreshed.find('Unselected upcoming base'),undefined);
   const set=refreshed.select('sets');set.value='OP-05';set.onchange();assert.equal(refreshed.find('Chosen upcoming AA'),undefined);refreshed.find('Reset filters').onclick();assert.ok(refreshed.find('Chosen upcoming AA'));
+});
+
+
+test('artwork rows open the exact requested base or alternate version',()=>{
+  for(const editable of [true,false]){
+    const w=workspace(editable,[],{'T-001':{jp:true,alt:{p1:'want'}}});
+    for(const mode of ['Collection','Wishlist']){
+      w.find(mode).onclick();
+      const buttons=w.panel.querySelectorAll('button');
+      const base=buttons.find(button=>button.getAttribute('aria-label')==='View T-003 Wanted card Base');
+      base.onclick();assert.deepEqual(w.opened.at(-1),{num:'T-003',version:'std'});
+      const alternate=buttons.find(button=>button.getAttribute('aria-label')==='View T-001 First card Alt art');
+      alternate.onclick();assert.deepEqual(w.opened.at(-1),{num:'T-001',version:'p1'});
+    }
+  }
 });
