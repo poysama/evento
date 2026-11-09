@@ -9,15 +9,36 @@ test("base independent of parallel ownership and orders", () => {
   );
   assert.equal(W.wishlist(cards, { A: { ordered: true } }).length, 0);
 });
-test("drafts excluded and upcoming opt in", () => {
+test("drafts excluded and implicit upcoming cards opt in", () => {
   const cards = [
       { num: "A", status: "draft" },
       { num: "B", status: "announced" },
       { num: "C", variants: [{ id: "v_manual", status: "announced" }] },
     ],
     col = { C: { jp: true, alt: { v_manual: "want" } } };
-  assert.equal(W.wishlist(cards, col).length, 0);
+  assert.deepEqual(W.wishlist(cards, col).map(x=>x.id), ["C:v_manual"]);
   assert.equal(W.wishlist(cards, col, true).length, 2);
+});
+test("explicitly wanted announced artwork is visible without all upcoming cards", () => {
+  const cards = [
+    {num:"A",status:"released",variants:[{id:"p1",kind:"parallel",status:"announced"},{id:"p2",kind:"manga",status:"announced"}]},
+    {num:"B",status:"announced"},
+  ];
+  const changed = W.change({A:{jp:true}}, [{num:"A",version:"p1"}], "want").collection;
+  const reloaded = JSON.parse(JSON.stringify(changed));
+  assert.deepEqual(W.wishlist(cards,reloaded,false).map(x=>x.id),["A:p1"]);
+  assert.deepEqual(W.wishlist(cards,reloaded,true).map(x=>x.id),["A:p1","B:std"]);
+});
+test("announced artwork wants respect aliases, ownership, orders and drafts", () => {
+  const cards=[{num:"A",status:"released",variants:[
+    {id:"p1",kind:"parallel",status:"announced"},
+    {id:"source",kind:"reprint",sameAs:"p1"},
+    {id:"draft",kind:"manga",status:"draft"},
+  ]}];
+  assert.deepEqual(W.wishlist(cards,{A:{jp:true,alt:{source:"want",draft:"want"}}}).map(x=>x.id),["A:p1"]);
+  for(const state of ["have","ordered"])
+    assert.deepEqual(W.wishlist(cards,{A:{jp:true,alt:{p1:"want",source:state}}}),[]);
+  assert.deepEqual(W.wishlist([{...cards[0],status:"draft"}],{A:{alt:{p1:"want"}}},true),[]);
 });
 test("stable legacy and custom identity", () => {
   const c = W.card({ num: "X", alt: ["p1"], altsrc: { p1: "Set" } });
@@ -50,7 +71,7 @@ test("product code source inheritance", () => {
     ],
     col = { A: { jp: true, alt: { p1: "want" } } },
     products = [{ code: "NEXT", status: "announced" }];
-  assert.equal(W.wishlist(cards, col, false, products).length, 0);
+  assert.equal(W.wishlist(cards, col, false, products)[0].status, "announced");
   assert.equal(W.wishlist(cards, col, true, products)[0].status, "announced");
 });
 test("legacy manga have preserves missing base and art metadata", () => {

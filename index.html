@@ -2176,9 +2176,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       if(mode === "Collection") advancedBody.appendChild(stateFilter);
       var up=el("input"); up.type="checkbox"; up.checked=upcoming;
       up.onchange=function(){upcoming=this.checked;listPage=0;selected.clear();draw();};
-      var upl=el("label","workflow-check"); upl.append(up,document.createTextNode("Include upcoming")); if(mode !== "Collection")advancedBody.appendChild(upl);
+      var upl=el("label","workflow-check"); upl.append(up,document.createTextNode(mode === "Wishlist" ? "Include all upcoming cards" : "Include upcoming")); if(mode !== "Collection")advancedBody.appendChild(upl);
+      if(mode === "Wishlist")advancedBody.appendChild(el("p","small","Upcoming artwork marked Want stays included."));
       advanced.appendChild(advancedBody); common.appendChild(advanced); toolbar.appendChild(common); panel.appendChild(toolbar);
-      var all = mode === "Orders" ? Workflow.printItems(cards, col, upcoming, products.products) : Workflow.items(cards, col, mode === "Collection" || upcoming, products.products);
+      var all = mode === "Wishlist" ? Workflow.wishlist(cards, col, upcoming, products.products) : mode === "Orders" ? Workflow.printItems(cards, col, upcoming, products.products) : Workflow.items(cards, col, mode === "Collection" || upcoming, products.products);
       var items=all.filter(function(x) {
         var c=x.card,v=x.variant || {},kind=x.version === "std" ? "base" : v.kind;
         var sources=Workflow.printSources(c,x.version).map(v=>v.source || "");

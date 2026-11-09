@@ -1838,8 +1838,25 @@ store["data/collection.json"] = json.dumps(
 put_share({"upcoming": False})
 html = h(ev("GET", "/w/" + tok), None)["body"]
 check(
-    "product-inherited upcoming base and variant excluded by default",
-    "Inherited upcoming base" not in html and "Upcoming variant" not in html,
+    "explicitly wanted upcoming variant appears without implicit upcoming base",
+    html.count('<figure class="c"') == 1
+    and html.count('<span class="tag">Upcoming</span>') == 1
+    and "Upcoming variant" in html,
+)
+check(
+    "explicit wanted upcoming image allowed",
+    pic(tok, "OP01-027_v_next.png")["statusCode"] == 302,
+)
+check(
+    "implicit upcoming base image remains denied",
+    pic(tok, "OP01-027.png")["statusCode"] == 404,
+)
+check(
+    "price wishlist includes explicitly wanted upcoming artwork",
+    any(
+        c["num"] == "OP01-027" and version == "v_next"
+        for c, version in L._all_alt_wants()
+    ),
 )
 put_share({"upcoming": True})
 html = h(ev("GET", "/w/" + tok), None)["body"]

@@ -149,6 +149,15 @@
     });
     return out;
   }
+  function wishlist(cards, collection, up, products) {
+    return items(cards, collection, true, products).filter(function (item) {
+      if (item.state !== "want") return false;
+      if (eligible(item.status, up)) return true;
+      var entry = state(collection, item.num);
+      return item.status === "announced" && printSources(item.card, item.version)
+        .some(function (source) { return (entry.alt || {})[source.id] === "want"; });
+    });
+  }
   function upsert(rows, record, key) {
     var found = false;
     var result = rows.map(function (row) {
@@ -404,8 +413,7 @@
         ? crypto.randomUUID().replace(/-/g, "")
         : Date.now().toString(36) + Math.random().toString(36).slice(2)),
     items: items,
-    wishlist: (cards, col, up, products) =>
-      items(cards, col, up, products).filter((x) => x.state === "want"),
+    wishlist: wishlist,
     complete: complete,
   };
   if (typeof module !== "undefined") module.exports = api;

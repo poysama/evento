@@ -76,7 +76,7 @@
     "expected": []
   },
   {
-    "name": "source release upcoming gate",
+    "name": "explicit source want bypasses upcoming gate",
     "catalog": {
       "schema": 2,
       "cards": [
@@ -116,7 +116,9 @@
       }
     },
     "upcoming": false,
-    "expected": []
+    "expected": [
+      "OP12-018:v_custom"
+    ]
   },
   {
     "name": "source release explicit upcoming",
@@ -381,6 +383,194 @@
       "OP12-018": {
         "alt": {
           "p1": "ordered"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "implicit upcoming base still opts in",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "set": "OLD",
+          "variants": [
+            {
+              "id": "v_custom",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "NEXT"
+            }
+          ],
+          "status": "announced"
+        }
+      ],
+      "products": {
+        "products": [
+          {
+            "code": "NEXT",
+            "status": "announced"
+          }
+        ],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {},
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "announced wanted source selects canonical artwork",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "set": "OLD",
+          "variants": [
+            {
+              "id": "v_custom",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "NEXT"
+            },
+            {
+              "id": "v_alias",
+              "kind": "reprint",
+              "sameAs": "v_custom",
+              "source": "NEXT"
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [
+          {
+            "code": "NEXT",
+            "status": "announced"
+          }
+        ],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "v_alias": "want"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": [
+      "OP12-018:v_custom"
+    ]
+  },
+  {
+    "name": "announced canonical have wins source want",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "set": "OLD",
+          "variants": [
+            {
+              "id": "v_custom",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "NEXT"
+            },
+            {
+              "id": "v_alias",
+              "kind": "reprint",
+              "sameAs": "v_custom",
+              "source": "NEXT"
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [
+          {
+            "code": "NEXT",
+            "status": "announced"
+          }
+        ],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "v_alias": "want",
+          "v_custom": "have"
+        }
+      }
+    },
+    "upcoming": false,
+    "expected": []
+  },
+  {
+    "name": "announced canonical ordered wins source want",
+    "catalog": {
+      "schema": 2,
+      "cards": [
+        {
+          "num": "OP12-018",
+          "name": "Event",
+          "set": "OLD",
+          "variants": [
+            {
+              "id": "v_custom",
+              "kind": "parallel",
+              "label": "Parallel",
+              "source": "NEXT"
+            },
+            {
+              "id": "v_alias",
+              "kind": "reprint",
+              "sameAs": "v_custom",
+              "source": "NEXT"
+            }
+          ]
+        }
+      ],
+      "products": {
+        "products": [
+          {
+            "code": "NEXT",
+            "status": "announced"
+          }
+        ],
+        "sources": {}
+      },
+      "share": {},
+      "binders": [],
+      "drafts": []
+    },
+    "collection": {
+      "OP12-018": {
+        "jp": true,
+        "alt": {
+          "v_alias": "want",
+          "v_custom": "ordered"
         }
       }
     },

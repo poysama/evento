@@ -432,9 +432,15 @@ def wishlist(catalog, owned, include_upcoming=False, include_parallels=True):
         row = owned.get(c["num"], {})
         for v in [None] + (alternate_versions(c) if include_parallels else []):
             status = release_status(c, v, catalog)
-            if status == "draft" or status == "announced" and not include_upcoming:
-                continue
             version = v["id"] if v else "std"
+            explicit_want = any(
+                row.get("alt", {}).get(source["id"]) == "want"
+                for source in print_sources(c, version)
+            )
+            if status == "draft" or (
+                status == "announced" and not include_upcoming and not explicit_want
+            ):
+                continue
             wanted = effective_state(c, row, version) == "want"
             if wanted:
                 out.append(

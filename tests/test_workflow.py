@@ -249,3 +249,37 @@ class SharedPolicyTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in w.wishlist(catalog, {}, include_upcoming=True)], ["EB05-008:std"])
         catalog["cards"][0]["set"] = "arbitrary text"
         self.assertFalse(w.valid_catalog(catalog))
+
+class ExplicitWantReleaseTests(unittest.TestCase):
+    def catalog(self, status="announced", parent_status="released"):
+        return w.normalize_catalog({"cards": [{"num": "ST22-015", "status": parent_status, "variants": [{"id": "v_custom", "kind": "parallel", "label": "Custom AA", "source": "", "status": status}, {"id": "p2", "kind": "parallel", "label": "Same artwork print", "source": "", "sameAs": "v_custom", "status": status}]}]})
+
+    def ids(self, catalog, row, upcoming=False):
+        return [item["id"] for item in w.wishlist(catalog, {"ST22-015": row}, include_upcoming=upcoming)]
+
+    def test_explicit_announced_want_visible_without_upcoming(self):
+        self.assertEqual(self.ids(self.catalog(), {"jp": True, "alt": {"v_custom": "want"}}), ["ST22-015:v_custom"])
+
+    def test_alias_want_uses_unique_primary_artwork(self):
+        self.assertEqual(self.ids(self.catalog(), {"jp": True, "alt": {"p2": "want"}}), ["ST22-015:v_custom"])
+        self.assertEqual(self.ids(self.catalog(), {"jp": True, "alt": {"p2": "want", "v_custom": "want"}}), ["ST22-015:v_custom"])
+
+    def test_alias_have_and_ordered_override_explicit_want(self):
+        for state in ("have", "ordered"):
+            self.assertEqual(self.ids(self.catalog(), {"jp": True, "alt": {"v_custom": "want", "p2": state}}), [])
+
+    def test_draft_variant_and_parent_remain_private(self):
+        for catalog in (self.catalog(status="draft"), self.catalog(parent_status="draft")):
+            for upcoming in (False, True):
+                self.assertEqual(self.ids(catalog, {"jp": True, "alt": {"v_custom": "want"}}, upcoming), [])
+
+    def test_implicit_announced_base_still_requires_upcoming(self):
+        catalog = self.catalog(parent_status="announced")
+        self.assertEqual(self.ids(catalog, {}), [])
+        self.assertEqual(self.ids(catalog, {}, True), ["ST22-015:std"])
+        self.assertEqual(self.ids(catalog, {"jp": True}, True), [])
+
+    def test_explicit_wanted_base_art_alias_is_visible(self):
+        catalog = w.normalize_catalog({"cards": [{"num": "ST22-015", "status": "announced", "variants": [{"id": "p1", "kind": "parallel", "sameDrawing": True, "label": "Base print", "source": ""}]}]})
+        self.assertEqual(self.ids(catalog, {"alt": {"p1": "want"}}), ["ST22-015:std"])
+        self.assertEqual(self.ids(catalog, {"alt": {"p1": "ordered"}}), [])

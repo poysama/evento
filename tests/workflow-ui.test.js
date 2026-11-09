@@ -6,7 +6,7 @@ const Workflow = require('../workflow.js');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const setup = html.slice(html.indexOf('  function setupWorkflow() {'), html.indexOf('  /* ---------- boot ---------- */'));
 
-function workspace(canEdit = true, extraCards = []) {
+function workspace(canEdit = true, extraCards = [], storedCollection = null) {
   let active = null;
   class Node {
     constructor(tag, cls = '', text = '') { this.tag = tag; this.className = cls; this.text = text; this.children = []; this.attrs = {}; this.hidden = false; this.value = ''; this.classList = {add:()=>{},toggle:()=>{}}; }
@@ -33,7 +33,7 @@ function workspace(canEdit = true, extraCards = []) {
   const document = {body:root,createTextNode:t=>new Node('text','',t),get activeElement(){return active;},querySelector:s=>({'.top':top,'.stage':stage,'.board':board,'.top>.row':headerRow}[s]),querySelectorAll:()=>[]};
   const cards = [Workflow.card({num:'T-001',name:'First card',set:'OP-01',status:'released',col:'Red',variants:[{id:'p1',kind:'parallel',source:'OP-01'},{id:'p3',kind:'parallel',source:'OP-04'},{id:'p2',kind:'reprint',sameAs:'p1',source:'PRB-02'}]}),Workflow.card({num:'T-002',name:'Second card',set:'OP-02',status:'released',col:'Blue',variants:[]}),Workflow.card({num:'T-003',name:'Wanted card',set:'OP-03',status:'released',variants:[]})];
   cards.push(...extraCards.map(Workflow.card));
-  let col = {'T-001':{jp:true},'T-002':{ordered:true}};
+  let col = storedCollection || {'T-001':{jp:true},'T-002':{ordered:true}};
   const stores={pending:null};
   let editor;
   const execute = new Function('el','$','document','Option','cards','col','products','catalog','binders','Workflow','grid','collectionStore','catalogStore','setStatus','recoverPending','scheduleSave','rebuild','artUrls','openInfo','edDlg', 'var canEdit='+JSON.stringify(canEdit)+';var workflowRedraw, workflowVersionEditor, editMode=false;'+setup+'setupWorkflow();return {redraw:()=>workflowRedraw(),collection:()=>col};');
@@ -106,3 +106,18 @@ test('editing access remains connected and available across every workspace rout
 });
 
 test('Collection displays an announced card after refresh while wishlist keeps upcoming opt-in',()=>{for(const editable of [true,false]){const w=workspace(editable,[{num:'EB05-008',name:'New announcement',col:'Red',rar:'R',set:'',status:'announced',slot:412,binder:'main'}]);w.find('Collection').onclick();assert.ok(w.find('New announcement'));w.find('Wishlist').onclick();assert.equal(w.find('New announcement'),undefined);w.find('Collection').onclick();assert.ok(w.find('New announcement'));}});
+
+
+test('modal Want on announced artwork appears in Wishlist and survives refresh',()=>{
+  const announced={num:'T-004',name:'Chosen upcoming AA',set:'OP-04',status:'released',variants:[{id:'manual',kind:'parallel',status:'announced'}]};
+  const implicit={num:'T-005',name:'Unselected upcoming base',set:'OP-05',status:'announced'};
+  const w=workspace(true,[announced,implicit],{'T-004':{jp:true}});
+  let saved,saves=0;
+  const source=html.slice(html.indexOf('  function setAlt('),html.indexOf('  function setShow('));
+  const setAlt=new Function('Workflow','col','byNum','confirmEdit','render','scheduleSave',"var canEdit=true,openNum=null,editTarget=()=>'';"+source+'return setAlt;')(Workflow,w.state.collection(),{'T-004':Workflow.card(announced)},()=>true,()=>{},()=>{saves++;saved=JSON.stringify(w.state.collection());});
+  setAlt('T-004','manual','want');
+  assert.equal(saves,1);assert.equal(JSON.parse(saved)['T-004'].alt.manual,'want');
+  w.find('Wishlist').onclick();assert.ok(w.find('Chosen upcoming AA'));assert.equal(w.find('Unselected upcoming base'),undefined);
+  const refreshed=workspace(true,[announced,implicit],JSON.parse(saved));refreshed.find('Wishlist').onclick();assert.ok(refreshed.find('Chosen upcoming AA'));assert.equal(refreshed.find('Unselected upcoming base'),undefined);
+  const set=refreshed.select('sets');set.value='OP-05';set.onchange();assert.equal(refreshed.find('Chosen upcoming AA'),undefined);refreshed.find('Reset filters').onclick();assert.ok(refreshed.find('Chosen upcoming AA'));
+});
