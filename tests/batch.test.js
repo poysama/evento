@@ -247,7 +247,7 @@ test("promoted private draft reserves its saved slot and preserves curated serie
   assert.throws(
     () =>
       B.planImport({ ...c, drafts: [{ ...base, slot: 17 }] }, [promote], args),
-    /saved pocket/,
+    (error) => /saved pocket/.test(error.message) && error.field === null,
   );
   for (const sourceUrl of [
     "HTTP://example.org",

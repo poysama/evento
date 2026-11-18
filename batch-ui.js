@@ -95,21 +95,51 @@
             ...snapshot.catalog.cards,
             ...(snapshot.catalog.drafts || []),
           ].find((c) => c.num === g.num);
-        if (
-          g.fileIds.some(
-            (id) =>
-              entries.find((x) => x.id === id).fields.cardType !== "Event",
-          )
-        )
-          throw Error("Confirm every image shows an Event card");
-        if (Object.keys(g.images).length !== g.fileIds.length)
-          throw Error("Choose a language for every image");
-        if (g.issues.some((i) => i.startsWith("Check conflicting")))
-          throw Error(g.issues.find((i) => i.startsWith("Check conflicting")));
+        const members = g.fileIds.map((id) =>
+          entries.find((item) => item.id === id),
+        );
+        const fileError = (file, field, message) =>
+          Object.assign(Error(message), { fileId: file.id, field });
+        const unconfirmed = members.find(
+          (item) => item.fields.cardType !== "Event",
+        );
+        if (unconfirmed)
+          throw fileError(
+            unconfirmed,
+            "cardType",
+            "Confirm this image shows an Event card",
+          );
+        const unknownLanguage = members.find(
+          (item) => !["jp", "en"].includes(item.fields.language),
+        );
+        if (unknownLanguage)
+          throw fileError(
+            unknownLanguage,
+            "language",
+            "Choose a language for this image",
+          );
+        const conflict = g.issues.find((msg) =>
+          msg.startsWith("Check conflicting "),
+        );
+        if (conflict) {
+          const field = conflict.slice("Check conflicting ".length);
+          const different = members.find(
+            (item) =>
+              item.fields[field] && item.fields[field] !== g.fields[field],
+          );
+          throw fileError(
+            different || e,
+            field,
+            conflict + " on the paired images",
+          );
+        }
         const action =
           e.action || (!existing && !g.ambiguous ? "new-base" : "");
         if (!action)
-          throw Error("Choose an action for " + (g.num || "each artwork"));
+          throw Object.assign(
+            Error("Choose an action for " + (g.num || "each artwork")),
+            { rowId: g.id, field: "action" },
+          );
         const row = {
           id: e.id,
           num: g.num,
@@ -352,6 +382,11 @@
       footer = node("footer", null, dialog),
       error = node("p", "", footer);
     error.setAttribute("role", "alert");
+    const status = node("p", "", footer);
+    status.id = "batch-review-status";
+    status.setAttribute("role", "status");
+    const jump = button(footer, "Review field", () => {});
+    jump.hidden = true;
     const save = button(footer, "Confirm import", async () => {
       let work;
       try {
@@ -369,6 +404,64 @@
         if (dialog.open) render();
       }
     });
+    save.setAttribute("aria-describedby", status.id);
+    function reviewProblem(problem) {
+      const item = s.entries.find(
+        (e) => e.id === (problem.fileId || problem.rowId),
+      );
+      const identity = item
+        ? [item.fields.num, item.file.name].filter(Boolean).join(" · ")
+        : "";
+      status.textContent = identity
+        ? identity + " · " + problem.message
+        : problem.message;
+      const isFile = !!problem.fileId || problem.field === "num";
+      const labels = isFile
+        ? {
+            num: "Card number",
+            language: "Language",
+            cardType: "Card type",
+            name: "Printed English name",
+            jpName: "Printed Japanese name",
+            col: "Recognized colour",
+            rar: "Recognized rarity",
+          }
+        : {
+            action: "Action",
+            name: "Display name",
+            col: "Colour",
+            rar: "Rarity",
+            status: "Release status",
+            releaseDate: "Release date",
+            sourceUrl: "Source URL",
+            set: "Set code",
+            sameAs: "Same artwork as",
+            startSlot: "Starting pocket",
+          };
+      const key = item ? (isFile ? "file-" : "group-") + item.id : "";
+      const owner = key
+        ? Array.from(detail.children).find((box) => box.dataset.key === key)
+        : detail;
+      const label =
+        owner &&
+        Array.from(owner.children).find(
+          (child) =>
+            child.tagName === "LABEL" &&
+            child.dataset.key === labels[problem.field],
+        );
+      const input = label?.querySelector("input,select");
+      if (!input) return;
+      input.setAttribute("aria-invalid", "true");
+      input.setAttribute("aria-describedby", status.id);
+      jump.hidden = false;
+      jump.textContent =
+        "Review " +
+        (item?.fields.num || item?.file.name || labels[problem.field]);
+      jump.onclick = () => {
+        input.focus({ preventScroll: true });
+        input.scrollIntoView({ block: "center" });
+      };
+    }
     if (d.manual)
       button(footer, "Add card manually", () => {
         if (
@@ -645,13 +738,29 @@
           );
       }
       syncFields(detail, template);
+      for (const input of detail.querySelectorAll('[aria-invalid="true"]')) {
+        input.removeAttribute("aria-invalid");
+        input.removeAttribute("aria-describedby");
+      }
+      jump.hidden = true;
       let valid = false;
       try {
         const plan = s.preview();
         node("p", summary(plan), review);
         valid = true;
+        status.textContent =
+          plan.changes.length +
+          " reviewed item" +
+          (plan.changes.length === 1 ? "" : "s") +
+          " ready to import.";
       } catch (e) {
-        node("p", e.message, review);
+        reviewProblem(e);
+      }
+      if (s.scanning || s.saving) {
+        status.textContent = s.scanning
+          ? "Analyzing images…"
+          : "Saving import…";
+        jump.hidden = true;
       }
       scans.textContent =
         "Analyze " +

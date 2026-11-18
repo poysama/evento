@@ -93,7 +93,9 @@
   function planImport(catalog, rows, { binder, startSlot }) {
     checkBinder(catalog, binder);
     if (!validSlot(startSlot))
-      throw Error("Choose a starting pocket from 1 to 1024");
+      throw Object.assign(Error("Choose a starting pocket from 1 to 1024"), {
+        field: "startSlot",
+      });
     const next = clone(catalog),
       byNum = new Map(),
       occupied = new Set(),
@@ -118,15 +120,18 @@
         Number(a.kind === "reprint") - Number(b.kind === "reprint") ||
         compareCardNumbers(a.num, b.num),
     )) {
-      if (!r.id || ids.has(r.id)) throw Error("Choose a unique import row");
+      const rowError = (message, field = "action") =>
+        Object.assign(Error(message), { rowId: r.id, field });
+      if (!r.id || ids.has(r.id)) throw rowError("Choose a unique import row");
       ids.add(r.id);
       if (!/^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$/.test(r.num))
-        throw Error("Enter an official card number");
+        throw rowError("Enter an official card number", "num");
       let c = byNum.get(r.num);
       const drafts = (next.drafts || []).filter((d) => d.num === r.num);
       if (!c && drafts.length > 1)
-        throw Error(
+        throw rowError(
           "Several unfinished cards use " + r.num + ". Choose one in Settings.",
+          null,
         );
       const draft = !c && drafts[0];
       if (r.action === "update-base" && draft) c = draft;
@@ -134,7 +139,7 @@
         images = {},
         replacements = [];
       if (f.status === "draft" && !draft)
-        throw Error("Choose an active release status");
+        throw rowError("Choose an active release status", "status");
       for (const key of ["image", "enImage"])
         if (r[key] != null) {
           if (
@@ -143,7 +148,7 @@
               r[key],
             )
           )
-            throw Error("Invalid image path");
+            throw rowError("Invalid image path");
           images[key] = r[key];
         }
       if (
@@ -152,18 +157,18 @@
           f.sourceUrl.length > 2000 ||
           !/^https?:\/\//.test(f.sourceUrl))
       )
-        throw Error("Use an HTTP or HTTPS source URL");
+        throw rowError("Use an HTTP or HTTPS source URL", "sourceUrl");
       if (f.status && !["draft", "announced", "released"].includes(f.status))
-        throw Error("Choose a release status");
+        throw rowError("Choose a release status", "status");
       if (
         f.releaseDate &&
         (!/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(f.releaseDate) ||
           !Number.isFinite(Date.parse(f.releaseDate)) ||
           new Date(f.releaseDate).toISOString().slice(0, 10) !== f.releaseDate)
       )
-        throw Error("Enter a valid release date");
+        throw rowError("Enter a valid release date", "releaseDate");
       if (r.action === "new-version") {
-        if (!c) throw Error("Choose an existing base for " + r.num);
+        if (!c) throw rowError("Choose an existing base for " + r.num);
         const normalized = workflow.card(c),
           variants = normalized.variants;
         if (
@@ -171,15 +176,15 @@
           r.versionId === "std" ||
           variants.some((v) => v.id === r.versionId)
         )
-          throw Error("Choose a unique version ID");
+          throw rowError("Choose a unique version ID");
         if (!["parallel", "manga", "reprint"].includes(r.kind))
-          throw Error("Choose an artwork type");
+          throw rowError("Choose an artwork type");
         if (
           r.kind === "reprint" &&
           r.sameAs !== "std" &&
           !workflow.alternateVersions(normalized).some((v) => v.id === r.sameAs)
         )
-          throw Error("Choose the matching artwork");
+          throw rowError("Choose the matching artwork", "sameAs");
         variants.push({
           ...images,
           id: r.versionId,
@@ -195,11 +200,11 @@
         Object.assign(c, workflow.card(normalized));
       } else {
         if (bases.has(r.num))
-          throw Error("Choose one base action for " + r.num);
+          throw rowError("Choose one base action for " + r.num);
         bases.add(r.num);
         if (r.action === "new-base") {
           if (c || next.drafts?.some((d) => d.num === r.num))
-            throw Error("Card number already exists: " + r.num);
+            throw rowError("Card number already exists: " + r.num);
           c = {
             num: r.num,
             slot: null,
@@ -210,7 +215,7 @@
           next.cards.push(c);
           byNum.set(c.num, c);
         } else if (r.action !== "update-base" || !c)
-          throw Error("Choose an action for " + r.num);
+          throw rowError("Choose an action for " + r.num);
         for (const key of [
           "name",
           "col",
@@ -222,21 +227,24 @@
         ])
           if (key in f) c[key] = f[key];
         if (!c.name) c.name = f.jpName;
-        if (
-          c.status !== "draft" &&
-          (!c.name?.trim() ||
+        if (c.status !== "draft") {
+          if (!c.name?.trim())
+            throw rowError("Enter a display name for " + r.num, "name");
+          if (
             !["Red", "Green", "Blue", "Purple", "Black", "Yellow"].includes(
               c.col,
-            ) ||
-            !["C", "UC", "R", "SR", "P"].includes(c.rar))
-        )
-          throw Error("Choose a name, colour and rarity for " + r.num);
+            )
+          )
+            throw rowError("Choose a colour for " + r.num, "col");
+          if (!["C", "UC", "R", "SR", "P"].includes(c.rar))
+            throw rowError("Choose a rarity for " + r.num, "rar");
+        }
         if (
           c.status !== "draft" &&
           !(c.set === "" && c.status === "announced") &&
           !/^(?:[A-Z]{2,3}-\d{2}|P-\d{3,4})$/.test(c.set)
         )
-          throw Error("Enter a release set code");
+          throw rowError("Enter a release set code", "set");
         for (const key of Object.keys(images))
           if (c[key]) replacements.push(key === "image" ? "JP" : "EN");
         Object.assign(c, images);
@@ -254,8 +262,9 @@
                   other.slot === c.slot,
               )
             )
-              throw Error(
+              throw rowError(
                 "The unfinished card's saved pocket is unavailable. Update its placement in Settings.",
+                null,
               );
             if (draftBinder === binder) occupied.add(c.slot);
           }
@@ -301,10 +310,13 @@
         slot++;
       }
       if (!validSlot(slot))
-        throw Error(
-          "Insufficient empty pockets: need " +
-            (allocate.length - placements.length) +
-            " more after the starting slot",
+        throw Object.assign(
+          Error(
+            "Insufficient empty pockets: need " +
+              (allocate.length - placements.length) +
+              " more after the starting slot",
+          ),
+          { field: "startSlot" },
         );
       c.slot = slot;
       c.binder = binder;

@@ -245,7 +245,7 @@ test("single numbered private draft stays private and ambiguous drafts require S
     ...h.initial.catalog.drafts[0],
     id: "other",
   });
-  assert.throws(() => h.s.preview(), /Several unfinished/);
+  assert.throws(() => h.s.preview(), (error) => /Several unfinished/.test(error.message) && error.field === null);
 });
 test("real revision adapters validate detached reads and retain failed candidates for recovery", async () => {
   const fs = require("node:fs"),
@@ -442,4 +442,45 @@ test("preview reconciliation retains focused controls, live input and tab order"
     if (doc === undefined) delete global.document;
     else global.document = doc;
   }
+});
+test("completed paired batch identifies the specific unresolved file and keeps it editable", () => {
+  const { s } = setup();
+  s.add([file("first.webp"), file("second.png", "image/png")]);
+  const [jp, en] = s.entries;
+  jp.fields = fields("OP18-116", "jp");
+  en.fields = fields("OP18-116", "en");
+  delete en.fields.cardType;
+  assert.throws(
+    () => s.preview(),
+    (e) =>
+      e.fileId === en.id &&
+      e.field === "cardType" &&
+      e.message.includes("Event"),
+  );
+  en.fields.cardType = "Event";
+  en.fields.col = "Blue";
+  assert.throws(
+    () => s.preview(),
+    (e) => e.fileId === en.id && e.field === "col",
+  );
+  en.fields.col = "Red";
+  assert.equal(s.preview().placements.length, 1);
+});
+test("missing group-level metadata and invalid edited values identify the exact review field", () => {
+  const { s } = setup();
+  s.add([file()]);
+  const [entry] = s.entries;
+  entry.fields = fields();
+  entry.fields.rar = "";
+  assert.throws(
+    () => s.preview(),
+    (e) => e.rowId === entry.id && e.field === "rar",
+  );
+  entry.patch = { rar: "R", releaseDate: "2026-02-30" };
+  assert.throws(
+    () => s.preview(),
+    (e) => e.rowId === entry.id && e.field === "releaseDate",
+  );
+  entry.patch.releaseDate = "";
+  assert.equal(s.preview().placements.length, 1);
 });
