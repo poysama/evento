@@ -1450,7 +1450,7 @@ def _handler(event, context):
         )
 
     editor = authed(event)
-    public_static = path in ("/", "/index.html", "/workflow.js", "/save.js")
+    public_static = path in ("/", "/index.html", "/workflow.js", "/batch.js", "/batch-ui.js", "/save.js")
     public_image = path.startswith(("/card_images/", "/card_images_jp/"))
     public_data = path in ("/api/catalog", "/api/collection")
     if editor and method not in ("GET", "HEAD"):
@@ -1508,7 +1508,7 @@ def _handler(event, context):
             (HERE / "index.html").read_text(encoding="utf-8"),
             "text/html; charset=utf-8",
         )
-    if method == "GET" and path in ("/workflow.js", "/save.js"):
+    if method == "GET" and path in ("/workflow.js", "/batch.js", "/batch-ui.js", "/save.js"):
         return resp(
             200,
             (HERE / path[1:]).read_text(encoding="utf-8"),
@@ -1623,6 +1623,14 @@ def _handler(event, context):
             if method == "GET"
             else js(404, {"error": "not found"})
         )
+
+    if path == "/api/recognition-usage" and method == "GET":
+        if not authed(event):
+            return js(401, {"error": "editing access required"})
+        try:
+            return js(200, recognition_budget.usage_s3(s3, BUCKET))
+        except recognition_budget.BudgetError as exc:
+            return js(exc.status, {"error": str(exc)})
 
     if path == "/api/recognition-settings":
         try:

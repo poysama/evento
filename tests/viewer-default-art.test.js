@@ -21,7 +21,7 @@ function viewer(rawCards,collection={},options={}){
   const has=(num,key)=>!!collection[num]?.[key];
   const artworkState=(card,id)=>Workflow.effectiveState(card,collection[card.num]||{},id||'std');
   const source="var vwAlt=null,vwMode='jp',artMode="+JSON.stringify(options.language||'jp')+",vidx=0,openNum=null,currentBinder='main',canEdit="+JSON.stringify(options.canEdit!==false)+";"+artworkCode+viewerCode+"return {open:openInfo,next:()=>vstep(1),previous:()=>vstep(-1),update:()=>vwUpdate(false),close:()=>{dlg.open=false},selection:()=>vwAlt,mode:()=>vwMode,card:()=>cards[vidx].num};";
-  const params={Workflow,PER:16,pageOf:slot=>Math.floor((slot-1)/16)+1,cards,byNum,col:collection,vw,dlg,document:{activeElement:null},el:(tag,cls,text)=>new Node(text||''),artImg:(image,num,language,version)=>rendered.push({num,language,version}),syncVwSeg(){},setBinder:id=>{},vwBuild(){throw Error('prebuilt test viewer expected');},artworkState,has,complete:num=>has(num,'jp')||Workflow.alternateVersions(byNum[num]).some(v=>artworkState(byNum[num],v.id)==='have'),tagged:has,ordered:num=>has(num,'ordered')&&!has(num,'jp'),noteOf:()=>'',jpText:()=>'',anyHave:num=>Workflow.alternateVersions(byNum[num]).some(v=>artworkState(byNum[num],v.id)==='have'),shownVer:num=>collection[num]?.show||'',versionDisplayState:(card,id)=>Workflow.artworkId(card,id)===id?artworkState(card,id):collection[card.num]?.alt?.[id]||'',altState:(num,id)=>collection[num]?.alt?.[id]||'',verBase:(card,id)=>id,verLabel:(card,id)=>id,verNote:()=>'',vwShowingJP:()=>true,preloadArt(){}};
+  const params={EventoBatch:require("../batch.js"),Workflow,PER:16,pageOf:slot=>Math.floor((slot-1)/16)+1,cards,byNum,col:collection,vw,dlg,document:{activeElement:null},el:(tag,cls,text)=>new Node(text||''),artImg:(image,num,language,version)=>rendered.push({num,language,version}),syncVwSeg(){},setBinder:id=>{},vwBuild(){throw Error('prebuilt test viewer expected');},artworkState,has,complete:num=>has(num,'jp')||Workflow.alternateVersions(byNum[num]).some(v=>artworkState(byNum[num],v.id)==='have'),tagged:has,ordered:num=>has(num,'ordered')&&!has(num,'jp'),noteOf:()=>'',jpText:()=>'',anyHave:num=>Workflow.alternateVersions(byNum[num]).some(v=>artworkState(byNum[num],v.id)==='have'),shownVer:num=>collection[num]?.show||'',versionDisplayState:(card,id)=>Workflow.artworkId(card,id)===id?artworkState(card,id):collection[card.num]?.alt?.[id]||'',altState:(num,id)=>collection[num]?.alt?.[id]||'',verBase:(card,id)=>id,verLabel:(card,id)=>id,verNote:()=>'',vwShowingJP:()=>true,preloadArt(){}};
   const api=new Function(...Object.keys(params),source)(...Object.values(params));
   return {...api,vw,rendered,dialogs:()=>dialogs};
 }
@@ -55,4 +55,11 @@ test('manual version selection remains until another card is opened and language
   h.open('A');assert.equal(h.selection(),'en');assert.equal(h.mode(),'en');
   h.vw.vv.children.find(button=>button.textContent==='jp').onclick();h.update();assert.equal(h.selection(),'jp');
   h.next();assert.equal(h.selection(),null);h.previous();assert.equal(h.selection(),'en');
+});
+
+test('Binder navigation follows physical slots and keeps the global card index',()=>{
+  const records=[{...card('B',[]),slot:9},{...card('U',[]),slot:null},{...card('X',[]),binder:'other'},{...card('A',[]),slot:2}];
+  const h=viewer(records);h.open('A',undefined,{binder:'main'});assert.equal(h.vw.prev.disabled,true);assert.match(h.vw.meta2.textContent,/^Card 1 \/ 2/);
+  h.next();assert.equal(h.card(),'B');assert.equal(h.vw.next.disabled,true);assert.match(h.vw.meta2.textContent,/^Card 2 \/ 2/);
+  h.previous();assert.equal(h.card(),'A');h.open('B');assert.match(h.vw.meta2.textContent,/^Card 1 \/ 4/);h.next();assert.equal(h.card(),'U');
 });

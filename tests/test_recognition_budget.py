@@ -44,6 +44,18 @@ class FakeS3:
 
 
 class BudgetTests(unittest.TestCase):
+    def test_usage_reads_legacy_exhausted_and_new_month_without_writing(self):
+        s3 = FakeS3()
+        s3.value.update(plan=budget.LEGACY_PLAN, months={"2026-10": 40})
+        before = copy.deepcopy(s3.value)
+        self.assertEqual(budget.usage_s3(s3, "test", OCTOBER)["remaining"], 0)
+        self.assertEqual(budget.usage_s3(s3, "test", NOVEMBER)["used"], 0)
+        self.assertEqual((s3.puts, s3.value), (0, before))
+        s3.value["months"] = {"bad": 0}
+        with self.assertRaises(budget.BudgetError) as error:
+            budget.usage_s3(s3, "test", OCTOBER)
+        self.assertEqual(error.exception.status, 503)
+
     def test_conservative_model_cost_bound(self):
         upper_bound = (
             Decimal(budget.MAX_INPUT_TOKENS) * Decimal("0.30")

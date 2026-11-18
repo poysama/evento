@@ -54,20 +54,6 @@ const file = (name, type = 'image/webp') => ({name, type, size:100, data:'d2VicC
 function fillCard(h) { h.field('Official card number').value = 'P-134'; h.field('Name').value = 'Card'; h.field('Colour').value = 'Red'; h.field('Rarity').value = 'R'; }
 function imageFields(h) { return h.root().all().filter(n => n.tag === 'file'); }
 
-test('dual WebP recognition retains originals through editable review and confirmed base save', async () => {
-  const h = harness(), jp = file('jp.webp'), en = file('en.webp');
-  h.ctx.recognitionEditor({slot:12,binder:'main'});
-  const input = imageFields(h)[0]; assert.match(input.accept, /image\/webp/); input.files = [jp,en]; input.onchange();
-  assert.equal(h.requests.length,0); await h.button('Analyze images').onclick();
-  assert.equal(h.requests.length,2); h.requests.forEach(r => { assert.equal(r.url,'/api/recognize'); assert.equal(r.body.mime,'image/webp'); assert.equal(r.body.data,jp.data); });
-  h.button('Continue to card editor').onclick(); fillCard(h); assert.equal(h.confirmations.length,0);
-  await h.action();
-  const uploads = h.requests.filter(r => r.url === '/api/image'); assert.equal(uploads.length,2);
-  assert.match(uploads[0].body.path,/^card_images_jp\/P-134_.*_jp\.webp$/); assert.match(uploads[1].body.path,/^card_images\/P-134_.*_en\.webp$/);
-  uploads.forEach(r => assert.equal(r.body.data,jp.data)); assert.equal(h.ctx.saves,1); assert.equal(h.ctx.cards[0].slot,12);
-  assert.equal(h.ctx.cards[0].image,uploads[0].body.path+'?v=saved'); assert.equal(h.ctx.cards[0].enImage,uploads[1].body.path+'?v=saved');
-  h.ctx.edDlg.close(); h.created.forEach(url => assert.ok(h.revoked.includes(url)));
-});
 test('manual card upload preserves WebP and mixed English PNG extensions', async () => {
   const h = harness(); h.ctx.cardEditor(null, {initialFiles:{jp:file('jp.webp'),en:file('en.png','image/png')}}); fillCard(h); await h.action();
   assert.match(h.requests[0].body.path,/_jp\.webp$/); assert.match(h.requests[1].body.path,/_en\.png$/); assert.equal(h.ctx.saves,1);
@@ -83,13 +69,13 @@ test('new AA and Manga version uploads retain both WebP images and preview clean
   }
 });
 test('unsupported image types remain blocked before recognition or manual uploads', async () => {
-  const h = harness(); h.ctx.recognitionEditor(); const input=imageFields(h)[0]; input.files=[file('vector.svg','image/svg+xml')];input.onchange();await h.button('Analyze images').onclick();assert.equal(h.requests.length,0);
+  const h = harness();
   h.ctx.cardEditor(null,{initialFiles:{jp:file('vector.svg','image/svg+xml')}});fillCard(h);await assert.rejects(h.action(),/Choose PNG/);assert.equal(h.requests.length,0);assert.equal(h.ctx.saves,0);
 });
 
 test('still-image guidance is visible and server rejection reaches the form unchanged', async () => {
   const message='Animated WebP is not supported';
-  const h=harness(undefined,message);h.ctx.recognitionEditor();assert.match(h.root().textContent,/Animated WebP is not supported/);
+  const h=harness(undefined,message);
   h.ctx.cardEditor(null,{initialFiles:{jp:file('animated.webp')}});fillCard(h);assert.match(h.root().textContent,/Animated WebP is not supported/);await assert.rejects(h.action(),error=>error.message===message);assert.equal(h.ctx.saves,0);
   const version=harness({num:'P-134',name:'Card',variants:[]});version.ctx.versionEditor(version.ctx.cards[0]);assert.match(version.root().textContent,/Animated WebP is not supported/);
 });

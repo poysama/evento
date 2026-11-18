@@ -46,6 +46,7 @@ h1{font:600 18px/1 var(--disp);letter-spacing:.06em;text-transform:uppercase;mar
 @keyframes fp{from{opacity:.2;transform:translateX(-18px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.grid.flip-n,.grid.flip-p{animation:none}}
 
+.move-pocket{position:absolute;left:4px;bottom:2.5em;z-index:2;touch-action:none;cursor:grab;border-radius:6px;padding:5px 8px}.card.drop-target{outline:3px solid var(--own)}
 .card{position:relative;min-width:0;display:flex;flex-direction:column;gap:4px}
 .art{all:unset;box-sizing:border-box;position:relative;display:block;aspect-ratio:var(--card-aspect);border:2px solid var(--line);border-radius:7px;overflow:hidden;cursor:pointer;background:var(--line);-webkit-tap-highlight-color:transparent}
 .art:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
@@ -380,6 +381,10 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 
 body.booting [hidden]{display:none!important}.booting .app{grid-template-columns:minmax(230px,300px) minmax(0,840px)}.booting .stage{display:block;width:100%;align-self:stretch;min-width:0}.workflow-loading-nav{margin:0 0 12px}.workflow-loading-nav .btn:disabled{cursor:wait;opacity:.65}
 body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-only #pkbtn,body.view-only #minebtn,body.view-only #pricebtn,body.view-only #sumbtn,body.view-only #donebtn,body.view-only #ordbtn,body.view-only #altbtn,body.view-only #pkban{display:none!important}
+.batch-import{width:min(94vw,54rem);height:min(92dvh,52rem);overflow:hidden;color:var(--ink,#eff2f7);background:var(--bg,#17191e)}
+.batch-import[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:.4rem}.batch-scroll{overflow:auto;overscroll-behavior:contain}.batch-import header{max-height:35dvh;overflow:auto}.batch-import header p,.batch-import header h2,.batch-import footer p{margin:.3rem 0}.batch-import footer{max-height:22dvh;overflow:auto}.batch-import footer .btn{margin-right:.45rem}
+.batch-import fieldset{min-width:0;margin:.5rem 0;padding:.6rem}.batch-import label{display:inline-grid;margin:.3rem}
+.batch-import img{width:95px;aspect-ratio:var(--card-aspect);object-fit:contain;vertical-align:middle}
 </style>
 </head>
 <body class="view-only booting">
@@ -446,6 +451,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 <dialog id="setdlg" aria-label="Manage sets"></dialog>
 
 <script src="/workflow.js"></script>
+<script src="/batch.js"></script>
+<script src="/batch-ui.js"></script>
 <script src="/save.js"></script>
 <script>
 (function () {
@@ -634,6 +641,109 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   function foilText(c) { return tagged(c.num, 'foil') ? '★ Foil ✓' : ''; }
 
   /* ---------- rendering ---------- */
+  var movingPocket = null, moveChooser = null, arranging = false;
+  function cancelPocketMove() {
+    if (movingPocket) {
+      if (movingPocket.highlight) movingPocket.highlight.classList.remove('drop-target');
+      movingPocket = null;
+    }
+    if (moveChooser) moveChooser.close();
+  }
+  function moveContext(card) {
+    assertCatalogReady();
+    if (!canEdit || !editMode || grid.hidden || arranging || bySlot[card.slot] !== card) throw Error('Reopen the binder page before moving this card.');
+    return {num:card.num, fromSlot:card.slot, binder:currentBinder, page:page, generation:pageGen, etag:catalogStore.etag};
+  }
+  function checkMoveContext(context) {
+    assertCatalogReady();
+    if (!canEdit || !editMode || grid.hidden || pageGen !== context.generation || page !== context.page ||
+        currentBinder !== context.binder || catalogStore.etag !== context.etag ||
+        bySlot[context.fromSlot]?.num !== context.num) throw Error('The binder page changed. Choose the move again.');
+  }
+  async function movePocket(context, toSlot) {
+    if (toSlot === context.fromSlot || arranging) return;
+    arranging = true;
+    try {
+      checkMoveContext(context);
+      var snapshot = await fetchCatalogSnapshot();
+      checkMoveContext(context);
+      if (snapshot.etag !== context.etag) throw Error('The catalog changed. Reload before moving cards.');
+      var candidate = EventoBatch.swapPageSlots(snapshot.catalog, Object.assign({}, context, {toSlot:toSlot}));
+      var target = bySlot[toSlot];
+      var action = target ? 'Swap ' + context.num + ' with ' + target.num : 'Move ' + context.num;
+      if (!confirmEdit(action, 'pocket ' + context.fromSlot + ' → ' + toSlot)) return;
+      checkMoveContext(context);
+      await commitCatalogCandidate(candidate, snapshot);
+    } catch (error) { setStatus(error.message,true); }
+    finally { arranging = false; }
+  }
+  function choosePocket(context) {
+    var dialog = el('dialog'), label = el('label','','Destination for ' + context.num), select = el('select');
+    var move = el('button','btn','Move or swap'), cancel = el('button','btn','Cancel');
+    for (var i = 1; i <= PER; i++) {
+      var slot = (context.page - 1) * PER + i;
+      if (slot === context.fromSlot) continue;
+      var opt = el('option','','Pocket ' + slot + ' · ' + (bySlot[slot]?.num || 'empty'));
+      opt.value = slot; select.appendChild(opt);
+    }
+    dialog.setAttribute('aria-label','Move ' + context.num);
+    label.appendChild(select); dialog.append(label,move,cancel);
+    cancel.onclick = function () { dialog.close(); };
+    move.onclick = function () { dialog.close(); movePocket(context, Number(select.value)); };
+    dialog.addEventListener('close',function () { if (moveChooser === dialog) moveChooser = null; dialog.remove(); });
+    dialog.addEventListener('keydown',function (event) { event.stopPropagation(); });
+    document.body.appendChild(dialog); moveChooser = dialog; dialog.showModal();
+  }
+  function pocketHandle(card) {
+    var button = el('button','move-pocket','Move'), suppressClick = false;
+    button.type = 'button'; button.setAttribute('aria-label','Move ' + card.num);
+    function context() {
+      try { return moveContext(card); } catch (error) { setStatus(error.message,true); }
+    }
+    function targetAt(event) {
+      var tile = document.elementFromPoint(event.clientX,event.clientY)?.closest('.card[data-slot]');
+      return tile && grid.contains(tile) ? tile : null;
+    }
+    button.addEventListener('pointerdown',function (event) {
+      if (event.button !== 0 || !event.isPrimary || movingPocket) return;
+      var start = context(); if (!start) return;
+      suppressClick = false;
+      movingPocket = {context:start,id:event.pointerId,x:event.clientX,y:event.clientY,button:button};
+      button.setPointerCapture(event.pointerId);
+    });
+    button.addEventListener('pointermove',function (event) {
+      var move = movingPocket;
+      if (!move || event.pointerId !== move.id) return;
+      if (Math.hypot(event.clientX-move.x,event.clientY-move.y) < 5 && !move.dragged) return;
+      move.dragged = suppressClick = true;
+      if (move.highlight) move.highlight.classList.remove('drop-target');
+      move.highlight = targetAt(event);
+      if (move.highlight) move.highlight.classList.add('drop-target');
+    });
+    button.addEventListener('pointerup',function (event) {
+      var move = movingPocket;
+      if (!move || move.id !== event.pointerId) return;
+      var tile = targetAt(event);
+      suppressClick = !!move.dragged;
+      cancelPocketMove();
+      if (move.dragged && tile) movePocket(move.context, Number(tile.dataset.slot));
+    });
+    button.addEventListener('lostpointercapture',function () { if (movingPocket) { suppressClick = true; cancelPocketMove(); } });
+    button.cancelDrag = function () { suppressClick = true; cancelPocketMove(); };
+    button.addEventListener('pointercancel',button.cancelDrag);
+    ['touchstart','touchend'].forEach(function (type) {
+      button.addEventListener(type,function (event) { event.stopPropagation(); },{passive:true});
+    });
+    button.addEventListener('click',function (event) {
+      event.stopPropagation();
+      if (suppressClick && event.detail) { suppressClick = false; return; }
+      var start = context(); if (start) choosePocket(start);
+    });
+    return button;
+  }
+  document.addEventListener('keydown',function (event) {
+    if (event.key === 'Escape' && movingPocket) movingPocket.button.cancelDrag();
+  });
   function tile(c, i) {
     var pos = 'R' + (Math.floor(i / 4) + 1) + 'C' + (i % 4 + 1);
     var jpOwned = has(c.num, 'jp'), d = complete(c.num), p = phList(c.num).length > 0, o = ordered(c.num);
@@ -652,15 +762,16 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     var h = el('span', 'hov'); h.appendChild(el('b', '', c.name)); h.appendChild(el('span', '', c.num + ' · ' + c.set + ' · ' + c.rar)); art.appendChild(h);
     art.addEventListener('click', function () {
       if (editMode) { openCardEditor(c.slot); return; }
-      openInfo(c.num);
+      openInfo(c.num, undefined, {binder:currentBinder});
     });
     var info = el('button', 'i', 'i'); info.type = 'button'; info.setAttribute('aria-label', 'Card info: ' + c.name);
-    info.addEventListener('click', function (e) { e.stopPropagation(); openInfo(c.num); });
+    info.addEventListener('click', function (e) { e.stopPropagation(); openInfo(c.num, undefined, {binder:currentBinder}); });
     var cap = el('div', 'cap');
     cap.appendChild(el('span', 'cn', c.num));
     cap.appendChild(el('span', 'cs ' + (d ? 'done' : o ? 'ord' : p ? 'ph' : ''), jpText(c, false)));
     cap.appendChild(el('span', 'cf' + (tagged(c.num, 'foil') ? ' have' : ''), foilText(c)));
     card.appendChild(art); card.appendChild(info); card.appendChild(cap);
+    if (editMode && canEdit) card.appendChild(pocketHandle(c));
     return card;
   }
   function emptyTile(i, slot) {
@@ -678,11 +789,13 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     return card;
   }
   function render(dir) {
+    cancelPocketMove();
     pageGen++;
     var base = (page - 1) * PER, frag = document.createDocumentFragment(), sets = [];
     for (var i = 0; i < PER; i++) {
       var slot = base + i + 1, c = bySlot[slot];
-      frag.appendChild(c ? tile(c, i) : emptyTile(i, slot));
+      var pocket = c ? tile(c, i) : emptyTile(i, slot);
+      pocket.dataset.slot = slot; frag.appendChild(pocket);
       if (c && sets.indexOf(c.set) < 0) sets.push(c.set);
     }
     grid.replaceChildren(frag);
@@ -931,10 +1044,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     pvEl.textContent = '';
     var c = n && cards.find(function (x) { return x.num === n; });
     if (!c) { pvEl.appendChild(el('div', 'hint', 'Hover a card to preview it. Open artwork for Japanese base and print ownership controls.')); return; }
-    var i = cards.indexOf(c), j = i % PER;
+    var j = (c.slot - 1) % PER;
     var img = el('img'); img.alt = c.name; artImg(img, c.num, null, artMode === 'jp' ? shownVer(c.num) : ''); pvEl.appendChild(img);
     pvEl.appendChild(el('h3', '', c.name));
-    pvEl.appendChild(el('div', 'meta', c.num + ' · ' + c.set + ' · ' + c.rar + ' · R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1)));
+    pvEl.appendChild(el('div', 'meta', c.num + ' · ' + c.set + ' · ' + c.rar + (c.slot == null ? ' · Unplaced' : ' · R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1))));
     pvEl.appendChild(el('div', 'note' + (complete(c.num) ? ' done' : ordered(c.num) ? ' ord' : ''), jpText(c, true) + '.' + (ordered(c.num) && noteOf(c.num) ? ' ' + noteOf(c.num) : '')));
     if (tagged(c.num, 'foil')) pvEl.appendChild(el('div', 'small', '★ Foil in hand'));
   }
@@ -951,7 +1064,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     m.forEach(function (i) {
       var c = cards[i], li = el('li'), b = el('button'); b.type = 'button';
       b.appendChild(el('span', '', c.name)); b.appendChild(el('small', '', c.num + ' · '+((binders.find(function(b){return b.id===(c.binder||'main')})||{}).name||'Main')+(c.slot==null?' · Unplaced':' · p.'+pageOf(c.slot))));
-      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; setBinder(c.binder||'main'); if(c.slot!=null){go(pageOf(c.slot), 0); spotlight(c.num);}openInfo(c.num); });
+      b.addEventListener('click', function () { hits.hidden = true; q.value = ''; setBinder(c.binder||'main'); if(c.slot!=null){go(pageOf(c.slot), 0); spotlight(c.num);}openInfo(c.num, undefined, c.slot!=null && !grid.hidden ? {binder:currentBinder} : undefined); });
       li.appendChild(b); hits.appendChild(li);
     });
     hits.hidden = false;
@@ -1104,12 +1217,14 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       resetViewerControls();
       vw.name.textContent = c.name;
       vw.meta.textContent = n + ' · ' + c.set + ' · ' + c.rar;
-      vw.meta2.textContent = 'Card ' + (vidx + 1) + ' / ' + cards.length + (c.slot==null?' · Unplaced':' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1));
+      var order = viewerIndices(), position = order.indexOf(vidx);
+      var ordinal = viewerBinder == null ? vidx + 1 : position + 1, total = viewerBinder == null ? cards.length : order.length;
+      vw.meta2.textContent = 'Card ' + ordinal + ' / ' + total + (c.slot==null?' · Unplaced':' · p' + pageOf(c.slot) + ' R' + (Math.floor(j / 4) + 1) + 'C' + (j % 4 + 1));
       vwAlt = defaultViewerVersion(c,requestedVersion);
       vw.wrap.className = 'vi' + (dir ? (dir > 0 ? ' sl-n' : ' sl-p') : '');
       vwShowArt(c); vwVariants(c);
-      vw.prev.disabled = !cards.slice(0,vidx).some(function(x){return (x.binder||'main')===currentBinder}); vw.next.disabled = !cards.slice(vidx+1).some(function(x){return (x.binder||'main')===currentBinder});
-      [vidx - 1, vidx + 1, vidx + 2].forEach(function (k) { if (cards[k]) preloadArt(cards[k].num, vwMode); });
+      vw.prev.disabled = position <= 0; vw.next.disabled = position < 0 || position >= order.length-1;
+      [position-1,position+1,position+2].forEach(function (p) { if (order[p] != null) preloadArt(cards[order[p]].num,vwMode); });
     }
     vw.editVersion.hidden=!canEdit||!vwAlt;
     var jpOwned = has(n, 'jp'), done = complete(n);
@@ -1145,11 +1260,18 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     }
     if(!canEdit){[vw.jp,vw.ord,vw.onote,vw.row,vw.ssb,vw.altr,vw.asb].forEach(function(e){e.hidden=true;});vw.art.textContent='View only. '+(isAlt?'Showing the '+(vwMode==='en'?'English':'Japanese')+' version. ':'')+'Swipe or use ‹ › for the next card.';if(isAlt)vw.altt.textContent=verLabel(c,vwAlt)+': '+({have:'in hand',ordered:'on order',want:'wanted'}[versionDisplayState(c,vwAlt)]||'not marked')+'.';}
   }
-  function vstep(d) {
-    var k=vidx+d; while(k>=0 && k<cards.length && (cards[k].binder||'main')!==currentBinder)k+=d; if(k<0||k>=cards.length)return;
-    vidx = k; vwUpdate(true, d);
+  var viewerBinder = null;
+  function viewerIndices() {
+    if (viewerBinder != null) return EventoBatch.binderIndices(cards,viewerBinder);
+    return cards.map(function (_,index) { return index; }).filter(function (index) { return (cards[index].binder || 'main') === currentBinder; });
   }
-  function openInfo(n, alt) {          // alt (optional): open straight on that alt-art / Manga version
+  function vstep(d) {
+    var order = viewerIndices(), index = order.indexOf(vidx);
+    if (index < 0 || order[index+d] == null) return;
+    vidx = order[index+d]; vwUpdate(true,d);
+  }
+  function openInfo(n, alt, context) {
+    viewerBinder = context?.binder;
     var target=byNum[n];if(target&&(target.binder||'main')!==currentBinder)setBinder(target.binder||'main');
     vidx = Math.max(0, cards.findIndex(function (c) { return c.num === n; }));
     if (!vw) vwBuild();
@@ -1837,20 +1959,49 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   }
   function listOf(c, k) { return ((c && c[k]) || []).join(','); }
   function mapOf(c, k) { var m = (c && c[k]) || {}; return Object.keys(m).map(function (x) { return x + '=' + m[x]; }).join(','); }
-  function deriveSid(set) {
-    if (String(set).indexOf('P-') === 0) return 550901;
-    var m = /^([A-Z]{2,3})-(\d{2})$/.exec(set);
-    if (m) { var b = { ST: 550000, OP: 550100, EB: 550200, PRB: 550300 }[m[1]]; if (b) return b + (+m[2]); }
-    return null;
-  }
+  function deriveSid(set) { return EventoBatch.deriveSid(set); }
 
   function rebuild() {
     bySlot = {}; byNum = {}; firstPage = {};
     cards = cards.map(Workflow.card);
-    var ss=$('setsel'); ss.replaceChildren();
-    cards.forEach(function(c){ byNum[c.num]=c; if((c.binder||'main')===currentBinder && c.slot!=null){bySlot[c.slot]=c;if(!firstPage[c.set]){firstPage[c.set]=pageOf(c.slot);var o=el('option','',c.set+' · p.'+firstPage[c.set]);o.value=firstPage[c.set];ss.appendChild(o);}} });
+    var ss=$('setsel'); ss.replaceChildren(ss.firstElementChild);
+    cards.forEach(function(c){ byNum[c.num]=c; });
+    EventoBatch.binderIndices(cards,currentBinder).forEach(function(index){
+      var c=cards[index]; bySlot[c.slot]=c;
+      if(firstPage[c.set]) return;
+      firstPage[c.set]=pageOf(c.slot);
+      var opt=el('option','',c.set+' · p.'+firstPage[c.set]); opt.value=firstPage[c.set]; ss.appendChild(opt);
+    });
+    ss.value='';
     if(typeof PROD!=='undefined') PROD=products;
     render(0);
+  }
+  function assertCatalogReady() {
+    if(!canEdit)throw Error("Unlock editing before saving changes.");
+    if(catalogStore.pending || catalogStore.running || catalogStore.conflict || catalogStore.recovery())
+      throw Error("Resolve pending catalog changes before continuing.");
+  }
+  async function fetchCatalogSnapshot() {
+    assertCatalogReady();
+    const response=await fetch("/api/catalog",{cache:"no-store"});
+    if(!response.ok)throw Error("Could not refresh the catalog");
+    const etag=response.headers.get("ETag"), value=await response.json();
+    if(!etag || etag.startsWith('"public-') || value?.schema!==2 || !Array.isArray(value.cards)
+      || !Array.isArray(value.binders) || !Array.isArray(value.drafts) || !value.share || typeof value.share!=="object" || Array.isArray(value.share)
+      || !Array.isArray(value.products?.products) || !value.products.sources || typeof value.products.sources!=="object" || Array.isArray(value.products.sources))
+      throw Error("Private catalog revision unavailable. Unlock editing and reload.");
+    return {catalog:value,etag};
+  }
+  async function commitCatalogCandidate(candidate,snapshot) {
+    assertCatalogReady();
+    catalogStore.etag=snapshot.etag;
+    try { await catalogStore.save(candidate); }
+    catch(error){setStatus(error.message,true);recoverPending();throw error;}
+    adoptCatalogCandidate(candidate);
+  }
+  function adoptCatalogCandidate(candidate) {
+    catalog=candidate;cards=catalog.cards;products=catalog.products;share=catalog.share;binders=catalog.binders;
+    renderBinders();rebuild();workflowRedraw();setStatus("Catalog saved ✓");
   }
   function saveCatalog() {
     if (!canEdit) return Promise.reject(Error("Unlock editing before saving changes."));
@@ -2081,9 +2232,17 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         filterControls.forEach(c=>c.value=""); draw();
       }));
     });
-    var retry = button("Retry save", function () {
-      Promise.all([collectionStore.save(), catalogStore.save()]).then(function () { setStatus("saved ✓"); })
-        .catch(function (e) { setStatus(e.message, true); recoverPending(); });
+    var retry = button("Retry save", async function () {
+      var pendingCatalog=catalogStore.pending;
+      const results=await Promise.allSettled([collectionStore.save(),catalogStore.save().then(function(){
+        if(pendingCatalog){
+          adoptCatalogCandidate(pendingCatalog);
+          var box=$("recovery-catalog");if(box)box.remove();
+        }
+      })]);
+      const failure=results.find(item=>item.status==="rejected");
+      if(failure){setStatus(failure.reason.message,true);recoverPending();}
+      else setStatus("saved ✓");
     });
     retry.id = "workflow-retry"; nav.appendChild(retry);
     var loadingNav=$("workflow-loading-nav");if(loadingNav)loadingNav.replaceWith(nav);else document.querySelector(".top").prepend(nav);
@@ -2340,87 +2499,35 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       fetch("/api/recognition-settings",{cache:"no-store"}).then(responseData).then(data=>{if(!closed&&settingsRevision===0)showSettings(data);}).catch(e=>{if(!closed&&settingsRevision===0)error.textContent=e.message;});
     }
     function recognitionEditor(context) {
-      context=context || {};
-      var root=modal("Add from image"), files=control(root,"Card images (one or two PNG/JPEG/WebP files)","file");
-      files.multiple=true;files.accept="image/png,image/jpeg,image/webp";
-      root.appendChild(el("p","small",recognitionAvailable===false ? "Add your DeepSeek API token in Settings → Card recognition to enable AI prefill. Upload JP/EN images and enter details manually meanwhile." : "Analyze sends the selected card images to DeepSeek for a suggested prefill. Review every field. Nothing is uploaded to your binder or saved until you confirm Save in the card editor."));
-      root.appendChild(el("p","small","PNG, JPEG and still WebP are supported. Animated WebP is not supported."));
-      var previews=el("div","row"),review=el("div"),error=el("p","err"),urls=[],selected=[],results=[];
-      error.setAttribute("role","alert");root.append(previews,review,error);
-      var analyze=button("Analyze images",analyzeImages,true),manual=button("Enter details manually",()=>openManual(),recognitionAvailable===false),cancel=button("Cancel",()=>edDlg.close());
-      analyze.disabled=recognitionAvailable===false;
-      root.append(analyze,manual,cancel);
-      var busy=false,closed=false;
-      function clearUrls(){urls.forEach(u=>URL.revokeObjectURL(u));urls=[];}
-      edDlg.addEventListener("close",()=>{closed=true;clearUrls();},{once:true});
-      function retained(){var out={};selected.forEach(item=>{if(item.language.value==="jp"||item.language.value==="en"){if(out[item.language.value])throw Error("Choose one Japanese and one English image. Two images cannot use the same language.");out[item.language.value]=item.file;}});return out;}
-      function openManual(){try{var initial=retained();if(Object.keys(initial).length!==selected.length)throw Error("Choose the language for each image first.");clearUrls();cardEditor(null,Object.assign({},context,{initialFiles:initial}));}catch(e){error.textContent=e.message;}}
-      files.onchange=function(){
-        clearUrls();results=[];selected=[];previews.replaceChildren();review.replaceChildren();error.textContent="";
-        var choices=Array.from(files.files);
-        if(choices.length<1||choices.length>2){error.textContent="Choose one or two card images.";return;}
-        if(choices.some(f=>!["image/png","image/jpeg","image/webp"].includes(f.type)||f.size>3500000)){error.textContent="Choose PNG, JPEG or WebP files, each no larger than 3.5 MB and 8000 pixels per side.";return;}
-        choices.forEach(f=>{var box=el("div"),frame=el("div","card-preview recognition-preview"),img=el("img"),url=URL.createObjectURL(f);urls.push(url);img.src=url;img.alt=f.name;frame.appendChild(img);box.appendChild(frame);var language=choose(box,"Language · "+f.name,["auto","jp","en"],"auto");selected.push({file:f,language:language});previews.appendChild(box);});
-      };
-      async function analyzeImages(){
-        if(recognitionAvailable===false){error.textContent="Configure DeepSeek in Settings → Card recognition, or enter details manually.";return;}
-        if(busy)return;
-        if(!selected.length){error.textContent="Choose one or two card images first.";return;}
-        busy=true;analyze.disabled=manual.disabled=files.disabled=true;error.textContent="";analyze.textContent="Analyzing…";
-        try{
-          results=[];
-          for(var item of selected){
-            var data=await new Promise((resolve,reject)=>{var reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.onerror=()=>reject(Error("Could not read the image."));reader.readAsDataURL(item.file);});
-            var response=await fetch("/api/recognize",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:data,mime:item.file.type,languageHint:item.language.value})});
-            var payload=await response.json().catch(()=>({}));
-            if(!response.ok)throw Error(payload.error||payload.message||"Image recognition is unavailable. Retry or enter details manually.");
-            if(!payload.fields||typeof payload.fields!=="object")throw Error("No card details recognized. Enter them manually or try a clearer image.");
-            results.push(payload);
-          }
-          if(closed)return;
-          renderReview();
-        }catch(e){if(!closed)error.textContent=e.message;}
-        finally{busy=false;manual.disabled=files.disabled=false;analyze.disabled=recognitionAvailable===false;analyze.textContent="Analyze images";}
-      }
-      function renderReview(){
-        review.replaceChildren();review.appendChild(el("h4","","Review suggested details"));
-        root.insertBefore(review,error);
-        var checks=[];
-        results.forEach((result,index)=>{
-          var f=result.fields,section=el("fieldset");section.appendChild(el("legend","",selected[index].file.name));review.appendChild(section);
-          if(selected[index].language.value==="auto"&&["jp","en"].includes(f.language))selected[index].language.value=f.language;
-          var number=control(section,"Recognized card number","text",f.num||""),name=control(section,"English name","text",selected[index].language.value==="jp"?"":f.name||""),jpName=control(section,"Japanese name","text",f.jpName||(f.language==="jp"?f.name:"")||""),colour=choose(section,"Colour",["","Red","Green","Blue","Purple","Black","Yellow"],f.col||""),rarity=choose(section,"Rarity",[""].concat(RARS),f.rar||"");
-          section.appendChild(el("p","small","Card type: "+(f.cardType||"Unknown")+". Suggested details may be incorrect."));
-          if(result.confidence!=null)section.appendChild(el("p","small","Recognition confidence: "+String(result.confidence)));
-          (result.warnings||[]).forEach(w=>section.appendChild(el("p","small",String(w))));
-          var confirmEvent=control(section,"I confirm this is an Event card","checkbox");confirmEvent.checked=String(f.cardType||"").toLowerCase()==="event";
-          checks.push({number:number,name:name,jpName:jpName,colour:colour,rarity:rarity,event:confirmEvent});
-        });
-        var choice=choose(review,"When this number already exists",["Choose an action","Update existing base images","Add different artwork AA","Add same-art reprint"],"Choose an action");
-        review.appendChild(el("p","small","A reprint or foil uses the same drawing. Different art is AA. Recognition never chooses this for you. Unknown release information stays blank. New cards are Announced and appear in your binder and Collection."));
-        review.appendChild(button("Continue to card editor",()=>{
-          try{
-            var imageFiles=retained();if(Object.keys(imageFiles).length!==selected.length)throw Error("Choose JP or EN for every image.");
-            if(checks.some(c=>!c.event.checked))throw Error("Only Event cards belong in this binder. Confirm the card type before continuing, or enter details manually.");
-            var nums=checks.map(c=>c.number.value.trim().toUpperCase()).filter(Boolean);
-            if(new Set(nums).size>1)throw Error("These images show different card numbers. Correct the numbers before combining them.");
-            var num=nums[0]||"",draftMatches=(catalog.drafts||[]).filter(c=>c.num===num&&num),existing=byNum[num],prefill={};
-            if(!existing&&draftMatches.length>1)throw Error("Several unfinished cards use this number. Open the intended card in Settings → Upcoming cards → Unfinished cards.");
-            if(!existing)existing=draftMatches[0];
-            checks.forEach(c=>{if(c.name.value.trim())prefill.name=c.name.value.trim();if(c.jpName.value.trim())prefill.jpName=c.jpName.value.trim();if(c.colour.value)prefill.col=c.colour.value;if(c.rarity.value)prefill.rar=c.rarity.value;});
-            if(existing){
-              if(choice.value==="Choose an action")throw Error("This card already exists. Choose whether to update its base images or add a print version.");
-              if(choice.value!=="Update existing base images"){
-                if(!byNum[num])throw Error("Save this unfinished card as Announced or Released before adding versions.");
-                clearUrls();versionEditor(existing,null,{initialFiles:imageFiles,kind:choice.value==="Add same-art reprint"?"Same-art reprint or foil":"Different artwork AA",status:"announced"});return;
-              }
-              if(existing.name)prefill.name=existing.name;
-              prefill.jpName=prefill.jpName||existing.jpName||(share[num]||{}).jp||"";
-            }else{prefill.num=num;prefill.status="announced";prefill.set="";}
-            clearUrls();cardEditor(existing||null,Object.assign({},context,{prefill:prefill,initialFiles:imageFiles}));
-          }catch(e){error.textContent=e.message;}
-        },true));
-      }
+      context=Object.assign({binder:currentBinder,slot:1},context);
+      if(edDlg.open)edDlg.close();
+      return BatchImporter.open({
+        guard:assertCatalogReady,
+        snapshot:()=>({catalog:catalog,etag:catalogStore.etag}),
+        fetchSnapshot:fetchCatalogSnapshot, commit:commitCatalogCandidate,
+        id:Workflow.id, alts:Workflow.alternateVersions, rarities:RARS,
+        available:recognitionAvailable!==false, confirm:confirmEdit, manual:()=>cardEditor(null,context),
+        upload:async(file,path)=>{const ref=await uploadImage(file,path);return ref.image||ref.path;},
+        usage:async()=>{
+          const response=await fetch("/api/recognition-usage",{cache:"no-store"}),value=await response.json();
+          if(!response.ok)throw Error(value.error||"Scan allowance unavailable");
+          return value;
+        },
+        recognize:async(entry,signal)=>{
+          const data=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(String(reader.result).split(",")[1]);
+            reader.onerror=()=>reject(Error("Could not read image"));
+            reader.readAsDataURL(entry.file);
+          });
+          const response=await fetch("/api/recognize",{method:"POST",signal,
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({data,mime:entry.file.type,languageHint:entry.fields.language||"auto"})});
+          const payload=await response.json();
+          if(!response.ok)throw Object.assign(Error(payload.error||"Analysis failed"),{status:response.status});
+          return payload;
+        }
+      },context);
     }
     function versionEditor(c, versionId, context) {
       context=context || {};
@@ -2764,9 +2871,6 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     makeArtSeg($('artseg'));
     var ps = $('pagesel'), ss = $('setsel');
     for (var p = 1; p <= N; p++) { var o = el('option', '', 'Page ' + p + ' / ' + N); o.value = p; ps.appendChild(o); }
-    cards.slice().sort(function (a, b) { return a.slot - b.slot; }).forEach(function (c) {
-      if (!firstPage[c.set]) { firstPage[c.set] = pageOf(c.slot); var o = el('option', '', c.set + ' — p.' + firstPage[c.set]); o.value = firstPage[c.set]; ss.appendChild(o); }
-    });
     var m = /p=(\d+)/.exec(location.hash), start = m ? +m[1] : 0;
     if (!start) { try { start = +localStorage.getItem('binderPage') || 1; } catch (e) { start = 1; } }
     page = Math.max(1, Math.min(N, start));

@@ -69,6 +69,14 @@ class ServerTests(unittest.TestCase):
         conn.close()
         return result
 
+    def test_recognition_usage_is_editor_only(self):
+        with patch.object(server.recognition_budget, "usage_local") as read:
+            self.assertEqual(self.request("GET", "/api/recognition-usage", anonymous=True)[0], 401)
+            read.assert_not_called()
+        self.assertEqual(self.request("GET", "/api/recognition-usage")[0], 503)
+        server.recognition_budget.initialize_local(str(Path(server.HERE) / server.recognition_budget.LOCAL_FILE))
+        self.assertEqual(self.request("GET", "/api/recognition-usage")[2]["remaining"], 40)
+
     def test_conditional_collection(self):
         status, etag, value = self.request("GET", "/api/collection")
         self.assertEqual((status, value), (200, {}))

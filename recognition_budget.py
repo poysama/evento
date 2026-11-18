@@ -30,7 +30,7 @@ def initial_ledger():
     return {"schema": 1, "plan": PLAN, "months": {}}
 
 
-def _advance(value, now=None):
+def _usage(value, now=None):
     if (
         not isinstance(value, dict)
         or type(value.get("schema")) is not int
@@ -52,6 +52,16 @@ def _advance(value, now=None):
         (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m")
     )
     attempts = value["months"].get(current, 0)
+    return {
+        "month": current, "used": attempts, "remaining": MAX_ATTEMPTS - attempts,
+        "limit": MAX_ATTEMPTS, "monthlyLimitMilliUsd": MONTHLY_LIMIT_MILLI_USD,
+        "reservationMilliUsd": RESERVATION_MILLI_USD,
+    }
+
+
+def _advance(value, now=None):
+    usage = _usage(value, now)
+    current, attempts = usage["month"], usage["used"]
     if attempts >= MAX_ATTEMPTS:
         raise BudgetError(
             429,
@@ -74,6 +84,22 @@ def _unavailable():
         503,
         "Card recognition is unavailable because its spending guard is not ready. You can still add cards manually.",
     )
+
+
+def usage_s3(client, bucket, now=None):
+    try:
+        stored = client.get_object(Bucket=bucket, Key=S3_KEY)
+        return _usage(_decode(stored["Body"].read()), now)
+    except Exception:
+        raise _unavailable() from None
+
+
+def usage_local(path, now=None):
+    try:
+        with open(path, "rb") as ledger:
+            return _usage(_decode(ledger.read()), now)
+    except Exception:
+        raise _unavailable() from None
 
 
 def reserve_s3(client, bucket, now=None):

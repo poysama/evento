@@ -325,6 +325,14 @@ class Handler(SimpleHTTPRequestHandler):
                     "recognitionAvailable": editor and recognition_available(),
                 },
             )
+        if path == "/api/recognition-usage":
+            if not self._require_editor():
+                return
+            try:
+                return self._json(200, recognition_budget.usage_local(
+                    os.path.join(HERE, recognition_budget.LOCAL_FILE)))
+            except recognition_budget.BudgetError as exc:
+                return self._json(exc.status, {"error": str(exc)})
         if path == "/api/recognition-settings":
             if not self._require_editor():
                 return
@@ -366,7 +374,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def send_head(self):
         path = unquote(urlsplit(self.path).path)
-        static = path in ("/", "/index.html", "/workflow.js", "/save.js")
+        static = path in ("/", "/index.html", "/workflow.js", "/batch.js", "/batch-ui.js", "/save.js")
         image = bool(
             re.fullmatch(r"/card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png|webp)", path)
         )

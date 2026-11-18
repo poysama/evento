@@ -219,6 +219,16 @@ After unlocking editing, **Edit binder** stays visible on the Binder page. An em
 
 The shared editor accepts separate Japanese and English PNG, JPEG and still WebP images for new and existing cards. Current artwork is previewed and replacements upload only after confirming Save. WebP files keep their original bytes; animated WebP is not supported. New cards and versions default to Announced and appear in the binder and Collection. An announced card can have an unknown set or release date; add those details later. Legacy private draft images stay private until the card is published.
 
+### Batch import and arranging pockets
+
+1. Unlock editing and click an empty binder pocket, or choose Add card from Collection or Settings. Select or drop multiple PNG, JPEG or still WebP images.
+2. Choose Analyze to prefill details, or enter them manually. One JP and one EN image with the same card number pair automatically. Check that their artwork matches. Use artwork groups to pair ambiguous files, and classify existing numbers as base replacements, AA, Manga or same-art reprints.
+3. Review the binder, starting pocket and placement preview. New bases sort by card number and fill empty pockets forward across later pages in the same binder. Existing cards stay in place. Existing unplaced bases have an optional placement choice; versions use their base card’s pocket.
+4. Confirm the batch once. Upload retries retain completed uploads. A changed server catalog requires reviewing the refreshed preview before confirmation. Resolve pending saves before starting another import.
+5. Turn on **Edit binder**, then drag an occupied pocket’s move handle onto another pocket on that page, or use the handle’s destination chooser. An occupied destination swaps cards; an empty destination moves the card. Confirm the change. Binder navigation follows the new pocket order.
+
+The import tray displays the remaining recognition allowance. Each image consumes one attempt, including failed or interrupted scans; retries require choosing Analyze again. Importing images does not mark cards as owned.
+
 The Collection, Wishlist and Orders views track individual print versions. Missing Japanese base cards stay on the wishlist even when an alternate print fills their binder slot. Ordered bases and prints are excluded from actionable wants. Collection includes announced cards by default. Wishlist keeps unselected announced releases opt-in; explicitly wanted artwork and ordered prints remain visible regardless of release status. Orders tracks separate print sources independently. Legacy drafts are excluded. Existing cards without a status default to released; “Same as base card” makes a version follow its base card’s status.
 
 Catalog edits use one canonical catalog document and conditional ETag saves. Legacy packaged catalogs remain fallback input; canonical saved data takes precedence. Existing numbers, print IDs, collection marks and physical slots are preserved. New cards remain unplaced until explicitly assigned. Per-print notes and history are private. Select an image in the editor, then Save to commit its catalog reference.
