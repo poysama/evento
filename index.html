@@ -2179,17 +2179,18 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var toolbar = el("div","workflow-toolbar"), common = el("div","workflow-common-filters");
       toolbar.appendChild(searchInput); common.append(kindFilter,setFilter);
       var advanced = el("details","workflow-filters"); advanced.open=filtersOpen;
-      var advancedCount=[statusFilter,colourFilter,sourceFilter].filter(c=>c.value).length + (mode === "Collection" && stateFilter.value ? 1 : 0) + (mode !== "Collection" && upcoming ? 1 : 0);
+      var advancedCount=[statusFilter,colourFilter,sourceFilter].filter(c=>c.value).length + (mode === "Collection" && stateFilter.value ? 1 : 0) + (mode === "Wishlist" && upcoming ? 1 : 0);
       advanced.appendChild(el("summary","","More filters" + (advancedCount ? " ("+advancedCount+")" : "")));
       advanced.ontoggle=function(){filtersOpen=this.open;};
       var advancedBody=el("div","workflow-filter-fields"); advancedBody.append(statusFilter,colourFilter,sourceFilter);
       if(mode === "Collection") advancedBody.appendChild(stateFilter);
       var up=el("input"); up.type="checkbox"; up.checked=upcoming;
       up.onchange=function(){upcoming=this.checked;listPage=0;selected.clear();draw();};
-      var upl=el("label","workflow-check"); upl.append(up,document.createTextNode(mode === "Wishlist" ? "Include all upcoming cards" : "Include upcoming")); if(mode !== "Collection")advancedBody.appendChild(upl);
+      var upl=el("label","workflow-check"); upl.append(up,document.createTextNode(mode === "Wishlist" ? "Include all upcoming cards" : "Include upcoming")); if(mode === "Wishlist")advancedBody.appendChild(upl);
       if(mode === "Wishlist")advancedBody.appendChild(el("p","small","Upcoming artwork marked Want stays included."));
+      if(mode === "Orders")advancedBody.appendChild(el("p","small","All ordered prints are included, including upcoming cards."));
       advanced.appendChild(advancedBody); common.appendChild(advanced); toolbar.appendChild(common); panel.appendChild(toolbar);
-      var all = mode === "Wishlist" ? Workflow.wishlist(cards, col, upcoming, products.products) : mode === "Orders" ? Workflow.printItems(cards, col, upcoming, products.products) : Workflow.items(cards, col, mode === "Collection" || upcoming, products.products);
+      var all = mode === "Wishlist" ? Workflow.wishlist(cards, col, upcoming, products.products) : mode === "Orders" ? Workflow.orders(cards, col, products.products) : Workflow.items(cards, col, mode === "Collection" || upcoming, products.products);
       var items=all.filter(function(x) {
         var c=x.card,v=x.variant || {},kind=x.version === "std" ? "base" : v.kind;
         var sources=Workflow.printSources(c,x.version).map(v=>v.source || "");
@@ -2204,7 +2205,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       var matchingIds=new Set(items.map(x=>x.id)); selected.forEach(id=>{if(!matchingIds.has(id)) selected.delete(id);});
       var results=el("div","workflow-results"), count=el("p","workflow-count",items.length + " " + (mode === "Orders" ? "print" : "artwork") + (items.length === 1 ? "" : "s"));
       count.setAttribute("role","status"); results.appendChild(count);
-      var active=search || (mode !== "Collection" && upcoming) || filterControls.some(c=>c.value);
+      var active=search || (mode === "Wishlist" && upcoming) || filterControls.some(c=>c.value);
       if(active) results.appendChild(button("Reset filters",function(){search="";searchInput.value="";upcoming=false;filterControls.forEach(c=>c.value="");listPage=0;selected.clear();draw();searchInput.focus();}));
       if(canEdit) results.appendChild(button(selecting ? "Done selecting" : "Select cards",function(){selecting=!selecting;if(!selecting)selected.clear();draw();}));
       if(canEdit && undo) results.appendChild(button("Undo last change",function(){if(!confirmEdit("Undo last collection change"))return;col=Workflow.undo(col,undo);undo=null;scheduleSave();rebuild();draw();}));

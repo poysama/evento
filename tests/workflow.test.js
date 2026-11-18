@@ -482,3 +482,23 @@ test("numbered unknown-release announcement preserves promoted draft identity an
   assert.equal(W.items(staged.cards, {}, false).length, 0);
   assert.equal(W.effectiveState(W.card(announced), {}), "want");
 });
+
+test('Orders retains explicit announced purchases without including untracked upcoming cards', () => {
+  const cards = [
+    {num:'ST22-015',status:'released',variants:[{id:'v_custom',kind:'parallel',status:'announced'}]},
+    {num:'OP15-020',status:'released',variants:[{id:'v_custom',kind:'parallel',status:'announced'}]},
+    {num:'P-134',status:'announced',variants:[]},
+    {num:'P-135',status:'announced',variants:[]},
+  ];
+  const collection = {'ST22-015':{jp:true,alt:{v_custom:'ordered'}},'OP15-020':{alt:{v_custom:'ordered'}},'P-134':{ordered:true}};
+  assert.deepEqual(W.orders(cards,collection).map(x=>x.id),['ST22-015:v_custom','OP15-020:v_custom','P-134:std']);
+  assert.deepEqual(W.wishlist(cards,collection).map(x=>x.id),['OP15-020:std']);
+});
+test('Orders preserves distinct source purchases and excludes drafts and received prints', () => {
+  const cards=[{num:'A',status:'announced',variants:[{id:'p1',kind:'parallel'},{id:'p2',kind:'reprint',sameAs:'p1'},{id:'p3',kind:'reprint',sameAs:'p1'},{id:'p4',kind:'parallel',status:'draft'}]},{num:'B',status:'draft',variants:[{id:'p1',kind:'parallel',status:'released'}]}];
+  const collection={A:{jp:true,ordered:true,alt:{p1:'have',p2:'ordered',p3:'ordered',p4:'ordered'}},B:{ordered:true,alt:{p1:'ordered'}}};
+  assert.deepEqual(W.orders(cards,collection).map(x=>x.id),['A:p2','A:p3']);
+  const received=W.change(collection,[W.orders(cards,collection)[0]],'have').collection;
+  assert.deepEqual(W.orders(cards,received).map(x=>x.id),['A:p3']);
+  assert.equal(W.orders(cards,collection).filter(x=>x.version==='std').length,0);
+});

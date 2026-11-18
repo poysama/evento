@@ -36,12 +36,12 @@ function workspace(canEdit = true, extraCards = [], storedCollection = null) {
   let col = storedCollection || {'T-001':{jp:true},'T-002':{ordered:true}};
   const stores={pending:null};
   let editor;
-  const opened=[];
-  const execute = new Function('el','$','document','Option','cards','col','products','catalog','binders','Workflow','grid','collectionStore','catalogStore','setStatus','recoverPending','scheduleSave','rebuild','artUrls','openInfo','edDlg', 'var canEdit='+JSON.stringify(canEdit)+';var workflowRedraw, workflowVersionEditor, editMode=false;'+setup+'setupWorkflow();return {redraw:()=>workflowRedraw(),collection:()=>col};');
-  const state=execute((t,c,s)=>new Node(t,c,s),id=>ids[id] || null,document,function(t,v){const o=new Node('option','',t);o.value=v;return o;},cards,col,{products:[]},{drafts:[]},[],Workflow,new Node('div'),stores,stores,()=>{},()=>{},()=>{},()=>{},()=>['x'],(num,version)=>opened.push({num,version}),new Node('dialog'));
+  const opened=[], snapshots=[];
+  const execute = new Function('el','$','document','Option','cards','col','products','catalog','binders','Workflow','grid','collectionStore','catalogStore','setStatus','recoverPending','scheduleSave','rebuild','artUrls','openInfo','edDlg', 'var canEdit='+JSON.stringify(canEdit)+';var workflowRedraw, workflowVersionEditor, editMode=false;var confirmEdit=()=>true,editTarget=()=>"";'+setup+'setupWorkflow();return {redraw:()=>workflowRedraw(),collection:()=>col};');
+  const state=execute((t,c,s)=>new Node(t,c,s),id=>ids[id] || null,document,function(t,v){const o=new Node('option','',t);o.value=v;return o;},cards,col,{products:[]},{drafts:[]},[],Workflow,new Node('div'),stores,stores,()=>{},()=>{},()=>{snapshots.push(JSON.stringify(state.collection()));},()=>{},()=>['x'],(num,version)=>opened.push({num,version}),new Node('dialog'));
   const panel=stage.children[0], nav=top.children[0];
   const find=(text,parent=root)=>parent.querySelectorAll('button').find(b=>b.textContent===text);
-  return {root,panel,nav,ids,state,find,opened,accessButton,accessBar,active:()=>active, input:label=>panel.querySelectorAll('input').find(i=>i.getAttribute('aria-label')===label), select:label=>panel.querySelectorAll('select').find(i=>i.getAttribute('aria-label')===label)};
+  return {root,panel,nav,ids,state,find,opened,snapshots,accessButton,accessBar,active:()=>active, input:label=>panel.querySelectorAll('input').find(i=>i.getAttribute('aria-label')===label), select:label=>panel.querySelectorAll('select').find(i=>i.getAttribute('aria-label')===label)};
 }
 
 test('Binder is the default route and preserves hash handling outside workspace',()=>{
@@ -136,4 +136,40 @@ test('artwork rows open the exact requested base or alternate version',()=>{
       alternate.onclick();assert.deepEqual(w.opened.at(-1),{num:'T-001',version:'p1'});
     }
   }
+});
+
+test('modal Ordered saves announced AA and Orders retains it after refresh and manual filtering',()=>{
+  const announced={num:'ST22-015',name:'Chosen incoming AA',set:'ST-22',status:'released',variants:[{id:'manual',kind:'parallel',status:'announced'}]};
+  const implicit={num:'P-134',name:'Unselected upcoming base',set:'P-2026',status:'announced'};
+  const w=workspace(true,[announced,implicit],{'ST22-015':{jp:true}});
+  let saved,saves=0;
+  const source=html.slice(html.indexOf('  function setAlt('),html.indexOf('  function setShow('));
+  const setAlt=new Function('Workflow','col','byNum','confirmEdit','render','scheduleSave',"var canEdit=true,openNum=null,editTarget=()=>'';"+source+'return setAlt;')(Workflow,w.state.collection(),{'ST22-015':Workflow.card(announced)},()=>true,()=>{},()=>{saves++;saved=JSON.stringify(w.state.collection());});
+  setAlt('ST22-015','manual','ordered');
+  assert.equal(saves,1);assert.equal(JSON.parse(saved)['ST22-015'].alt.manual,'ordered');
+  w.find('Orders').onclick();assert.ok(w.find('Chosen incoming AA'));assert.equal(w.find('Unselected upcoming base'),undefined);
+  w.find('Wishlist').onclick();assert.equal(w.find('Chosen incoming AA'),undefined);
+  const refreshed=workspace(true,[announced,implicit],JSON.parse(saved));refreshed.find('Orders').onclick();assert.ok(refreshed.find('Chosen incoming AA'));
+  const status=refreshed.select('release states');assert.ok(status);status.value='released';status.onchange();assert.equal(refreshed.find('Chosen incoming AA'),undefined);
+  refreshed.find('Reset filters').onclick();assert.ok(refreshed.find('Chosen incoming AA'));
+  const note=refreshed.input('Order note for ST22-015 Alt art');assert.ok(note);
+});
+
+
+test('announced AA modal Want to Ordered to Received remains visible in the correct view across reloads',()=>{
+  const announced={num:'OP15-020',name:'Incoming lifecycle AA',set:'OP-15',status:'released',variants:[{id:'manual',kind:'parallel',status:'announced'}]};
+  const w=workspace(true,[announced],{'OP15-020':{jp:true}});
+  const source=html.slice(html.indexOf('  function setAlt('),html.indexOf('  function setShow('));
+  let saved;
+  const setAlt=new Function('Workflow','col','byNum','confirmEdit','render','scheduleSave',"var canEdit=true,openNum=null,editTarget=()=>'';"+source+'return setAlt;')(Workflow,w.state.collection(),{'OP15-020':Workflow.card(announced)},()=>true,()=>{},()=>{saved=JSON.stringify(w.state.collection());});
+  setAlt('OP15-020','manual','want');w.find('Wishlist').onclick();assert.ok(w.find('Incoming lifecycle AA'));
+  w.find('Orders').onclick();assert.equal(w.find('Incoming lifecycle AA'),undefined);
+  setAlt('OP15-020','manual','ordered');w.state.redraw();assert.ok(w.find('Incoming lifecycle AA'));
+  const refreshed=workspace(true,[announced],JSON.parse(saved));refreshed.find('Orders').onclick();assert.ok(refreshed.find('Incoming lifecycle AA'));
+  assert.equal(refreshed.panel.querySelectorAll('input').filter(x=>x.type==='checkbox').length,0);
+  assert.match(refreshed.panel.textContent,/All ordered prints are included, including upcoming cards/);
+  refreshed.find('Received').onclick();assert.equal(refreshed.find('Incoming lifecycle AA'),undefined);
+  assert.equal(refreshed.state.collection()['OP15-020'].alt.manual,'have');
+  assert.equal(refreshed.snapshots.length,1);
+  const received=workspace(true,[announced],JSON.parse(refreshed.snapshots[0]));received.find('Orders').onclick();assert.equal(received.find('Incoming lifecycle AA'),undefined);received.find('Wishlist').onclick();assert.equal(received.find('Incoming lifecycle AA'),undefined);received.find('Collection').onclick();assert.ok(received.find('Incoming lifecycle AA'));
 });

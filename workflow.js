@@ -158,6 +158,11 @@
         .some(function (source) { return (entry.alt || {})[source.id] === "want"; });
     });
   }
+  function orders(cards, collection, products) {
+    return items(cards, collection, true, products, true).filter(function (item) {
+      return item.state === "ordered";
+    });
+  }
   function upsert(rows, record, key) {
     var found = false;
     var result = rows.map(function (row) {
@@ -335,6 +340,7 @@
     printSources: printSources,
     effectiveState: effectiveState,
     printItems: (cards, col, up, products) => items(cards, col, up, products, true),
+    orders: orders,
     projection: projection,
     shoppingSummary: function (projection) {
       var complete = projection.baseOwned === projection.total;
