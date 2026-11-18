@@ -6,7 +6,7 @@ const Workflow = require('../workflow.js');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const setup = html.slice(html.indexOf('  function setupWorkflow() {'), html.indexOf('  /* ---------- boot ---------- */'));
 
-function workspace(canEdit = true, extraCards = [], storedCollection = null) {
+function workspace(canEdit = true, extraCards = [], storedCollection = null, loadingShell = false) {
   let active = null;
   class Node {
     constructor(tag, cls = '', text = '') { this.tag = tag; this.className = cls; this.text = text; this.children = []; this.attrs = {}; this.hidden = false; this.value = ''; this.classList = {add:()=>{},toggle:()=>{}}; }
@@ -17,6 +17,7 @@ function workspace(canEdit = true, extraCards = [], storedCollection = null) {
     append(...nodes) { nodes.forEach(n=>this.appendChild(n)); }
     prepend(n) { this.appendChild(n); this.children = [n,...this.children.filter(c=>c !== n)]; }
     replaceChildren(...nodes) { this.children.forEach(n=>n.parentElement=null); this.children=[]; this.append(...nodes); }
+    replaceWith(node) { const parent=this.parentElement;const index=parent.children.indexOf(this);parent.children[index]=node;node.parentElement=parent;this.parentElement=null; }
     setAttribute(k,v) { this.attrs[k]=v; }
     getAttribute(k) { return this.attrs[k]; }
     querySelectorAll(tag) { return this.children.flatMap(n=>[...(n.tag===tag?[n]:[]),...n.querySelectorAll(tag)]); }
@@ -30,6 +31,8 @@ function workspace(canEdit = true, extraCards = [], storedCollection = null) {
   const ids = {};
   for(const id of ['status','editbtn','setsbtn','shbtn','pricebtn','sumbtn','donebtn','ordbtn','altbtn','pkbtn','minebtn']) { ids[id]=new Node(id==='status'?'span':'button','',id); headerRow.appendChild(ids[id]); }
   ids.pkbtn.hidden = true; ids.minebtn.hidden = true;
+  const loadingNav=loadingShell?new Node("nav","workflow-nav"):null;
+  if(loadingNav){ids["workflow-loading-nav"]=loadingNav;top.prepend(loadingNav);for(const id of Object.keys(ids))if(id!=="status")ids[id].hidden=true;loadingNav.hidden=false;}
   const document = {body:root,createTextNode:t=>new Node('text','',t),get activeElement(){return active;},querySelector:s=>({'.top':top,'.stage':stage,'.board':board,'.top>.row':headerRow}[s]),querySelectorAll:()=>[]};
   const cards = [Workflow.card({num:'T-001',name:'First card',set:'OP-01',status:'released',col:'Red',variants:[{id:'p1',kind:'parallel',source:'OP-01'},{id:'p3',kind:'parallel',source:'OP-04'},{id:'p2',kind:'reprint',sameAs:'p1',source:'PRB-02'}]}),Workflow.card({num:'T-002',name:'Second card',set:'OP-02',status:'released',col:'Blue',variants:[]}),Workflow.card({num:'T-003',name:'Wanted card',set:'OP-03',status:'released',variants:[]})];
   cards.push(...extraCards.map(Workflow.card));
@@ -41,7 +44,7 @@ function workspace(canEdit = true, extraCards = [], storedCollection = null) {
   const state=execute((t,c,s)=>new Node(t,c,s),id=>ids[id] || null,document,function(t,v){const o=new Node('option','',t);o.value=v;return o;},cards,col,{products:[]},{drafts:[]},[],Workflow,new Node('div'),stores,stores,()=>{},()=>{},()=>{snapshots.push(JSON.stringify(state.collection()));},()=>{},()=>['x'],(num,version)=>opened.push({num,version}),new Node('dialog'));
   const panel=stage.children[0], nav=top.children[0];
   const find=(text,parent=root)=>parent.querySelectorAll('button').find(b=>b.textContent===text);
-  return {root,panel,nav,ids,state,find,opened,snapshots,accessButton,accessBar,active:()=>active, input:label=>panel.querySelectorAll('input').find(i=>i.getAttribute('aria-label')===label), select:label=>panel.querySelectorAll('select').find(i=>i.getAttribute('aria-label')===label)};
+  return {root,panel,nav,ids,state,find,opened,snapshots,accessButton,accessBar,loadingNav,active:()=>active, input:label=>panel.querySelectorAll('input').find(i=>i.getAttribute('aria-label')===label), select:label=>panel.querySelectorAll('select').find(i=>i.getAttribute('aria-label')===label)};
 }
 
 test('Binder is the default route and preserves hash handling outside workspace',()=>{
@@ -172,4 +175,9 @@ test('announced AA modal Want to Ordered to Received remains visible in the corr
   assert.equal(refreshed.state.collection()['OP15-020'].alt.manual,'have');
   assert.equal(refreshed.snapshots.length,1);
   const received=workspace(true,[announced],JSON.parse(refreshed.snapshots[0]));received.find('Orders').onclick();assert.equal(received.find('Incoming lifecycle AA'),undefined);received.find('Wishlist').onclick();assert.equal(received.find('Incoming lifecycle AA'),undefined);received.find('Collection').onclick();assert.ok(received.find('Incoming lifecycle AA'));
+});
+
+test('real workspace replaces the inert loading navigation once and retains hidden legacy actions',()=>{
+  const w=workspace(true,[],null,true);assert.equal(w.root.querySelectorAll('nav').length,1);assert.equal(w.loadingNav.isConnected,false);assert.ok(w.find('Orders'));assert.equal(w.ids.editbtn.hidden,false);w.find('Settings').onclick();assert.ok(w.find('Sharing options'));assert.ok(w.find('Artwork tracker'));
+  const p=workspace(false,[],null,true);assert.equal(p.root.querySelectorAll('nav').length,1);assert.equal(p.loadingNav.isConnected,false);assert.equal(p.find('Orders'),undefined);assert.equal(p.find('Settings'),undefined);
 });

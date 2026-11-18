@@ -378,23 +378,25 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 @media(max-width:999px){.workflow-workspace{padding-top:12px}.workflow-workspace .app{display:block;min-height:0}.workflow-workspace .side{display:block;position:static}.workflow-workspace .top{display:flex;gap:14px;max-width:none}.workflow-workspace .top>.row{order:0}.workflow-workspace .workflow-nav{order:1;flex-direction:row;flex-wrap:nowrap;overflow:auto;gap:4px;padding-bottom:8px;margin:0}.workflow-workspace .workflow-nav .btn{width:auto;white-space:nowrap;flex-shrink:0;text-align:center;padding:10px 14px}.workflow-workspace .stage{width:100%}.workflow-workspace .workflow-panel{padding-top:18px}.workflow-workspace .workflow-heading h2{font-size:30px}.workflow-workspace .workflow-heading{margin-bottom:20px;gap:12px}.workflow-workspace .workflow-description{font-size:13px}}
 @media(max-width:560px){.workflow-workspace .workflow-heading{flex-direction:column}.workflow-workspace .workflow-heading-actions{justify-content:flex-start}.workflow-workspace .workflow-toolbar{padding:12px}.workflow-workspace .workflow-common-filters>select{flex:1;min-width:0;max-width:none}.workflow-workspace .workflow-filters{margin-left:0;width:100%}.workflow-filters summary{padding:10px 0}.workflow-workspace .workflow-filter-fields select{max-width:100%;flex:1 1 42%}.workflow-workspace .workflow-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 14px}.workflow-workspace .workflow-ledger .workflow-row{grid-template-columns:64px minmax(0,1fr);padding:14px;gap:12px}.workflow-workspace .workflow-ledger .workflow-card-actions{grid-column:2;display:flex;flex-direction:row;align-items:center;justify-content:space-between}.workflow-workspace .workflow-ledger .workflow-card-name{font-size:15px}.workflow-workspace .workflow-card-info{padding-top:9px}.workflow-workspace .workflow-bulk{gap:7px}.workflow-bulk strong{flex-basis:100%}.settings-records{grid-template-columns:1fr}.workflow-workspace .settings-actions>.btn,.workflow-workspace .settings-actions>.mini{flex:1 1 auto}}
 
+body.booting [hidden]{display:none!important}.booting .app{grid-template-columns:minmax(230px,300px) minmax(0,840px)}.booting .stage{display:block;width:100%;align-self:stretch;min-width:0}.workflow-loading-nav{margin:0 0 12px}.workflow-loading-nav .btn:disabled{cursor:wait;opacity:.65}
 body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-only #pkbtn,body.view-only #minebtn,body.view-only #pricebtn,body.view-only #sumbtn,body.view-only #donebtn,body.view-only #ordbtn,body.view-only #altbtn,body.view-only #pkban{display:none!important}
 </style>
 </head>
-<body class="view-only">
+<body class="view-only booting">
 <div class="warn" id="warn" hidden></div>
 
 <div class="app">
 <aside class="side">
 <div class="ban" id="pkban" hidden><span>Skip the passcode next time: set up a passkey on this device.</span><span><button type="button" id="pkyes">Set up passkey</button> <button type="button" id="pkno">Not now</button></span></div>
 <header class="top">
+  <nav class="workflow-nav workflow-loading-nav" id="workflow-loading-nav" aria-label="Workspace" aria-busy="true"><button type="button" class="btn" aria-pressed="true" disabled>Binder</button><button type="button" class="btn" disabled>Collection</button><button type="button" class="btn" disabled>Wishlist</button><button type="button" class="btn" id="startup-orders" hidden disabled>Orders</button><button type="button" class="btn" id="startup-settings" hidden disabled>Settings</button></nav>
   <div class="row access-controls"><span id="access-state" class="small">View only</span><button type="button" class="mini" id="access-btn">Unlock editing</button></div>
-  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="bmbtn">Binder Mode</button><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn">What to buy</button><button type="button" class="mini" id="donebtn">Completed</button><button type="button" class="mini" id="ordbtn">On order</button><button type="button" class="mini" id="altbtn">Alt art</button><button type="button" class="mini" id="pricebtn">Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn">Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><button type="button" class="mini" id="editbtn" aria-pressed="false">Edit data</button><button type="button" class="mini" id="setsbtn">Sets</button><span id="status">loading…</span></div>
-  <div class="prog">
+  <div class="row"><h1>JP Event Binder</h1><button type="button" class="mini" id="bmbtn" data-startup-control hidden>Binder Mode</button><span class="seg2" id="artseg" hidden></span><button type="button" class="mini" id="sumbtn" hidden>What to buy</button><button type="button" class="mini" id="donebtn" hidden>Completed</button><button type="button" class="mini" id="ordbtn" hidden>On order</button><button type="button" class="mini" id="altbtn" hidden>Alt art</button><button type="button" class="mini" id="pricebtn" hidden>Price</button><a class="mini" id="minebtn" href="/mine" target="_blank" rel="noopener" hidden>My list</a><button type="button" class="mini" id="shbtn" hidden>Share</button><button type="button" class="mini" id="pkbtn" hidden>Passkeys</button><button type="button" class="mini" id="editbtn" hidden aria-pressed="false">Edit data</button><button type="button" class="mini" id="setsbtn" hidden>Sets</button><span id="status">loading…</span></div>
+  <div class="prog" data-startup-control hidden>
     <div class="bar" role="progressbar" aria-label="JP cards complete" aria-valuemin="0" id="pbar"><i id="fill"></i></div>
     <div class="stats" id="stats"></div>
   </div>
-  <div class="row ctl">
+  <div class="row ctl" data-startup-control hidden>
     <select id="bindersel" aria-label="Binder"></select>
     <select id="setsel" aria-label="Jump to set"><option value="">Jump to set…</option></select>
     <select id="sizesel" class="sizesel" aria-label="Card size"><option value="m">Card size: Medium</option><option value="l">Card size: Large</option><option value="fit">Card size: Small (fits screen)</option></select>
@@ -402,19 +404,20 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   </div>
 </header>
 
-  <div class="ph-head"><h2 id="ptitle">Page 1</h2><span class="leaf" id="leaf"></span><span class="chips" id="chips"></span></div>
+  <div class="ph-head" data-startup-control hidden><h2 id="ptitle">Page 1</h2><span class="leaf" id="leaf"></span><span class="chips" id="chips"></span></div>
 
-  <nav class="pg" aria-label="Binder pages"><div>
+  <nav data-startup-control hidden class="pg" aria-label="Binder pages"><div>
     <button type="button" id="prev" aria-label="Previous page">◀ Back</button>
     <select id="pagesel" aria-label="Go to page"></select>
     <button type="button" id="next" aria-label="Next page">Next ▶</button>
   </div></nav>
 
-  <aside class="pv" id="pv" aria-live="polite"></aside>
+  <aside data-startup-control hidden class="pv" id="pv" aria-live="polite"></aside>
 </aside>
 
 <main class="stage">
-  <div class="board">
+  <section class="workflow-panel" id="startup-panel" role="status" aria-live="polite"><h2 id="startup-title">Loading binder</h2><p id="startup-message">Loading your cards and collection…</p><button type="button" class="btn" id="startup-retry" onclick="location.reload()">Reload binder</button><noscript><style>#startup-title,#startup-message,#startup-retry{display:none}</style><p>Enable JavaScript and reload to view your binder.</p></noscript></section>
+  <div class="board" data-startup-control hidden>
     <button type="button" class="fl" id="prev2" aria-label="Previous page">◀</button>
     <div class="grid" id="grid"></div>
     <button type="button" class="fl" id="next2" aria-label="Next page">▶</button>
@@ -2083,7 +2086,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         .catch(function (e) { setStatus(e.message, true); recoverPending(); });
     });
     retry.id = "workflow-retry"; nav.appendChild(retry);
-    document.querySelector(".top").prepend(nav);
+    var loadingNav=$("workflow-loading-nav");if(loadingNav)loadingNav.replaceWith(nav);else document.querySelector(".top").prepend(nav);
     document.querySelector(".stage").prepend(panel);
     $("status").setAttribute("role", "status"); $("status").setAttribute("aria-live", "polite");
     searchInput.oninput = function () {
@@ -2738,6 +2741,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
   }).catch(function(){return {canEdit:false};}).then(function(access){
     canEdit=access.canEdit===true;recognitionAvailable=access.recognitionAvailable!==false;document.body.classList.toggle('view-only',!canEdit);
     $('access-state').textContent=canEdit?'Editing enabled':'View only';$('access-btn').textContent=canEdit?'Lock editing':'Unlock editing';
+    $('startup-orders').hidden=$('startup-settings').hidden=!canEdit;
     return Promise.all([
     catalogStore.load().then(function(c){catalog=c;return c.cards;}),
     collectionStore.load(),
@@ -2767,10 +2771,13 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     if (!start) { try { start = +localStorage.getItem('binderPage') || 1; } catch (e) { start = 1; } }
     page = Math.max(1, Math.min(N, start));
     cards=cards.map(Workflow.card);rebuild();setStatus('loaded'); render(0); pkRefresh(); setupWorkflow(); recoverPending();
+    document.querySelectorAll('[data-startup-control]').forEach(function(control){control.hidden=false;});
+    $('startup-panel').hidden=true;document.body.classList.remove('booting');
   }).catch(function (error) {
     var message=error && error.message || 'Unknown load error';
     setStatus(message, true);
     grid.textContent = errorGuidance(message,location,!!(collectionStore.pending||catalogStore.pending),true);
+    $('startup-title').textContent='Could not load binder';$('startup-message').textContent=grid.textContent;$('startup-message').setAttribute('role','alert');
   });
 })();
 </script>
