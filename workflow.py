@@ -29,7 +29,7 @@ def revision(value):
 def safe_image(value):
     return isinstance(value, str) and bool(
         re.fullmatch(
-            r"(?:card_images|card_images_jp)/[A-Za-z0-9_-]+\.(?:png|jpg)(?:\?v=[a-zA-Z0-9_-]+)?",
+            r"(?:card_images|card_images_jp)/[A-Za-z0-9_-]+\.(?:png|jpg|webp)(?:\?v=[a-zA-Z0-9_-]+)?",
             value,
         )
     )
@@ -456,6 +456,125 @@ def wishlist(catalog, owned, include_upcoming=False, include_parallels=True):
     return out
 
 
+def image_mime(path):
+    extension = path.split("?", 1)[0].rsplit(".", 1)[-1]
+    return {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}[extension]
+
+
+class AnimatedWebPError(ValueError):
+    pass
+
+
+def webp_dimensions(raw):
+    """Validate a still WebP container and its frame headers, without decoding pixels."""
+    if len(raw) < 20 or raw[:4] != b"RIFF" or raw[8:12] != b"WEBP":
+        raise ValueError("bad WebP header")
+    if int.from_bytes(raw[4:8], "little") + 8 != len(raw):
+        raise ValueError("bad WebP size")
+    chunks = []
+    pos = 12
+    while pos < len(raw):
+        if len(raw) - pos < 8:
+            raise ValueError("truncated WebP chunk")
+        kind = raw[pos : pos + 4]
+        size = int.from_bytes(raw[pos + 4 : pos + 8], "little")
+        end = pos + 8 + size
+        if end + (size & 1) > len(raw):
+            raise ValueError("truncated WebP payload")
+        if size & 1 and raw[end] != 0:
+            raise ValueError("bad WebP padding")
+        if kind in (b"ANIM", b"ANMF"):
+            raise AnimatedWebPError(
+                "Animated WebP is not supported. Upload a still image."
+            )
+        chunks.append((kind, raw[pos + 8 : end]))
+        pos = end + (size & 1)
+    images = [(kind, data) for kind, data in chunks if kind in (b"VP8 ", b"VP8L")]
+    if len(images) != 1:
+        raise ValueError("WebP needs one still frame")
+    kind, data = images[0]
+    if kind == b"VP8 ":
+        if len(data) <= 10 or data[3:6] != b"\x9d\x01\x2a":
+            raise ValueError("bad WebP lossy frame")
+        frame = int.from_bytes(data[:3], "little")
+        if frame & 1 or (frame >> 1) & 7 > 3 or not frame & 16:
+            raise ValueError("bad WebP key frame")
+        partition = frame >> 5
+        if not 0 < partition <= len(data) - 10:
+            raise ValueError("bad WebP partition")
+        width = int.from_bytes(data[6:8], "little") & 0x3FFF
+        height = int.from_bytes(data[8:10], "little") & 0x3FFF
+    else:
+        if len(data) <= 5 or data[0] != 0x2F:
+            raise ValueError("bad WebP lossless frame")
+        bits = int.from_bytes(data[1:5], "little")
+        if bits >> 29:
+            raise ValueError("unsupported WebP lossless version")
+        width, height = (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    extensions = [payload for name, payload in chunks if name == b"VP8X"]
+    if extensions:
+        header = extensions[0]
+        if len(extensions) != 1 or chunks[0][0] != b"VP8X" or len(header) != 10:
+            raise ValueError("bad WebP extended header")
+        flags = header[0]
+        if flags & 2:
+            raise AnimatedWebPError(
+                "Animated WebP is not supported. Upload a still image."
+            )
+        if flags & 0xC1 or header[1:4] != b"\0\0\0":
+            raise ValueError("bad WebP reserved bits")
+        canvas = (
+            int.from_bytes(header[4:7], "little") + 1,
+            int.from_bytes(header[7:10], "little") + 1,
+        )
+        if canvas != (width, height):
+            raise ValueError("WebP canvas and frame dimensions differ")
+        for name, flag in ((b"ICCP", 32), (b"EXIF", 8), (b"XMP ", 4)):
+            count = sum(chunk == name for chunk, _ in chunks)
+            if count > 1 or bool(flags & flag) != bool(count):
+                raise ValueError("bad WebP metadata flags")
+        names = [name for name, _ in chunks]
+        if b"ICCP" in names and names.index(b"ICCP") > min(
+            index
+            for index, name in enumerate(names)
+            if name in (b"ALPH", b"VP8 ", b"VP8L")
+        ):
+            raise ValueError("bad WebP color profile order")
+    elif any(name in (b"ALPH", b"ICCP", b"EXIF", b"XMP ") for name, _ in chunks):
+        raise ValueError("WebP features need extended header")
+    alpha = [payload for name, payload in chunks if name == b"ALPH"]
+    if extensions:
+        has_alpha = bool(alpha) or (kind == b"VP8L" and bool(bits & (1 << 28)))
+        if bool(extensions[0][0] & 16) != has_alpha:
+            raise ValueError("bad WebP alpha flag")
+    if alpha:
+        if (
+            len(alpha) != 1
+            or kind != b"VP8 "
+            or not extensions
+            or not extensions[0][0] & 16
+        ):
+            raise ValueError("bad WebP alpha chunk")
+        if (
+            not alpha[0]
+            or alpha[0][0] & 0xC0
+            or alpha[0][0] & 3 > 1
+            or (alpha[0][0] >> 4) & 3 > 1
+        ):
+            raise ValueError("bad WebP alpha header")
+        if alpha[0][0] & 3 and len(alpha[0]) <= 1:
+            raise ValueError("missing WebP alpha bitstream")
+        if not alpha[0][0] & 3 and len(alpha[0]) != 1 + width * height:
+            raise ValueError("bad WebP alpha size")
+        if [name for name, _ in chunks].index(b"ALPH") > [
+            name for name, _ in chunks
+        ].index(b"VP8 "):
+            raise ValueError("bad WebP alpha order")
+    if not 0 < width <= 10000 or not 0 < height <= 10000 or width * height > 25_000_000:
+        raise ValueError("bad dimensions")
+    return width, height
+
+
 def decode_image(rel, data):
     if not safe_image(rel) or "?" in rel or not isinstance(data, str):
         raise ValueError("bad image path")
@@ -463,7 +582,9 @@ def decode_image(rel, data):
     if len(raw) > 7_000_000:
         raise ValueError("image too large")
     try:
-        if rel.endswith(".png"):
+        if rel.endswith(".webp"):
+            webp_dimensions(raw)
+        elif rel.endswith(".png"):
             if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
                 raise ValueError("bad PNG")
             pos = 8

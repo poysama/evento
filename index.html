@@ -1892,11 +1892,12 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 
   async function uploadImage(file, path) {
     if (!canEdit) throw Error("Unlock editing before uploading artwork.");
-    if(!['image/png','image/jpeg'].includes(file.type))throw Error('Choose PNG or JPEG artwork');
+    if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Choose PNG, JPEG or WebP artwork');
     var data=await new Promise(function(resolve,reject){var reader=new FileReader();reader.onload=function(){resolve(String(reader.result).split(',')[1])};reader.onerror=reject;reader.readAsDataURL(file)});
     var response=await fetch('/api/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path,data:data})});
-    if(!response.ok)throw Error('Artwork upload failed ('+response.status+')');
-    return response.json();
+    var result=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error(typeof result.error==='string' ? result.error : 'Artwork upload failed ('+response.status+')');
+    return result;
   }
 
   function openCardEditor(slot) {
@@ -2337,9 +2338,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     }
     function recognitionEditor(context) {
       context=context || {};
-      var root=modal("Add from image"), files=control(root,"Card images (one or two PNG/JPEG files)","file");
-      files.multiple=true;files.accept="image/png,image/jpeg";
+      var root=modal("Add from image"), files=control(root,"Card images (one or two PNG/JPEG/WebP files)","file");
+      files.multiple=true;files.accept="image/png,image/jpeg,image/webp";
       root.appendChild(el("p","small",recognitionAvailable===false ? "Add your DeepSeek API token in Settings → Card recognition to enable AI prefill. Upload JP/EN images and enter details manually meanwhile." : "Analyze sends the selected card images to DeepSeek for a suggested prefill. Review every field. Nothing is uploaded to your binder or saved until you confirm Save in the card editor."));
+      root.appendChild(el("p","small","PNG, JPEG and still WebP are supported. Animated WebP is not supported."));
       var previews=el("div","row"),review=el("div"),error=el("p","err"),urls=[],selected=[],results=[];
       error.setAttribute("role","alert");root.append(previews,review,error);
       var analyze=button("Analyze images",analyzeImages,true),manual=button("Enter details manually",()=>openManual(),recognitionAvailable===false),cancel=button("Cancel",()=>edDlg.close());
@@ -2354,7 +2356,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         clearUrls();results=[];selected=[];previews.replaceChildren();review.replaceChildren();error.textContent="";
         var choices=Array.from(files.files);
         if(choices.length<1||choices.length>2){error.textContent="Choose one or two card images.";return;}
-        if(choices.some(f=>!["image/png","image/jpeg"].includes(f.type)||f.size>3500000)){error.textContent="Choose PNG or JPEG files, each no larger than 3.5 MB and 8000 pixels per side.";return;}
+        if(choices.some(f=>!["image/png","image/jpeg","image/webp"].includes(f.type)||f.size>3500000)){error.textContent="Choose PNG, JPEG or WebP files, each no larger than 3.5 MB and 8000 pixels per side.";return;}
         choices.forEach(f=>{var box=el("div"),frame=el("div","card-preview recognition-preview"),img=el("img"),url=URL.createObjectURL(f);urls.push(url);img.src=url;img.alt=f.name;frame.appendChild(img);box.appendChild(frame);var language=choose(box,"Language · "+f.name,["auto","jp","en"],"auto");selected.push({file:f,language:language});previews.appendChild(box);});
       };
       async function analyzeImages(){
@@ -2442,7 +2444,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         sourceUrl = control(root, "Source URL", "url"),
         file = control(root, "Japanese artwork (optional)", "file"),
         enFile = control(root, "English artwork (optional)", "file");
-      enFile.accept="image/png,image/jpeg";
+      enFile.accept="image/png,image/jpeg,image/webp";
       if(context.kind)kind.value=context.kind;
       if(context.status)status.value=context.status;
       var initialFiles=context.initialFiles || {};
@@ -2456,9 +2458,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       versionPreview(file,"jp",previous&&previous.image);
       versionPreview(enFile,"en",previous&&previous.enImage);
       root.appendChild(el("p","small",Object.keys(initialFiles).length ? "Uploaded images retained: "+Object.keys(initialFiles).join(" + ").toUpperCase() : ""));
-      file.accept = "image/png,image/jpeg";
+      file.accept = "image/png,image/jpeg,image/webp";
       sameAs.parentNode.hidden=true;kind.onchange=function(){sameAs.parentNode.hidden=kind.value!=="Same-art reprint or foil"};kind.onchange();
       root.appendChild(el("p","small","AA means a different drawing. Borders, frames, stars and foil alone do not make an AA."));
+      root.appendChild(el("p","small","PNG, JPEG and still WebP are supported. Animated WebP is not supported."));
       var id = previous ? previous.id : Workflow.id();
       if(previous){label.value=previous.label||"";kind.value=previous.kind==="reprint"?"Same-art reprint or foil":previous.kind==="manga"?"Manga":"Different artwork AA";source.value=previous.source||"";finish.value=previous.finish||"";sameAs.value=versionReference(c,previous.id);sameAs.parentNode.hidden=previous.kind!=="reprint";status.value=previous.status==="draft"?"announced":previous.status||"inherit";date.value=previous.releaseDate||"";sourceUrl.value=previous.sourceUrl||"";state.value=altState(c.num,previous.id)||"untracked";}
       if (c) number.readOnly = true;
@@ -2503,8 +2506,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         for(var language of ["jp","en"]) {
           var f=(language==="jp"?file:enFile).files[0] || initialFiles[language];
           if(!f)continue;
-          if(!["image/png","image/jpeg"].includes(f.type))throw Error("Choose PNG or JPEG artwork");
-          var uploaded=await uploadImage(f,(language==="jp"?"card_images_jp/":"card_images/")+target.num+"_"+id+"_"+Workflow.id()+"_"+language+(f.type==="image/png"?".png":".jpg"));
+          if(!["image/png","image/jpeg","image/webp"].includes(f.type))throw Error("Choose PNG, JPEG or WebP artwork");
+          var uploaded=await uploadImage(f,(language==="jp"?"card_images_jp/":"card_images/")+target.num+"_"+id+"_"+Workflow.id()+"_"+language+(f.type==="image/png"?".png":f.type==="image/webp"?".webp":".jpg"));
           variant[language==="jp"?"image":"enImage"]=uploaded.image||uploaded.reference||uploaded.path;
         }
         var old = JSON.parse(JSON.stringify(target));
@@ -2599,8 +2602,9 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       set.placeholder='OP-12, ST-01 or P-2207';
       root.appendChild(el('p','small','Announced cards appear in your binder and Collection. Leave the release blank if unknown. Artwork uploads only after you confirm Save.'));
       var artwork=el('details');artwork.open=true;artwork.appendChild(el('summary','','Card artwork'));root.appendChild(artwork);
+      artwork.appendChild(el('p','small','PNG, JPEG and still WebP are supported. Animated WebP is not supported.'));
       function imageInput(label,ref) {
-        var file=control(artwork,label,"file");file.accept="image/png,image/jpeg";
+        var file=control(artwork,label,"file");file.accept="image/png,image/jpeg,image/webp";
         var frame=el('div','card-preview'),preview=el('img');preview.alt=label+' preview';frame.appendChild(preview);
         if(ref)preview.src=ref;else frame.hidden=true;artwork.appendChild(frame);
         var objectUrl=null;var retained=(context.initialFiles||{})[label.indexOf("Japanese")===0?"jp":"en"];
@@ -2609,8 +2613,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         file.onchange=function(){if(objectUrl)URL.revokeObjectURL(objectUrl);if(file.files[0]){objectUrl=URL.createObjectURL(file.files[0]);preview.src=objectUrl;frame.hidden=false;}else{frame.hidden=!ref;if(ref)preview.src=ref;}};
         return file;
       }
-      var jpFile=imageInput("Japanese image (PNG/JPEG)",original.image || (original.num && jpArt[original.num] ? 'card_images_jp/'+original.num+'.png' : '')),
-          enFile=imageInput("English image (PNG/JPEG)",original.enImage || (original.num && !original.noen ? 'card_images/'+original.num+'.jpg' : ''));
+      var jpFile=imageInput("Japanese image (PNG/JPEG/WebP)",original.image || (original.num && jpArt[original.num] ? 'card_images_jp/'+original.num+'.png' : '')),
+          enFile=imageInput("English image (PNG/JPEG/WebP)",original.enImage || (original.num && !original.noen ? 'card_images/'+original.num+'.jpg' : ''));
       var details=el('details');details.appendChild(el('summary','','Card details & placement'));root.appendChild(details);
       var colour=choose(details,"Colour",["","Red","Green","Blue","Purple","Black","Yellow"],original.col),
           rarity=choose(details,"Rarity",[""].concat(RARS),original.rar),
@@ -2643,12 +2647,12 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
         if(c.status==='draft'){c.jpName=jpName.value.trim();c.sid=sid.value.trim()==='' ? null : Number(sid.value);}
         if(noen.checked)c.noen=true;else delete c.noen;
         var chosenJp=jpFile.files[0]||(context.initialFiles||{}).jp,chosenEn=enFile.files[0]||(context.initialFiles||{}).en;
-        for(var file of [chosenJp,chosenEn].filter(Boolean))if(!['image/png','image/jpeg'].includes(file.type))throw Error('Choose PNG or JPEG artwork');
+        for(var file of [chosenJp,chosenEn].filter(Boolean))if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Choose PNG, JPEG or WebP artwork');
         var staged=Workflow.stageCard(cards,catalog.drafts||[],c,editingActive&&editingActive.num,draft);
         if(!confirmEdit(draft ? 'Save card changes' : 'Add card',(official||'Private draft')+' · '+c.name))return false;
         var filename=official||identity;
-        if(chosenJp){var jf=chosenJp,ji=await uploadImage(jf,'card_images_jp/'+filename+'_'+Workflow.id()+'_jp'+(jf.type==='image/png'?'.png':'.jpg'));c.image=ji.image||ji.path;}
-        if(chosenEn){var ef=chosenEn,ei=await uploadImage(ef,'card_images/'+filename+'_'+Workflow.id()+'_en'+(ef.type==='image/png'?'.png':'.jpg'));c.enImage=ei.image||ei.path;}
+        if(chosenJp){var jf=chosenJp,ji=await uploadImage(jf,'card_images_jp/'+filename+'_'+Workflow.id()+'_jp'+(jf.type==='image/png'?'.png':jf.type==='image/webp'?'.webp':'.jpg'));c.image=ji.image||ji.path;}
+        if(chosenEn){var ef=chosenEn,ei=await uploadImage(ef,'card_images/'+filename+'_'+Workflow.id()+'_en'+(ef.type==='image/png'?'.png':ef.type==='image/webp'?'.webp':'.jpg'));c.enImage=ei.image||ei.path;}
         cards=staged.cards;catalog.drafts=staged.drafts;
         if(official && c.status!=='draft'){share[official]=Object.assign({},share[official]||{},{jp:jpName.value.trim(),sid:sid.value.trim()==='' ? (deriveSid(c.set)||0) : Number(sid.value),alt:(c.alt||[]).slice()});if(c.image)jpArt[official]=true;}
         await saveCatalog();

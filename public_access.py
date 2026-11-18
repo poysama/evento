@@ -160,7 +160,7 @@ def image_paths(public_catalog):
     return {
         p
         for p in paths
-        if re.fullmatch(r"card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png)", p)
+        if re.fullmatch(r"card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png|webp)", p)
     }
 
 

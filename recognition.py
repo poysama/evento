@@ -28,8 +28,12 @@ def validate_image(body):
     if not isinstance(body, dict):
         raise RecognitionError(400, "Invalid recognition request")
     mime = body.get("mime")
-    if not isinstance(mime, str) or mime not in {"image/png", "image/jpeg"}:
-        raise RecognitionError(400, "Upload a PNG or JPEG card image")
+    if not isinstance(mime, str) or mime not in {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+    }:
+        raise RecognitionError(400, "Upload a PNG, JPEG or WebP card image")
     hint = body.get("languageHint", "auto")
     if not isinstance(hint, str) or hint not in {"auto", "jp", "en"}:
         raise RecognitionError(400, "Invalid language hint")
@@ -40,13 +44,21 @@ def validate_image(body):
         raise RecognitionError(413, "Card image must be at most 3.5 MB")
     try:
         raw = wf.decode_image(
-            "card_images/recognize." + ("png" if mime == "image/png" else "jpg"), data
+            "card_images/recognize."
+            + {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[mime],
+            data,
         )
+    except wf.AnimatedWebPError:
+        raise RecognitionError(
+            400, "Animated WebP is not supported. Upload a still image."
+        ) from None
     except (ValueError, TypeError):
         raise RecognitionError(400, "Invalid card image") from None
     if len(raw) > MAX_IMAGE_BYTES:
         raise RecognitionError(413, "Card image must be at most 3.5 MB")
-    if mime == "image/png":
+    if mime == "image/webp":
+        width, height = wf.webp_dimensions(raw)
+    elif mime == "image/png":
         width, height = struct.unpack(">II", raw[16:24])
     else:
         pos = 2

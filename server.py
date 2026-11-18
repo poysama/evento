@@ -71,7 +71,7 @@ ALT_TYPES = {"Comic", "Original", "Animation", "Other"}
 NUM_RE = re.compile(r"^(?:[A-Z]{2,3}\d{2}|P)-\d{3}$")
 ALT_RE = re.compile(r"^p\d{1,2}$")
 SET_RE = re.compile(r"^(?:[A-Z]{2,3}-\d{2}|P-\d{3,4})$")
-IMG_PATH_RE = re.compile(r"(card_images|card_images_jp)/[A-Za-z0-9_-]+\.(jpg|png)")
+IMG_PATH_RE = re.compile(r"(card_images|card_images_jp)/[A-Za-z0-9_-]+\.(jpg|png|webp)")
 
 
 def valid(owned):
@@ -368,7 +368,7 @@ class Handler(SimpleHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         static = path in ("/", "/index.html", "/workflow.js", "/save.js")
         image = bool(
-            re.fullmatch(r"/card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png)", path)
+            re.fullmatch(r"/card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png|webp)", path)
         )
         if path == "/card_images_jp/manifest.json":
             manifest = load_json(MANIFEST, [])
@@ -513,6 +513,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(400, {"error": "bad path"})
         try:
             raw = wf.decode_image(rel, data)
+        except wf.AnimatedWebPError:
+            return self._json(400, {"error": "Animated WebP is not supported. Upload a still image."})
         except (ValueError, TypeError):
             return self._json(400, {"error": "bad image"})
         dest = os.path.join(HERE, rel.replace("/", os.sep))
@@ -558,7 +560,7 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         # Pages and data must always be re-checked so edits show up on refresh;
         # card images never change, so let the browser keep them.
-        if not self.path.split("?")[0].lower().endswith((".jpg", ".png")):
+        if not self.path.split("?")[0].lower().endswith((".jpg", ".png", ".webp")):
             self.send_header("Cache-Control", "private, no-store")
         super().end_headers()
 

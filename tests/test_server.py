@@ -312,6 +312,93 @@ class ServerTests(unittest.TestCase):
         )
         self.assertFalse(self.request("GET", "/api/access")[2]["recognitionAvailable"])
 
+    def test_webp_upload_references_and_access_boundaries(self):
+        import base64
+
+        fixtures = json.loads(
+            (Path(__file__).parent / "fixtures" / "webp.json").read_text()
+        )
+        images = {}
+        for directory in ("card_images", "card_images_jp"):
+            for version in ("v_base", "v_aa"):
+                path = directory + "/" + version + ".webp"
+                code, _, saved = self.request(
+                    "POST", "/api/image", {"path": path, "data": fixtures["alpha"]}
+                )
+                self.assertEqual(code, 200)
+                self.assertEqual(saved["path"], path)
+                self.assertTrue(saved["image"].startswith(path + "?v="))
+                self.assertEqual(
+                    (Path(server.HERE) / path).read_bytes(),
+                    base64.b64decode(fixtures["alpha"]),
+                )
+                images[path] = saved["image"]
+        self.assertEqual(
+            self.request(
+                "POST",
+                "/api/image",
+                {
+                    "path": "card_images/v_bad.webp",
+                    "data": base64.b64encode(b"fake").decode(),
+                },
+            )[0],
+            400,
+        )
+        self.assertEqual(
+            self.request(
+                "POST",
+                "/api/image",
+                {"path": "card_images/v_bad.webp", "data": fixtures["alpha"]},
+                anonymous=True,
+            )[0],
+            401,
+        )
+        card = {
+            "num": "OP01-001",
+            "name": "Visible",
+            "status": "released",
+            "rar": "C",
+            "col": "Red",
+            "set": "OP-01",
+            "foil": False,
+            "image": images["card_images_jp/v_base.webp"],
+            "enImage": images["card_images/v_base.webp"],
+            "variants": [
+                {
+                    "id": "v_aa",
+                    "kind": "parallel",
+                    "label": "AA",
+                    "source": "",
+                    "image": images["card_images_jp/v_aa.webp"],
+                    "enImage": images["card_images/v_aa.webp"],
+                }
+            ],
+        }
+        _, etag, catalog = self.request("GET", "/api/catalog")
+        catalog["cards"] = [card]
+        self.assertEqual(self.request("PUT", "/api/catalog", catalog, etag)[0], 200)
+        for path in images:
+            connection = http.client.HTTPConnection("127.0.0.1", self.http.server_port)
+            connection.request("GET", "/" + path)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.getheader("Content-Type"), "image/webp")
+            self.assertEqual(response.read(), base64.b64decode(fixtures["alpha"]))
+            connection.close()
+        card["status"] = "draft"
+        Path(server.CATALOG).write_text(json.dumps({**catalog, "cards": [card]}))
+        for anonymous in (True, False):
+            connection = http.client.HTTPConnection("127.0.0.1", self.http.server_port)
+            connection.request(
+                "GET",
+                "/card_images_jp/v_base.webp",
+                headers={} if anonymous else {"Cookie": self.cookie},
+            )
+            response = connection.getresponse()
+            response.read()
+            connection.close()
+            self.assertEqual(response.status, 404 if anonymous else 200)
+
 
 class AtomicSaveTests(unittest.TestCase):
     def test_replace_failure_preserves_current(self):

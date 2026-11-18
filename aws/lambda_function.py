@@ -80,8 +80,8 @@ ALT_STATES = {
 }  # per alt-art / Manga version: collecting it, bought and on the way, in hand
 NOTE_MAX = 200  # free-text note per card (where it was ordered from ...)
 CARD = r"(?:[A-Z]{2,3}\d{2}|P)-\d{3}"  # OP01-026, EB02-007, ST01-014 ... and promos such as P-057
-IMG_RE = re.compile(r"^[A-Za-z0-9_-]+\.(?:png|jpg)$")
-JP_IMG_RE = re.compile(r"^[A-Za-z0-9_-]+\.(?:png|jpg)$")
+IMG_RE = re.compile(r"^[A-Za-z0-9_-]+\.(?:png|jpg|webp)$")
+JP_IMG_RE = re.compile(r"^[A-Za-z0-9_-]+\.(?:png|jpg|webp)$")
 KEYS_KEY = "data/passkeys.json"
 
 LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -902,9 +902,7 @@ def _sign_image(name, ttl):
         Params={
             "Bucket": BUCKET,
             "Key": key,
-            "ResponseContentType": (
-                "image/png" if rel.endswith(".png") else "image/jpeg"
-            ),
+            "ResponseContentType": wf.image_mime(rel),
             "ResponseCacheControl": "private, max-age=300",
         },
     )
@@ -1554,7 +1552,7 @@ def _handler(event, context):
         return resp(
             200,
             base64.b64encode(data).decode(),
-            "image/png" if name.endswith(".png") else "image/jpeg",
+            wf.image_mime(name),
             b64=True,
             extra={"Cache-Control": "private, max-age=31536000, immutable"},
         )
@@ -1582,7 +1580,7 @@ def _handler(event, context):
         return resp(
             200,
             base64.b64encode(data).decode(),
-            "image/png" if name.endswith(".png") else "image/jpeg",
+            wf.image_mime(name),
             b64=True,
             extra={"Cache-Control": "private, max-age=31536000, immutable"},
         )
@@ -1673,7 +1671,7 @@ def _handler(event, context):
         data = d.get("data")
         if (
             not re.fullmatch(
-                r"(card_images|card_images_jp)/[A-Za-z0-9_-]+\.(jpg|png)", rel
+                r"(card_images|card_images_jp)/[A-Za-z0-9_-]+\.(jpg|png|webp)", rel
             )
             or not isinstance(data, str)
             or not data
@@ -1681,6 +1679,8 @@ def _handler(event, context):
             return js(400, {"error": "bad path"})
         try:
             raw = wf.decode_image(rel, data)
+        except wf.AnimatedWebPError:
+            return js(400, {"error": "Animated WebP is not supported. Upload a still image."})
         except ValueError:
             return js(400, {"error": "bad image"})
         prefix = "images_jp/" if rel.startswith("card_images_jp/") else "images/"
@@ -1689,7 +1689,7 @@ def _handler(event, context):
             Bucket=BUCKET,
             Key=key,
             Body=raw,
-            ContentType="image/png" if rel.endswith(".png") else "image/jpeg",
+            ContentType=wf.image_mime(rel),
         )
         m = re.fullmatch(r"((?:[A-Z]{2,3}\d{2}|P)-\d{3})\.png", rel.rsplit("/", 1)[1])
         if rel.startswith("card_images_jp/") and m:

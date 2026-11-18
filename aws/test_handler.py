@@ -1963,6 +1963,160 @@ store["data/collection.json"] = json.dumps(
 check("alias have suppresses private price want", L._all_alt_wants() == [])
 store["data/catalog.json"] = aa_saved_catalog
 store["data/collection.json"] = aa_saved_owned
+
+# Uploaded WebP stays WebP through private, public and token-gated routes.
+webp_snapshot = dict(store)
+webp_data = json.loads((REPO / "tests" / "fixtures" / "webp.json").read_text())["alpha"]
+webp_raw = base64.b64decode(webp_data)
+webp_writes = []
+webp_put = L.s3.put_object
+
+
+def capture_webp_put(**kwargs):
+    webp_writes.append(kwargs)
+    return webp_put(**kwargs)
+
+
+L.s3.put_object = capture_webp_put
+for folder in ("card_images", "card_images_jp"):
+    for version in ("v_base", "v_aa"):
+        rel = folder + "/" + version + ".webp"
+        uploaded = h(
+            ev(
+                "POST",
+                "/api/image",
+                json.dumps({"path": rel, "data": webp_data}),
+                cookies=ck,
+            ),
+            None,
+        )
+        result = json.loads(uploaded["body"])
+        check(
+            "WebP upload persists original path " + rel,
+            uploaded["statusCode"] == 200
+            and result["path"] == rel
+            and result["image"].startswith(rel + "?v="),
+        )
+        check(
+            "WebP upload preserves bytes and MIME " + rel,
+            webp_writes[-1]["Body"] == webp_raw
+            and webp_writes[-1]["ContentType"] == "image/webp",
+        )
+L.s3.put_object = webp_put
+check(
+    "anonymous WebP upload denied",
+    h(
+        ev(
+            "POST",
+            "/api/image",
+            json.dumps({"path": "card_images/v_bad.webp", "data": webp_data}),
+        ),
+        None,
+    )["statusCode"]
+    == 401,
+)
+check(
+    "spoofed WebP upload denied",
+    h(
+        ev(
+            "POST",
+            "/api/image",
+            json.dumps(
+                {
+                    "path": "card_images/v_bad.webp",
+                    "data": base64.b64encode(b"not an image").decode(),
+                }
+            ),
+            cookies=ck,
+        ),
+        None,
+    )["statusCode"]
+    == 400,
+)
+webp_card = {
+    "num": "OP01-001",
+    "name": "WebP card",
+    "rar": "C",
+    "set": "OP-01",
+    "col": "Red",
+    "foil": False,
+    "image": "card_images_jp/v_base.webp",
+    "enImage": "card_images/v_base.webp",
+    "variants": [
+        {
+            "id": "v_aa",
+            "kind": "parallel",
+            "label": "WebP AA",
+            "source": "",
+            "image": "card_images_jp/v_aa.webp",
+            "enImage": "card_images/v_aa.webp",
+        }
+    ],
+}
+store["data/catalog.json"] = json.dumps(
+    L.wf.normalize_catalog({"cards": [webp_card]})
+).encode()
+store["data/collection.json"] = json.dumps(
+    {"OP01-001": {"alt": {"v_aa": "want"}}}
+).encode()
+for cookie in ([], ck):
+    for folder in ("card_images", "card_images_jp"):
+        for version in ("v_base", "v_aa"):
+            picture = h(
+                ev("GET", "/" + folder + "/" + version + ".webp", cookies=cookie), None
+            )
+            check(
+                "referenced WebP served with original MIME " + folder + "/" + version,
+                picture["statusCode"] == 200
+                and picture["headers"]["Content-Type"] == "image/webp"
+                and base64.b64decode(picture["body"]) == webp_raw,
+            )
+webp_signed = []
+webp_sign = L.s3_sign.generate_presigned_url
+
+
+def capture_webp_sign(op, Params, ExpiresIn):
+    webp_signed.append(Params)
+    return webp_sign(op, Params=Params, ExpiresIn=ExpiresIn)
+
+
+L.s3_sign.generate_presigned_url = capture_webp_sign
+webp_token = json.loads(
+    put_share({"enabled": True, "foil": True, "pics": True})["body"]
+)["url"].rsplit("/", 1)[1]
+for name in ("OP01-001.png", "OP01-001_v_aa.png"):
+    picture = pic(webp_token, name)
+    check(
+        "shared logical image maps to WebP original " + name,
+        picture["statusCode"] == 302
+        and ".webp?" in picture["headers"]["Location"]
+        and webp_signed[-1]["ResponseContentType"] == "image/webp",
+    )
+check(
+    "unrequested WebP share image denied",
+    pic(webp_token, "OP01-001_v_untracked.png")["statusCode"] == 404,
+)
+webp_card["variants"][0]["status"] = "draft"
+store["data/catalog.json"] = json.dumps(
+    L.wf.normalize_catalog({"cards": [webp_card]})
+).encode()
+check(
+    "draft WebP share image denied",
+    pic(webp_token, "OP01-001_v_aa.png")["statusCode"] == 404,
+)
+check(
+    "draft WebP public image denied",
+    h(ev("GET", "/card_images_jp/v_aa.webp"), None)["statusCode"] == 404,
+)
+check(
+    "draft WebP private image remains accessible",
+    h(ev("GET", "/card_images_jp/v_aa.webp", cookies=ck), None)["statusCode"] == 200,
+)
+L.s3_sign.generate_presigned_url = webp_sign
+store.clear()
+store.update(webp_snapshot)
+
+
 shutil.rmtree(pkg, ignore_errors=True)
 
 
