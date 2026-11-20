@@ -35,11 +35,11 @@
           versionId: d.id(),
         });
     }
-    async function analyze(onChange) {
+    async function analyze(onChange, allowance = Infinity) {
       editable();
       const pending = entries.filter((e) =>
         ["Ready", "Failed", "Interrupted"].includes(e.state),
-      );
+      ).slice(0, allowance);
       const active = new AbortController();
       scan = active;
       const worker = async () => {
@@ -351,7 +351,10 @@
           u.limit +
           " scans remaining for " +
           u.month +
-          " UTC.";
+          " UTC." +
+          (remaining === 0
+            ? " Monthly scan allowance exhausted. Enter the card type, language and card details below, then choose Confirm import."
+            : "");
       } catch (e) {
         usage.textContent = e.message;
       }
@@ -359,7 +362,7 @@
     }
     const scans = button(controls, "Analyze", async () => {
       try {
-        await s.analyze(render);
+        await s.analyze(render, remaining);
       } catch (e) {
         error.textContent = e.message;
       } finally {
@@ -762,19 +765,15 @@
           : "Saving import…";
         jump.hidden = true;
       }
-      scans.textContent =
-        "Analyze " +
-        s.entries.filter((e) =>
-          ["Ready", "Failed", "Interrupted"].includes(e.state),
-        ).length +
-        " images";
-      scans.disabled =
-        remaining === null ||
-        remaining === 0 ||
-        !d.available ||
-        !s.entries.some((e) =>
-          ["Ready", "Failed", "Interrupted"].includes(e.state),
-        );
+      const pending = s.entries.filter((e) =>
+        ["Ready", "Failed", "Interrupted"].includes(e.state),
+      ).length;
+      const count = Math.min(pending, remaining ?? pending);
+      scans.textContent = remaining === 0
+        ? "Scan allowance exhausted"
+        : "Analyze " + (count < pending ? count + " of " + pending : count) +
+          " image" + (pending === 1 ? "" : "s");
+      scans.disabled = remaining === null || !count || !d.available;
       stop.disabled = !s.scanning;
       detail.disabled = controls.disabled = s.saving || s.scanning;
       save.disabled = !valid || s.saving || s.scanning;

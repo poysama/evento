@@ -484,3 +484,11 @@ test("missing group-level metadata and invalid edited values identify the exact 
   entry.patch.releaseDate = "";
   assert.equal(s.preview().placements.length, 1);
 });
+test("only starts as many pending files as the remaining allowance", async () => {
+  const h = setup();
+  h.s.add([file(), file(), file()]);
+  await h.s.analyze(() => {}, 0);
+  assert.deepEqual(h.s.entries.map((entry) => entry.state), ["Ready", "Ready", "Ready"]);
+  await h.s.analyze(() => {}, 1);
+  assert.deepEqual(h.s.entries.map((entry) => entry.state), ["Scanned", "Ready", "Ready"]);
+});
