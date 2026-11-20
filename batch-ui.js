@@ -134,8 +134,11 @@
         while (pending.length && !active.signal.aborted && !conflict) {
           const e = pending.shift();
           const previous = e.state;
+          const group = groups().find(item => item.fileIds.includes(e.id));
+          const cardEdits = entries.find(item => item.id === group.id)?.patch;
           e.edits = Object.fromEntries(Object.entries(e.fields)
-            .filter(([key, value]) => value !== e.recognized?.[key]));
+            .filter(([key, value]) => value !== e.recognized?.[key] ||
+              ((key === "col" || key === "rar") && cardEdits?.[key] === value)));
           e.state = "Scanning";
           onChange();
           try {
@@ -184,6 +187,14 @@
       }
       return [...partitions.values()].flatMap(domain.groupRecognitions);
     }
+    function correctMetadata(group, key, value) {
+      for (const entry of entries.filter(item => group.fileIds.includes(item.id))) {
+        entry.fields[key] = value;
+        if (entry.patch) delete entry.patch[key];
+      }
+      const owner = entries.find(item => item.id === group.id);
+      (owner.patch ||= {})[key] = value;
+    }
     function rows() {
       if (!entries.length) throw Error("Select at least one image");
       return groups().map((g) => {
@@ -220,6 +231,9 @@
         );
         if (conflict) {
           const field = conflict.slice("Check conflicting ".length);
+          if (field === "col" || field === "rar")
+            throw Object.assign(Error("Choose the " + (field === "col" ? "colour" : "rarity") +
+              " for both images in Card details"), { rowId: g.id, field });
           const different = members.find(
             (item) =>
               item.fields[field] && item.fields[field] !== g.fields[field],
@@ -322,6 +336,7 @@
       set onDraftChange(callback) { onDraftChange = callback; },
       add,
       analyze,
+      correctMetadata,
       groups,
       preview,
       save,
@@ -861,7 +876,15 @@
         box.dataset.key = "group-" + g.id;
         box.className = "batch-metadata";
         node("legend", "Card details", box);
-        for (const issue of g.issues) node("p", issue, box);
+        for (const issue of g.issues) {
+          const key = issue === "Check conflicting col" ? "col" : issue === "Check conflicting rar" ? "rar" : null;
+          if (!key) { node("p", issue, box); continue; }
+          const readings = g.fileIds.map(id => {
+            const fields = entries.get(id).fields;
+            return fields.language.toUpperCase() + " " + fields[key];
+          });
+          node("p", (key === "col" ? "Colour" : "Rarity") + " differs: " + readings.join(", "), box);
+        }
         const action =
           e.action || (!existing && !g.ambiguous ? "new-base" : "");
         field(
@@ -879,7 +902,8 @@
           ],
           (v) => {
             e.action = v;
-            e.patch = {};
+            e.patch = Object.fromEntries(Object.entries(e.patch || {})
+              .filter(([key]) => key === "col" || key === "rar"));
           },
         );
         const version = ["parallel", "manga", "reprint"].includes(action);
@@ -927,6 +951,12 @@
               ["rar", "Rarity", ["", ...d.rarities]],
               ["set", "Set code"],
             ];
+        if (version) {
+          if (g.issues.includes("Check conflicting col"))
+            props.push(["col", "Colour", ["", "Red", "Green", "Blue", "Purple", "Black", "Yellow"]]);
+          if (g.issues.includes("Check conflicting rar"))
+            props.push(["rar", "Rarity", ["", ...d.rarities]]);
+        }
         props.push(
           [
             "status",
@@ -959,7 +989,10 @@
               : action === "new-base"
                 ? g.fields[k]
                 : "");
-          field(advanced || box, label, value, opts, (v) => (e.patch[k] = v));
+          if (k === "col" || k === "rar") {
+            const disputed = g.issues.includes("Check conflicting " + k);
+            field(box, label, disputed ? "" : value, opts, v => s.correctMetadata(g, k, v));
+          } else field(advanced || box, label, value, opts, (v) => (e.patch[k] = v));
         }
         if (existing && action === "update-base")
           node(

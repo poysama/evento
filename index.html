@@ -182,14 +182,19 @@ dialog::backdrop{background:var(--scrim)}
   .cap,body .cap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 4px;font-size:10.5px;min-height:0}
   .cap .cn,.cap .cf{flex:0 0 auto}
   .cap .cs{flex:1 1 100%;order:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pv{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px;min-height:0}
-  .pv .hint{color:var(--mute);font-size:12.5px;line-height:1.45}
-  .pv img{width:min(100%,250px);align-self:center;aspect-ratio:var(--card-aspect);object-fit:contain;border-radius:10px;border:1px solid var(--line);background:var(--line)}
-  .pv h3{margin:0;font-size:16px;line-height:1.2}
-  .pv .meta{font:12px/1.5 var(--mono);color:var(--mute)}
-  .pv .note{font-size:13px}
-  .pv .small{font-size:12px}
   .hov{display:none!important}
+}
+@media (min-width:1280px) and (min-height:560px){
+  body.workflow-ready:not(.workflow-workspace) .app{grid-template-columns:clamp(238px,18vw,300px) minmax(0,1fr) clamp(300px,25vw,460px);gap:clamp(14px,1.5vw,28px);max-width:1740px;margin-inline:auto}
+  .workflow-ready:not(.workflow-workspace) .stage{container-type:inline-size;align-content:center}
+  .workflow-ready:not(.workflow-workspace) .board{justify-content:center}
+  .workflow-ready:not(.workflow-workspace) .grid{--tw:min(calc(var(--ah) * var(--card-ratio)),calc((100cqw - 130px)/4))}
+  .pv{display:block;overflow:auto;min-height:0;padding:clamp(12px,1.3vw,22px);background:var(--sheet);border:1px solid var(--line);border-radius:12px;align-self:start;max-height:100%}
+  .pv h2{margin:0 0 12px;font:600 18px/1.2 var(--disp)}
+  .pv img{display:block;width:min(100%,calc((100dvh - 210px) * var(--card-ratio)));margin:0 auto 14px;aspect-ratio:var(--card-aspect);object-fit:contain;border-radius:8px;background:var(--bg)}
+  .pv h3{margin:0 0 3px;font-size:19px;line-height:1.2}
+  .pv .meta{font:12px/1.5 var(--mono);color:var(--mute)}
+  .pv .note,.pv .hint{margin-top:8px;color:var(--mute)}
 }
 /* ---- passkeys ---- */
 .mini{font-size:12px;padding:5px 10px;min-height:32px;border:1px solid var(--line);border-radius:8px;background:var(--sheet);cursor:pointer;font-weight:600}
@@ -484,7 +489,6 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     <button type="button" id="next" aria-label="Next page">Next ▶</button>
   </div></nav>
 
-  <aside data-startup-control hidden class="pv" id="pv" aria-live="polite"></aside>
 </aside>
 
 <main class="stage">
@@ -495,6 +499,10 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     <button type="button" class="fl" id="next2" aria-label="Next page">▶</button>
   </div>
 </main>
+<aside data-startup-control hidden class="pv" aria-label="Card preview">
+  <h2>Card preview</h2>
+  <div id="pv" aria-live="polite"></div>
+</aside>
 </div>
 
 <div class="bm" id="bm" role="dialog" aria-modal="true" aria-label="Binder mode" tabindex="-1" hidden>
@@ -873,7 +881,8 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     $('leaf').textContent = 'Sheet ' + Math.ceil(page / 2) + ' · ' + (page % 2 ? 'front' : 'back') + ' · slots ' + (base + 1) + '–' + (base + PER);
     var ch = $('chips'); ch.textContent = ''; sets.forEach(function (s) { ch.appendChild(el('span', '', s)); });
     $('prev').disabled = $('prev2').disabled = page <= 1; $('next').disabled = $('next2').disabled = page >= N; $('pagesel').value = String(page);
-    preview(null);
+    var firstCard = grid.querySelector('.card[data-n]');
+    preview(firstCard ? firstCard.dataset.n : null);
     stats();
     [page - 1, page + 1].forEach(function (p) { if (p >= 1 && p <= N) { for (var s2 = (p - 1) * PER + 1; s2 <= p * PER; s2++) { var c2 = bySlot[s2]; if (c2) preloadArt(c2.num); } } });
   }
@@ -1106,12 +1115,12 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
     if (e.key === 'Escape') bmClose(); else if (e.key === 'ArrowLeft') bmTurn(-1); else if (e.key === 'ArrowRight') bmTurn(1);
   });
 
-  /* ---------- hover preview (wide desktop sidebar) ---------- */
+  /* ---------- binder artwork preview ---------- */
   var pvEl = $('pv');
   function preview(n) {
     pvEl.textContent = '';
     var c = n && cards.find(function (x) { return x.num === n; });
-    if (!c) { pvEl.appendChild(el('div', 'hint', 'Hover a card to preview it. Open artwork for Japanese base and print ownership controls.')); return; }
+    if (!c) { pvEl.appendChild(el('div', 'hint', 'This page has no cards to preview.')); return; }
     var j = (c.slot - 1) % PER;
     var img = el('img'); img.alt = c.name; artImg(img, c.num, null, artMode === 'jp' ? shownVer(c.num) : ''); pvEl.appendChild(img);
     pvEl.appendChild(el('h3', '', c.name));
@@ -2010,7 +2019,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 
   /* ---------- data editor: inline card CRUD + manage sets ---------- */
   var edDlg = $('eddlg'), setDlg = $('setdlg');
-  var RARS = ['C', 'UC', 'R', 'SR', 'P'];
+  var RARS = EventoBatch.rarities;
 
   function putJSON(url, data) {
     return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })

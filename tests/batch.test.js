@@ -263,3 +263,13 @@ test("promoted private draft reserves its saved slot and preserves curated serie
       /source URL/,
     );
 });
+test("printed Event rarities stay valid through import and unknown codes require review", () => {
+  const candidate = row("016");
+  const plan = () => B.planImport(catalog, [candidate], { binder: "main", startSlot: 1 });
+  for (const rarity of ["C", "UC", "R", "SR", "SEC", "L", "P", "SP"]) {
+    candidate.fields.rar = rarity;
+    assert.equal(plan().catalog.cards.at(-1).rar, rarity);
+  }
+  candidate.fields.rar = "unknown";
+  assert.throws(plan, err => err.field === "rar");
+});

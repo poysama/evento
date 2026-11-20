@@ -50,6 +50,18 @@ class RecognitionTests(unittest.TestCase):
         self.assertIsNone(result["fields"]["rar"])
         self.assertEqual(len(result["warnings"]), 2)
 
+    def test_colour_and_rarity_formatting_preserves_only_unambiguous_values(self):
+        for col, rar, colour, rarity in [
+            (" RED ", "sr ★", "Red", "SR"),
+            ("blue", "uc", "Blue", "UC"),
+            ("Purple", "sp", "Purple", "SP"),
+            ("Red/Blue", "R/SR", None, None),
+            ("gold", "★", None, None),
+        ]:
+            with self.subTest(col=col, rar=rar):
+                fields = r.normalize_result({"col": col, "rar": rar}, {})["fields"]
+                self.assertEqual((fields["col"], fields["rar"]), (colour, rarity))
+
     def test_invalid_enum_shapes(self):
         result = r.normalize_result(
             {"language": [], "col": {}, "rar": [], "cardType": {}}, {}

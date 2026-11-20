@@ -2,6 +2,7 @@
   "use strict";
   const workflow =
     typeof module === "undefined" ? root.Workflow : require("./workflow.js");
+  const rarities = Object.freeze(["C", "UC", "R", "SR", "SEC", "L", "P", "SP"]);
   const compareCardNumbers = (a, b) =>
     a.localeCompare(b, "en", { numeric: true });
   const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -236,7 +237,7 @@
             )
           )
             throw rowError("Choose a colour for " + r.num, "col");
-          if (!["C", "UC", "R", "SR", "P"].includes(c.rar))
+          if (!rarities.includes(c.rar))
             throw rowError("Choose a rarity for " + r.num, "rar");
         }
         if (
@@ -333,6 +334,7 @@
     return { catalog: next, placements, changes, skippedSlots };
   }
   const api = {
+    rarities,
     compareCardNumbers,
     deriveSid,
     groupRecognitions,

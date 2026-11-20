@@ -461,7 +461,7 @@ test("completed paired batch identifies the specific unresolved file and keeps i
   en.fields.col = "Blue";
   assert.throws(
     () => s.preview(),
-    (e) => e.fileId === en.id && e.field === "col",
+    (e) => e.rowId === jp.id && e.field === "col",
   );
   en.fields.col = "Red";
   assert.equal(s.preview().placements.length, 1);
@@ -575,4 +575,37 @@ test("restoring the original field value removes an earlier reanalysis override"
   await s.analyze(() => {}, 1, [entry.id]);
   assert.equal(entry.fields.col, "Green");
   assert.equal(entry.fields.jpName, "");
+});
+
+test("one card-level correction resolves paired metadata and survives resume and reanalysis", async () => {
+  const { record, fingerprint } = require("../batch-draft");
+  let saved;
+  const drafts = {
+    load: async () => structuredClone(saved),
+    write: async (entries, position, uploaded) => {
+      saved = record(entries, position, uploaded);
+      saved.entries.forEach((entry, i) => { entry.file = entries[i].file; });
+    },
+    clear: async () => { saved = null; }, fingerprint,
+  };
+  const recognize = async entry => ({ fields: entry.file.name === "jp.png"
+    ? fields() : { ...fields("P-001", "en"), col: "Blue", rar: "SR" } });
+  const {s} = setup({drafts, recognize});
+  await s.add(["jp", "en"].map(lang => new File([lang], lang + ".png", {type: "image/png"})));
+  await s.analyze(() => {});
+  const [group] = s.groups();
+  s.entries[1].patch = {col: "Yellow"};
+  for (const [key, value] of [["col", "Blue"], ["rar", "R"]]) {
+    assert.throws(() => s.preview(), err => err.rowId === group.id && err.field === key);
+    s.correctMetadata(group, key, value);
+    assert.ok(s.entries.every(entry => entry.fields[key] === value));
+  }
+  assert.deepEqual(s.entries[1].patch, {});
+  await s.flush();
+  const next = setup({drafts, recognize: async () => ({fields: {...fields(), col: "Black", rar: "P"}})}).s;
+  await next.resume();
+  const id = next.entries[0].id;
+  await next.analyze(() => {}, 1, [id]);
+  const card = next.preview().catalog.cards[0];
+  assert.deepEqual([card.col, card.rar], ["Blue", "R"]);
 });
