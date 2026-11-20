@@ -374,7 +374,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def send_head(self):
         path = unquote(urlsplit(self.path).path)
-        static = path in ("/", "/index.html", "/workflow.js", "/batch.js", "/batch-ui.js", "/save.js")
+        static = path in ("/", "/index.html", "/workflow.js", "/batch.js", "/batch-draft.js", "/batch-ui.js", "/save.js")
         image = bool(
             re.fullmatch(r"/card_images(?:_jp)?/[A-Za-z0-9_-]+\.(?:jpg|png|webp)", path)
         )

@@ -381,11 +381,77 @@ body.editing .card .art::after{content:'✎';position:absolute;right:4px;bottom:
 
 body.booting [hidden]{display:none!important}.booting .app{grid-template-columns:minmax(230px,300px) minmax(0,840px)}.booting .stage{display:block;width:100%;align-self:stretch;min-width:0}.workflow-loading-nav{margin:0 0 12px}.workflow-loading-nav .btn:disabled{cursor:wait;opacity:.65}
 body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-only #pkbtn,body.view-only #minebtn,body.view-only #pricebtn,body.view-only #sumbtn,body.view-only #donebtn,body.view-only #ordbtn,body.view-only #altbtn,body.view-only #pkban{display:none!important}
-.batch-import{width:min(94vw,54rem);height:min(92dvh,52rem);overflow:hidden;color:var(--ink,#eff2f7);background:var(--bg,#17191e)}
-.batch-import[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:.4rem}.batch-scroll{overflow:auto;overscroll-behavior:contain}.batch-import header{max-height:35dvh;overflow:auto}.batch-import header p,.batch-import header h2,.batch-import footer p{margin:.3rem 0}.batch-import footer{max-height:22dvh;overflow:auto}.batch-import footer .btn{margin-right:.45rem}
-.batch-import fieldset{min-width:0;margin:.5rem 0;padding:.6rem}.batch-import label{display:inline-grid;margin:.3rem}
-.batch-import [aria-invalid="true"]{outline:2px solid var(--red,#d85151);outline-offset:2px}
-.batch-import img{width:95px;aspect-ratio:var(--card-aspect);object-fit:contain;vertical-align:middle}
+.batch-import{width:min(96vw,76rem);height:min(93dvh,56rem);max-width:100%;overflow:hidden;background:var(--sheet);color:var(--ink)}
+.batch-import[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.batch-import [hidden]{display:none!important}
+.batch-import header{position:relative;padding:17px 24px 12px;border-bottom:1px solid var(--line)}
+.batch-import h2,.batch-import h3,.batch-import p,.batch-import figure{margin:0}
+.batch-import h2{font-size:24px;letter-spacing:-.04em}
+.batch-import header>p,.batch-import figcaption small,.batch-import details,.batch-import header fieldset p{color:var(--mute)}
+.batch-import header>p{font-size:13px;margin:3px 36px 10px 0}
+.batch-import.batch-recovering{height:auto;width:min(94vw,39rem)}
+.batch-recovering header>fieldset,.batch-recovering header>p:not([role]){display:none}
+.batch-import .batch-draft{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.batch-import header>p[role=status]{padding:7px 10px;margin:7px 0 0;border-left:3px solid #ba812c;background:var(--bg);color:var(--ink)}
+.batch-import .batch-draft p:empty{display:none}
+.batch-scroll nav small.batch-ready{color:light-dark(#316943,#98d2a9)}
+.batch-import header>button{position:absolute;right:16px;top:12px;font-size:24px}
+.batch-import fieldset{min-width:0;margin:0;padding:0;border:0}
+.batch-import header fieldset,.batch-import footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.batch-import header fieldset p{order:1;font-size:12px;flex:1 1 220px}
+.batch-import .btn{min-height:36px;padding:5px 12px;font-size:13px}
+.batch-import .btn:disabled{opacity:.55;cursor:default}
+.batch-scroll{display:grid;grid-template-columns:minmax(180px,23%) minmax(0,1fr);min-height:0}
+.batch-scroll>aside,.batch-scroll>fieldset{overflow:auto;overscroll-behavior:contain;min-width:0}
+.batch-scroll>aside{background:var(--bg);border-right:1px solid var(--line);padding:18px 12px}
+.batch-scroll>aside h3{font-size:14px;margin:0 6px 12px}
+.batch-scroll nav{display:grid;gap:4px}
+.batch-scroll nav .btn{display:flex;align-items:center;gap:12px;min-height:55px;padding:6px;text-align:left;border:1px solid transparent;background:transparent;min-width:0}
+.batch-scroll nav .btn[aria-current=true]{background:var(--sheet);border-color:var(--line);box-shadow:inset 3px 0 #467bae}
+.batch-scroll nav strong,.batch-scroll nav small,.batch-import figcaption small{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.batch-scroll nav .btn>span{min-width:0}
+.batch-scroll nav small{font-size:11px;font-weight:550;color:var(--mute);margin-top:3px}
+.batch-scroll nav small.batch-attention{color:light-dark(#805412,#e5bd72)}
+.batch-import img{aspect-ratio:var(--card-aspect);object-fit:contain}
+.batch-thumbs{display:flex;align-items:center;flex:0 0 43px}
+.batch-thumbs img{width:26px;border-radius:2px;background:var(--line)}
+.batch-thumbs img+img{margin:5px 0 0 -10px}
+.batch-scroll>fieldset{padding:14px clamp(14px,2vw,28px) 22px}
+.batch-card-title{font-size:22px;letter-spacing:-.035em;margin-bottom:10px!important}
+.batch-pair{display:flex;justify-content:center;gap:clamp(8px,2vw,24px);padding:16px;background:var(--bg);border-radius:9px}
+.batch-pair:empty{display:none}
+.batch-pair>section{width:min(46%,240px);min-width:0}
+.batch-pair figure img{display:block;width:min(100%,145px);margin:auto;border-radius:6px;background:var(--line);box-shadow:0 4px 12px #13202e28}
+.batch-import figcaption{font-size:13px;text-align:center;margin:8px 0}
+.batch-import figcaption small{font-size:11px}
+.batch-import details summary{cursor:pointer;font-size:13px;font-weight:650;padding:8px 0;color:var(--ink)}
+.batch-import .batch-pair details summary{text-align:center}
+.batch-import .batch-metadata{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 12px;margin:16px 0 8px}
+.batch-import legend{font-size:16px;font-weight:750;padding:0 0 9px}
+.batch-import .batch-metadata>details,.batch-import .batch-metadata>p{grid-column:1/-1}
+.batch-import label{display:grid;gap:3px;color:var(--mute);font-size:12px;min-width:0}
+.batch-import input,.batch-import select{min-width:0;width:100%;padding:6px 8px;border-radius:6px;background:var(--sheet);color:var(--ink);border:1px solid var(--line);font:inherit;font-size:14px;min-height:35px;box-sizing:border-box}
+.batch-import details[open]>label{margin:5px 0}
+.batch-import footer{padding:10px 18px;border-top:1px solid var(--line);background:var(--sheet)}
+.batch-import footer p{font-size:13px;flex:1 1 180px}
+.batch-import footer p:empty{display:none}
+.batch-import footer [aria-describedby]{background:var(--ink);color:var(--sheet);order:2}
+.batch-import footer [role=alert]:not(:empty){flex-basis:100%;color:var(--red)}
+.batch-import [aria-invalid=true]{outline:2px solid #aa721e;outline-offset:1px}
+.batch-empty{margin:64px auto;max-width:38ch;text-align:center;color:var(--mute)}
+.batch-empty h3{color:var(--ink);margin-bottom:8px}
+@media(max-width:700px){
+.batch-import{width:100vw;height:96dvh;max-height:96dvh}
+.batch-import header{padding:12px}.batch-import h2{font-size:20px}.batch-import header>p:not([role]){display:none}
+.batch-import header fieldset{margin-top:7px}.batch-import header fieldset p{flex-basis:100%}
+.batch-scroll{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+.batch-scroll>aside{padding:6px 10px;border-right:0;border-bottom:1px solid var(--line);overflow:hidden}
+.batch-scroll>aside h3{font-size:12px;margin:0 0 4px}.batch-scroll nav{display:flex;overflow-x:auto}
+.batch-scroll nav .btn{flex:none;max-width:180px;min-height:42px;gap:6px}.batch-thumbs{flex-basis:30px}.batch-thumbs img{width:21px}
+.batch-scroll>fieldset{padding:12px}.batch-pair{padding:10px}.batch-import .batch-metadata{grid-template-columns:repeat(2,minmax(0,1fr))}
+.batch-import footer{padding:8px 12px}.batch-import footer p{flex-basis:100%}
+}
+
 </style>
 </head>
 <body class="view-only booting">
@@ -453,6 +519,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
 
 <script src="/workflow.js"></script>
 <script src="/batch.js"></script>
+<script src="/batch-draft.js"></script>
 <script src="/batch-ui.js"></script>
 <script src="/save.js"></script>
 <script>
@@ -2503,7 +2570,7 @@ body.view-only #editbtn,body.view-only #setsbtn,body.view-only #shbtn,body.view-
       context=Object.assign({binder:currentBinder,slot:1},context);
       if(edDlg.open)edDlg.close();
       return BatchImporter.open({
-        guard:assertCatalogReady,
+        guard:assertCatalogReady, drafts:BatchDraft.create(),
         snapshot:()=>({catalog:catalog,etag:catalogStore.etag}),
         fetchSnapshot:fetchCatalogSnapshot, commit:commitCatalogCandidate,
         id:Workflow.id, alts:Workflow.alternateVersions, rarities:RARS,

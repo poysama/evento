@@ -75,7 +75,7 @@ class ServerTests(unittest.TestCase):
             read.assert_not_called()
         self.assertEqual(self.request("GET", "/api/recognition-usage")[0], 503)
         server.recognition_budget.initialize_local(str(Path(server.HERE) / server.recognition_budget.LOCAL_FILE))
-        self.assertEqual(self.request("GET", "/api/recognition-usage")[2]["remaining"], 40)
+        self.assertEqual(self.request("GET", "/api/recognition-usage")[2]["remaining"], 80)
 
     def test_conditional_collection(self):
         status, etag, value = self.request("GET", "/api/collection")

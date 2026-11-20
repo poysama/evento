@@ -1450,7 +1450,7 @@ def _handler(event, context):
         )
 
     editor = authed(event)
-    public_static = path in ("/", "/index.html", "/workflow.js", "/batch.js", "/batch-ui.js", "/save.js")
+    public_static = path in ("/", "/index.html", "/workflow.js", "/batch.js", "/batch-draft.js", "/batch-ui.js", "/save.js")
     public_image = path.startswith(("/card_images/", "/card_images_jp/"))
     public_data = path in ("/api/catalog", "/api/collection")
     if editor and method not in ("GET", "HEAD"):
@@ -1508,7 +1508,7 @@ def _handler(event, context):
             (HERE / "index.html").read_text(encoding="utf-8"),
             "text/html; charset=utf-8",
         )
-    if method == "GET" and path in ("/workflow.js", "/batch.js", "/batch-ui.js", "/save.js"):
+    if method == "GET" and path in ("/workflow.js", "/batch.js", "/batch-draft.js", "/batch-ui.js", "/save.js"):
         return resp(
             200,
             (HERE / path[1:]).read_text(encoding="utf-8"),

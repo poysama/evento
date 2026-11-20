@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 
-MONTHLY_LIMIT_MILLI_USD = 1000
+MONTHLY_LIMIT_MILLI_USD = 2000
 RESERVATION_MILLI_USD = 25
 MAX_ATTEMPTS = MONTHLY_LIMIT_MILLI_USD // RESERVATION_MILLI_USD
 MAX_INPUT_TOKENS = 8192
@@ -65,7 +65,7 @@ def _advance(value, now=None):
     if attempts >= MAX_ATTEMPTS:
         raise BudgetError(
             429,
-            "The $1 monthly card-recognition allowance is used up. Add the card manually or try next month (UTC).",
+            "The $2 monthly card-recognition allowance is used up. Add the card manually or try next month (UTC).",
         )
     result = copy.deepcopy(value)
     result["plan"] = PLAN

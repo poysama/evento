@@ -25,6 +25,7 @@ for src in (
     REPO / "public_access.py",
     REPO / "workflow.js",
     REPO / "batch.js",
+    REPO / "batch-draft.js",
     REPO / "batch-ui.js",
     REPO / "save.js",
     REPO / "aws" / "lambda_function.py",
@@ -163,7 +164,7 @@ check(
     "workflow static assets are public",
     all(
         h(ev("GET", path), None)["statusCode"] == 200
-        for path in ("/workflow.js", "/batch.js", "/batch-ui.js", "/save.js")
+        for path in ("/workflow.js", "/batch.js", "/batch-draft.js", "/batch-ui.js", "/save.js")
     ),
 )
 check(
@@ -270,7 +271,7 @@ check(
     all(
         h(ev("GET", path, cookies=ck), None)["statusCode"] == 200
         and h(ev("GET", path, cookies=ck), None)["body"]
-        for path in ("/workflow.js", "/batch.js", "/batch-ui.js", "/save.js")
+        for path in ("/workflow.js", "/batch.js", "/batch-draft.js", "/batch-ui.js", "/save.js")
     ),
 )
 cards = json.loads(h(ev("GET", "/cards.json", cookies=ck), None)["body"])
@@ -2227,7 +2228,7 @@ check("missing usage ledger unavailable", h(ev("GET", usage_path, cookies=ck), N
 store[usage_key] = json.dumps(L.recognition_budget.initial_ledger()).encode()
 usage_before = dict(store)
 usage_response = h(ev("GET", usage_path, cookies=ck), None)
-check("usage returns only counts", usage_response["statusCode"] == 200 and set(j(usage_response)) == {"month","used","remaining","limit","monthlyLimitMilliUsd","reservationMilliUsd"} and j(usage_response)["remaining"] == 40)
+check("usage returns only counts", usage_response["statusCode"] == 200 and set(j(usage_response)) == {"month","used","remaining","limit","monthlyLimitMilliUsd","reservationMilliUsd"} and j(usage_response)["remaining"] == 80)
 check("usage is read only", store == usage_before)
 del store[usage_key]
 

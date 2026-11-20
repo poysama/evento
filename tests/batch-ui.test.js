@@ -492,3 +492,87 @@ test("only starts as many pending files as the remaining allowance", async () =>
   await h.s.analyze(() => {}, 1);
   assert.deepEqual(h.s.entries.map((entry) => entry.state), ["Scanned", "Ready", "Ready"]);
 });
+
+test("local draft resume reuses matching bytes, refreshes catalog and preserves edits on explicit reanalysis", async () => {
+  const { record, fingerprint } = require("../batch-draft");
+  let saved, calls = 0, reads = 0;
+  const drafts = {
+    load: async () => structuredClone(saved),
+    write: async (entries, position, uploaded) => {
+      saved = record(entries, position, uploaded);
+      saved.entries.forEach((e, i) => { e.file = entries[i].file; });
+    },
+    clear: async () => { saved = null; }, fingerprint
+  };
+  const recognize = async () => ({ fields: { ...fields(), jpName: "print" + ++calls } });
+  const first = setup({ drafts, recognize });
+  await first.s.add([new File(["image"], "scan.png", { type: "image/png" })]);
+  await first.s.analyze(() => {});
+  const id = first.s.entries[0].id;
+  first.s.entries[0].fields.col = "Blue";
+  first.s.entries[0].patch = { source: "My set" };
+  first.s.position.startSlot = 3;
+  first.s.close();
+  const next = setup({ drafts, recognize, fetchSnapshot: async () => { reads++; return first.initial; } });
+  await next.s.ready;
+  assert.equal(next.s.hasDraft, true);
+  await next.s.add([new File(["image"], "renamed.png", { type: "image/png" })]);
+  assert.equal(reads, 1);
+  assert.equal(next.s.entries.length, 1);
+  assert.equal(next.s.entries[0].id, id);
+  assert.equal(next.s.position.startSlot, 3);
+  assert.deepEqual(next.s.entries[0].patch, {source: "My set"});
+  assert.equal(calls, 1);
+  await next.s.analyze(() => {}, 1, [id]);
+  assert.equal(next.s.entries[0].fields.jpName, "print2");
+  assert.equal(next.s.entries[0].fields.col, "Blue");
+  await next.s.save(() => true);
+  next.s.close();
+  assert.equal(saved, null);
+});
+
+test("storage failure leaves manual and locked recognition work usable", async () => {
+  let locks = 0;
+  const {s} = setup({ drafts: {
+    load: async () => { throw Error("Storage disabled"); },
+    withScanLock: async run => { locks++; await run(); },
+    fingerprint: async () => "hash"
+  } });
+  await s.add([file()]);
+  assert.match(s.warning, /Storage disabled/);
+  await s.analyze(() => {});
+  assert.equal(locks, 1);
+  assert.equal(s.entries[0].state, "Scanned");
+});
+
+test("quota failure marks the current batch unsaved until a flush succeeds", async () => {
+  let full = true;
+  const {s} = setup({ drafts: {
+    load: async () => null, fingerprint: async () => "hash",
+    write: async () => { if (full) throw Error("Storage full"); }
+  } });
+  await s.add([file()]);
+  assert.equal(s.unsaved, true);
+  assert.equal(await s.flush(), false);
+  assert.match(s.warning, /Storage full/);
+  full = false;
+  assert.equal(await s.flush(), true);
+  assert.equal(s.unsaved, false);
+});
+
+test("restoring the original field value removes an earlier reanalysis override", async () => {
+  let color = "Red";
+  const {s} = setup({recognize: async () => ({fields:{...fields(), col:color}})});
+  s.add([file()]);
+  const entry = s.entries[0];
+  await s.analyze(() => {});
+  entry.fields.col = "Blue";
+  await s.analyze(() => {}, 1, [entry.id]);
+  assert.equal(entry.fields.col, "Blue");
+  entry.fields.col = "Red";
+  entry.fields.jpName = "";
+  color = "Green";
+  await s.analyze(() => {}, 1, [entry.id]);
+  assert.equal(entry.fields.col, "Green");
+  assert.equal(entry.fields.jpName, "");
+});

@@ -11,6 +11,73 @@
     const entries = [],
       uploaded = new Map();
     const position = { binder: context.binder, startSlot: context.slot || 1 };
+    const drafts = d.drafts;
+    let pendingDraft, warning = "", timer, completed = false, available = false, writeFailed = false;
+    let pendingEdits = 0, writes = 0;
+    let conflict, onDraftChange = () => {};
+    function warn(error) {
+      warning = "Local recovery unavailable. " + error.message;
+      onDraftChange();
+    }
+    const ready = drafts ? drafts.load().then(value => {
+      d.guard();
+      pendingDraft = value;
+      available = true;
+    }).catch(warn) : Promise.resolve();
+    async function flush() {
+      clearTimeout(timer);
+      if (!drafts || pendingDraft || completed) return true;
+      if (!available) return !entries.length;
+      const edits = pendingEdits;
+      writes++;
+      try {
+        d.guard();
+        if (entries.length) await drafts.write(entries, position, uploaded);
+        else await drafts.clear();
+        if (edits === pendingEdits) pendingEdits = 0;
+        writeFailed = false;
+        if (warning) { warning = ""; onDraftChange(); }
+        return true;
+      } catch (error) {
+        writeFailed = true;
+        if (error.name === "DraftConflictError") conflict = error;
+        warn(error);
+        return false;
+      } finally { writes--; }
+    }
+    function persist() {
+      if (!drafts || closed || completed) return;
+      pendingEdits++;
+      clearTimeout(timer);
+      timer = setTimeout(flush, 150);
+    }
+    async function resume() {
+      editable();
+      await ready;
+      if (!pendingDraft) return;
+      const latest = await d.fetchSnapshot();
+      editable();
+      const saved = pendingDraft;
+      if (!saved.entries.every(e => e.file)) throw Error("Saved image files are unavailable.");
+      snapshot = latest;
+      entries.push(...saved.entries);
+      Object.assign(position, saved.position);
+      for (const [path, ref] of saved.uploaded) uploaded.set(path, ref);
+      pendingDraft = null;
+    }
+    async function discard() {
+      editable();
+      await ready;
+      editable();
+      clearTimeout(timer);
+      if (drafts && available) {
+        try { await drafts.clear(); } catch (error) { warn(error); throw error; }
+      }
+      pendingDraft = null;
+      entries.length = 0;
+      uploaded.clear();
+      Object.assign(position, { binder: context.binder, startSlot: context.slot || 1 });
+    }
     function editable() {
       d.guard();
       if (closed || saving || scan)
@@ -25,38 +92,58 @@
           f.size > 3500000
         )
           throw Error("Choose PNG, JPEG or still WebP files up to 3.5 MB each");
-      for (const file of files)
-        entries.push({
-          id: d.id(),
-          file,
-          fields: {},
-          state: "Ready",
-          group: "",
-          versionId: d.id(),
-        });
+      function append(file, fingerprint) {
+        entries.push({ id: d.id(), file, fingerprint, fields: {}, state: "Ready",
+          group: "", versionId: d.id() });
+      }
+      if (!drafts) { for (const file of files) append(file); return; }
+      return (async () => {
+        await ready;
+        if (pendingDraft) await resume();
+        for (const file of files) {
+          let key;
+          try { key = await drafts.fingerprint(file); } catch (error) { warn(error); }
+          editable();
+          let matched = key && entries.some(e => e.fingerprint === key);
+          if (!matched && file.arrayBuffer) {
+            const candidates = entries.filter(e => (!key || !e.fingerprint)
+              && e.file.type === file.type && e.file.size === file.size);
+            if (candidates.length) {
+              const bytes = new Uint8Array(await file.arrayBuffer());
+              for (const e of candidates) {
+                const saved = new Uint8Array(await e.file.arrayBuffer());
+                if (saved.every((value, i) => value === bytes[i])) { matched = true; break; }
+              }
+            }
+          }
+          editable();
+          if (!matched) append(file, key);
+        }
+        await flush();
+      })();
     }
-    async function analyze(onChange, allowance = Infinity) {
+    async function analyze(onChange, allowance = Infinity, ids) {
       editable();
-      const pending = entries.filter((e) =>
-        ["Ready", "Failed", "Interrupted"].includes(e.state),
+      const pending = entries.filter(e => ids
+        ? ids.includes(e.id)
+        : ["Ready", "Failed", "Interrupted"].includes(e.state)
       ).slice(0, allowance);
       const active = new AbortController();
       scan = active;
       const worker = async () => {
-        while (pending.length && !active.signal.aborted) {
+        while (pending.length && !active.signal.aborted && !conflict) {
           const e = pending.shift();
+          const previous = e.state;
+          e.edits = Object.fromEntries(Object.entries(e.fields)
+            .filter(([key, value]) => value !== e.recognized?.[key]));
           e.state = "Scanning";
           onChange();
           try {
             const result = await d.recognize(e, active.signal);
             if (!active.signal.aborted) {
               if (!result?.fields) throw Error("No recognized details");
-              e.fields = {
-                ...result.fields,
-                ...Object.fromEntries(
-                  Object.entries(e.fields).filter(([, v]) => v),
-                ),
-              };
+              e.recognized = result.fields;
+              e.fields = { ...result.fields, ...e.edits };
               e.warnings = result.warnings || [];
               e.state = "Scanned";
               e.error = "";
@@ -64,16 +151,26 @@
           } catch (err) {
             if (!active.signal.aborted) {
               e.error = err.message;
-              e.state = "Failed";
+              e.state = previous === "Scanned" ? previous : "Failed";
               if (err.status === 429) pending.length = 0;
             }
           }
-          if (active.signal.aborted) e.state = "Interrupted";
+          if (active.signal.aborted) e.state = previous === "Scanned" ? previous : "Interrupted";
+          if (!closed) await flush();
           if (!closed) onChange();
         }
       };
-      try {
+      async function run() {
+        if (drafts && pending.length) {
+          await flush();
+          if (conflict) throw conflict;
+        }
         await Promise.all([worker(), worker()]);
+        if (conflict) throw conflict;
+      }
+      try {
+        if (drafts?.withScanLock) await drafts.withScanLock(run);
+        else await run();
       } finally {
         scan = null;
       }
@@ -201,10 +298,16 @@
             if (typeof ref !== "string" || !ref)
               throw Error("Missing uploaded image reference");
             uploaded.set(path, ref);
+            await flush();
           }
         }
         d.guard();
         await d.commit(preview().catalog, snapshot);
+        completed = true;
+        clearTimeout(timer);
+        if (available) {
+          try { await drafts.clear(); } catch (error) { warn(error); }
+        }
         return true;
       } finally {
         saving = false;
@@ -212,6 +315,11 @@
     }
     return {
       entries,
+      ready, resume, discard, persist, flush,
+      get warning() { return warning; },
+      get unsaved() { return !!(drafts && entries.length && !completed && (!available || writeFailed || pendingEdits || writes)); },
+      get hasDraft() { return !!pendingDraft; },
+      set onDraftChange(callback) { onDraftChange = callback; },
       add,
       analyze,
       groups,
@@ -232,6 +340,7 @@
       },
       close() {
         if (saving) return false;
+        void flush();
         closed = true;
         scan?.abort();
         return true;
@@ -259,6 +368,12 @@
       }
       if (live !== cursor) current.insertBefore(live, cursor);
       cursor = live.nextElementSibling;
+      if (next.attributes) {
+        for (const attr of next.attributes) {
+          if (attr.name !== "open" && live.getAttribute(attr.name) !== attr.value)
+            live.setAttribute(attr.name, attr.value);
+        }
+      }
       if (next.matches("input,select")) {
         const value = next.value;
         if (next.tagName === "SELECT" && live.innerHTML !== next.innerHTML)
@@ -266,8 +381,12 @@
         if (live.value !== value && live !== document.activeElement)
           live.value = value;
         live.onchange = next.onchange;
+        live.oninput = next.oninput;
       } else if (next.tagName === "BUTTON") {
+        live.disabled = next.disabled;
         live.onclick = next.onclick;
+        if (next.children.length) syncFields(live, next);
+        else live.textContent = next.textContent;
       } else if (next.children.length) {
         syncFields(live, next);
       } else if (next.tagName === "IMG") {
@@ -289,6 +408,19 @@
     dialog.setAttribute("aria-label", "Import card images");
     document.body.append(dialog);
     const urls = new Map();
+    let selected = "", problem = null;
+    function artwork(entry, parent) {
+      if (!urls.has(entry.id)) urls.set(entry.id, URL.createObjectURL(entry.file));
+      const img = node("img", null, parent);
+      img.alt = entry.file.name;
+      img.src = urls.get(entry.id);
+    }
+    function disclosure(parent, title) {
+      const details = node("details", null, parent);
+      details.dataset.key = title;
+      node("summary", title, details);
+      return details;
+    }
     function node(tag, text, parent) {
       const n = document.createElement(tag);
       if (text != null) n.textContent = text;
@@ -312,21 +444,30 @@
           i.add(new Option(t, v));
         }
       i.value = value ?? "";
-      i.onchange = (event) => {
+      function update(event) {
         change(event.currentTarget.value);
+        s.persist();
+      }
+      if (!options) i.oninput = update;
+      i.onchange = (event) => {
+        update(event);
         render();
       };
       return i;
     }
     const header = node("header", null, dialog);
     node("h2", "Import card images", header);
+    const close = button(header, "×", () => leave());
+    close.setAttribute("aria-label", "Close import");
     node(
       "p",
-      "Select or drop PNG, JPEG or still WebP images. Check that paired JP and EN artwork matches.",
+      "Drop JPEG, PNG or WebP images to review their artwork and card details.",
       header,
     );
     const controls = node("fieldset", null, header),
       files = node("input", null, controls);
+    button(controls, "Add images", () => files.click());
+    files.hidden = true;
     files.type = "file";
     files.multiple = true;
     files.accept = "image/png,image/jpeg,image/webp";
@@ -345,24 +486,17 @@
       try {
         const u = await d.usage();
         remaining = u.remaining;
-        usage.textContent =
-          u.remaining +
-          " of " +
-          u.limit +
-          " scans remaining for " +
-          u.month +
-          " UTC." +
-          (remaining === 0
-            ? " Monthly scan allowance exhausted. Enter the card type, language and card details below, then choose Confirm import."
-            : "");
+        usage.textContent = remaining === 0
+          ? "All " + u.limit + " monthly scans used. Finish your review by editing the card details."
+          : u.remaining + " of " + u.limit + " scans remaining for " + u.month + " UTC.";
       } catch (e) {
         usage.textContent = e.message;
       }
       if (dialog.open) render();
     }
-    const scans = button(controls, "Analyze", async () => {
+    async function analyze(ids) {
       try {
-        await s.analyze(render, remaining);
+        await s.analyze(render, remaining, ids);
       } catch (e) {
         error.textContent = e.message;
       } finally {
@@ -371,17 +505,16 @@
           refresh();
         }
       }
-    });
-    const stop = button(header, "Stop scans", () => s.stop());
-    node(
-      "small",
-      " In-flight scans may count. Failed scans retry only when you select Analyze.",
-      header,
-    );
+    }
+    const scans = button(controls, "Analyze", () => analyze());
+    const stop = button(controls, "Stop scans", () => s.stop());
+
     const scroll = node("section", null, dialog);
     scroll.className = "batch-scroll";
-    const detail = node("fieldset", null, scroll),
-      review = node("div", null, scroll),
+    const queuePanel = node("aside", null, scroll),
+      queueTitle = node("h3", "Review queue", queuePanel),
+      queue = node("nav", null, queuePanel),
+      detail = node("fieldset", null, scroll),
       footer = node("footer", null, dialog),
       error = node("p", "", footer);
     error.setAttribute("role", "alert");
@@ -390,6 +523,7 @@
     status.setAttribute("role", "status");
     const jump = button(footer, "Review field", () => {});
     jump.hidden = true;
+    queue.setAttribute("aria-label", "Cards in import");
     const save = button(footer, "Confirm import", async () => {
       let work;
       try {
@@ -400,7 +534,10 @@
           ),
         );
         render();
-        if (await work) dialog.close();
+        if (await work) {
+          if (s.warning) d.confirm("Import saved", s.warning);
+          dialog.close();
+        }
       } catch (e) {
         error.textContent = e.message;
       } finally {
@@ -442,57 +579,96 @@
             startSlot: "Starting pocket",
           };
       const key = item ? (isFile ? "file-" : "group-") + item.id : "";
-      const owner = key
-        ? Array.from(detail.children).find((box) => box.dataset.key === key)
-        : detail;
-      const label =
-        owner &&
-        Array.from(owner.children).find(
-          (child) =>
-            child.tagName === "LABEL" &&
-            child.dataset.key === labels[problem.field],
-        );
-      const input = label?.querySelector("input,select");
-      if (!input) return;
-      input.setAttribute("aria-invalid", "true");
-      input.setAttribute("aria-describedby", status.id);
+      function target() {
+        const owner = Array.from(detail.querySelectorAll("[data-key]")).find(el => el.dataset.key === key) || detail;
+        return Array.from(owner.querySelectorAll("label")).find(el => el.dataset.key === labels[problem.field])?.querySelector("input,select");
+      }
+      const input = target();
+      if (input) {
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("aria-describedby", status.id);
+      }
+      if (!labels[problem.field]) return;
       jump.hidden = false;
-      jump.textContent =
-        "Review " +
-        (item?.fields.num || item?.file.name || labels[problem.field]);
+      jump.textContent = "Review " + (item?.fields.num || item?.file.name || labels[problem.field]);
       jump.onclick = () => {
+        selected = item?.id || selected;
+        render();
+        const input = target();
+        if (!input) return;
+        for (let el = input.parentElement; el && el !== detail; el = el.parentElement)
+          if (el.tagName === "DETAILS") el.open = true;
         input.focus({ preventScroll: true });
-        input.scrollIntoView({ block: "center" });
+        input.scrollIntoView({ block: "nearest" });
       };
     }
-    if (d.manual)
-      button(footer, "Add card manually", () => {
-        if (
-          !s.saving &&
-          (!s.entries.length ||
-            d.confirm(
-              "Leave image import?",
-              "Selected images will be discarded.",
-            ))
-        ) {
-          dialog.close();
-          d.manual();
-        }
-      });
-    button(footer, "Cancel", () => {
-      if (!s.saving) dialog.close();
+    const draft = node("section", null, header);
+    draft.className = "batch-draft";
+    node("strong", "Unfinished import on this device", draft);
+    const recoveryMessage = node("p", "", draft);
+    recoveryMessage.setAttribute("role", "alert");
+    const resume = button(draft, "Resume import", async () => {
+      resume.disabled = true;
+      try {
+        await s.resume();
+        recoveryMessage.textContent = "";
+        render();
+      } catch (e) {
+        recoveryMessage.textContent = e.message;
+      } finally { resume.disabled = false; }
     });
+    function discardDraft() {
+      if (d.confirm("Discard this import?", "Remove its images and reviewed details from this device.")) {
+        return s.discard().then(() => {
+          for (const url of urls.values()) URL.revokeObjectURL(url);
+          urls.clear();
+          selected = "";
+          error.textContent = recoveryMessage.textContent = "";
+          render();
+        }).catch(e => { (s.hasDraft ? recoveryMessage : error).textContent = e.message; });
+      }
+    }
+    button(draft, "Discard draft", discardDraft);
+    const warning = node("p", "", header);
+    warning.setAttribute("role", "status");
+    async function leave() {
+      if (s.saving) return false;
+      if (s.entries.length) {
+        const stored = await s.flush();
+        if (stored === false && !d.confirm("Leave without saving this draft?", s.warning)) return false;
+      }
+      dialog.close();
+      return true;
+    }
+    const manual = d.manual && button(footer, "Add card manually", async () => {
+      if (await leave()) d.manual();
+    });
+    const discard = button(footer, "Discard draft", discardDraft);
     dialog.oncancel = (e) => {
-      if (s.saving) e.preventDefault();
+      e.preventDefault();
+      void leave();
     };
+    const flushDraft = () => s.flush?.();
+    function warnBeforeUnload(event) {
+      if (s.unsaved) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    window.addEventListener("pagehide", flushDraft);
+    s.onDraftChange = () => { if (dialog.open) render(); };
     dialog.onclose = () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+      window.removeEventListener("pagehide", flushDraft);
       s.close();
       for (const url of urls.values()) URL.revokeObjectURL(url);
       dialog.remove();
     };
-    function add(list) {
+    async function add(list) {
+      if (s.hasDraft || loading) return;
       try {
-        s.add(Array.from(list));
+        await s.add(Array.from(list));
         error.textContent = "";
         render();
       } catch (e) {
@@ -545,57 +721,108 @@
         slots.push("Skipped occupied pockets: " + plan.skippedSlots.join(", "));
       return [...changes, ...slots].join(". ");
     }
+    let loading = !!s.ready;
     function render() {
       const template = document.createElement("fieldset");
-      review.replaceChildren();
+      let plan;
+      problem = null;
+      try { plan = s.preview(); } catch (e) { problem = e; }
+      const groups = s.groups();
+      const current = groups.find(g => g.fileIds.includes(selected)) || groups[0];
+      if (current && !current.fileIds.includes(selected)) selected = current.id;
+      const entries = new Map(s.entries.map(e => [e.id, e]));
+      const list = node("nav");
+      queueTitle.textContent = "Review queue" + (groups.length ? " (" + groups.length + ")" : "");
+      for (const group of groups) {
+        const entry = entries.get(group.id);
+        const row = button(list, "", () => {
+          selected = group.id;
+          render();
+          detail.scrollTop = 0;
+        });
+        row.dataset.key = group.id;
+        row.setAttribute("aria-current", String(current === group));
+        const thumbs = node("span", null, row);
+        thumbs.className = "batch-thumbs";
+        thumbs.setAttribute("aria-hidden", "true");
+        for (const id of group.fileIds) artwork(entries.get(id), thumbs);
+        const copy = node("span", null, row);
+        node("strong", group.num || entry.file.name, copy);
+        const needsReview = !plan && (!group.num ||
+          group.fileIds.some(id => entries.get(id).fields.cardType !== "Event" ||
+            !["jp", "en"].includes(entries.get(id).fields.language)) ||
+          group.issues.some(issue => issue.startsWith("Check conflicting ")) ||
+          (group.ambiguous && !entry.action) ||
+          group.fileIds.includes(problem?.fileId || problem?.rowId));
+        const state = group.fileIds.length === 2 ? "Paired artwork" : "Single image";
+        const badge = node("small", plan ? "Ready · " + state : needsReview ? "Needs review" : state, copy);
+        badge.className = plan ? "batch-ready" : needsReview ? "batch-attention" : "";
+
+      }
+      syncFields(queue, list);
+      if (!current) {
+        const empty = node("div", null, template);
+        empty.className = "batch-empty";
+        node("h3", "Choose your card images", empty);
+        node("p", "Drop a batch here or choose Add images. Japanese and English artwork can share one card.", empty);
+      }
+      const placement = disclosure(template, "Binder placement");
+
       field(
-        template,
+        placement,
         "Binder",
         s.position.binder,
         s.catalog.binders.map((b) => [b.id, b.name]),
         (v) => (s.position.binder = v),
       );
       field(
-        template,
+        placement,
         "Starting pocket",
         s.position.startSlot,
         null,
         (v) => (s.position.startSlot = Number(v)),
       );
-      for (const e of s.entries) {
-        const box = node("fieldset", null, template);
+      if (current) {
+        const title = node("h3", current.num || "Unidentified card", template);
+        title.className = "batch-card-title";
+      }
+      const pair = node("div", null, template);
+      pair.className = "batch-pair";
+      for (const id of (current?.fileIds || []).slice().sort((a,b) => Number(entries.get(b).fields.language === "jp") - Number(entries.get(a).fields.language === "jp"))) {
+        const e = entries.get(id);
+        const box = node("section", null, pair);
         box.dataset.key = "file-" + e.id;
-        node("legend", e.file.name + " · " + e.state, box);
-        if (!urls.has(e.id)) urls.set(e.id, URL.createObjectURL(e.file));
-        const img = node("img", null, box);
-        img.loading = "lazy";
-        img.alt = e.file.name;
-        img.src = urls.get(e.id);
+        const figure = node("figure", null, box);
+        artwork(e, figure);
+        const caption = node("figcaption", null, figure);
+        node("strong", ({jp:"Japanese",en:"English"})[e.fields.language] || "Unassigned language", caption);
+        node("small", e.file.name, caption);
         if (e.error) node("p", e.error, box);
         for (const msg of e.warnings || []) node("p", msg, box);
+        const correction = disclosure(box, "Image details");
         field(
-          box,
+          correction,
           "Language",
           e.fields.language,
           ["", "jp", "en"],
           (v) => (e.fields.language = v),
         );
         field(
-          box,
+          correction,
           "Card number",
           e.fields.num,
           null,
           (v) => (e.fields.num = v.trim().toUpperCase()),
         );
         field(
-          box,
+          correction,
           "Card type",
           e.fields.cardType,
           ["", "Event", "Character", "Leader", "Stage"],
           (v) => (e.fields.cardType = v),
         );
         field(
-          box,
+          correction,
           "Artwork group (match JP/EN when ambiguous)",
           e.group,
           null,
@@ -611,30 +838,29 @@
           ],
           ["rar", "Recognized rarity", ["", ...d.rarities]],
         ])
-          field(box, label, e.fields[k], opts, (v) => (e.fields[k] = v));
-        button(box, "Remove image", () => {
+          field(correction, label, e.fields[k], opts, (v) => (e.fields[k] = v));
+        if (e.state === "Scanned") {
+          const retry = button(correction, "Reanalyze image", () => analyze([e.id]));
+          retry.disabled = !d.available || !remaining || s.scanning || s.saving;
+          retry.title = remaining === 0 ? "Monthly scan allowance exhausted" : "Uses one scan";
+        }
+        button(correction, "Remove image", () => {
           s.entries.splice(s.entries.indexOf(e), 1);
           URL.revokeObjectURL(urls.get(e.id));
           urls.delete(e.id);
+          s.persist?.();
           render();
         });
       }
-      for (const g of s.groups()) {
+      for (const g of current ? [current] : []) {
         const e = s.entries.find((x) => x.id === g.id),
           existing = [...s.catalog.cards, ...(s.catalog.drafts || [])].find(
             (c) => c.num === g.num,
           );
         const box = node("fieldset", null, template);
         box.dataset.key = "group-" + g.id;
-        node(
-          "legend",
-          (g.num || "Unknown card") +
-            " · " +
-            g.fileIds
-              .map((id) => s.entries.find((x) => x.id === id).file.name)
-              .join(" + "),
-          box,
-        );
+        box.className = "batch-metadata";
+        node("legend", "Card details", box);
         for (const issue of g.issues) node("p", issue, box);
         const action =
           e.action || (!existing && !g.ambiguous ? "new-base" : "");
@@ -712,7 +938,9 @@
           ["releaseDate", "Release date"],
           ["sourceUrl", "Source URL"],
         );
+        let advanced;
         for (const [k, label, opts] of props) {
+          if (k === "status") advanced = disclosure(box, "Release and source");
           const original =
             existing && !version
               ? k === "jpName"
@@ -731,7 +959,7 @@
               : action === "new-base"
                 ? g.fields[k]
                 : "");
-          field(box, label, value, opts, (v) => (e.patch[k] = v));
+          field(advanced || box, label, value, opts, (v) => (e.patch[k] = v));
         }
         if (existing && action === "update-base")
           node(
@@ -740,28 +968,25 @@
             box,
           );
       }
+      if (current) template.append(placement);
+      else placement.remove();
       syncFields(detail, template);
       for (const input of detail.querySelectorAll('[aria-invalid="true"]')) {
         input.removeAttribute("aria-invalid");
         input.removeAttribute("aria-describedby");
       }
       jump.hidden = true;
-      let valid = false;
-      try {
-        const plan = s.preview();
-        node("p", summary(plan), review);
-        valid = true;
+      const valid = !!plan;
+      if (plan) {
         status.textContent =
           plan.changes.length +
           " reviewed item" +
           (plan.changes.length === 1 ? "" : "s") +
           " ready to import.";
-      } catch (e) {
-        reviewProblem(e);
-      }
+      } else reviewProblem(problem);
       if (s.scanning || s.saving) {
         status.textContent = s.scanning
-          ? "Analyzing images…"
+          ? "Analyzing images · " + s.entries.filter(e => e.state === "Scanned").length + " of " + s.entries.length + " scanned"
           : "Saving import…";
         jump.hidden = true;
       }
@@ -774,12 +999,31 @@
         : "Analyze " + (count < pending ? count + " of " + pending : count) +
           " image" + (pending === 1 ? "" : "s");
       scans.disabled = remaining === null || !count || !d.available;
-      stop.disabled = !s.scanning;
-      detail.disabled = controls.disabled = s.saving || s.scanning;
+      stop.hidden = !s.scanning;
+      detail.disabled = s.saving || s.scanning;
+      controls.disabled = loading || s.hasDraft || s.saving;
+      scans.disabled ||= s.scanning;
+      controls.querySelector("button").disabled = s.scanning;
+      draft.hidden = !s.hasDraft;
+      dialog.classList.toggle("batch-recovering", s.hasDraft);
+      scroll.hidden = footer.hidden = !!s.hasDraft;
+      warning.hidden = !s.warning;
+      warning.textContent = s.warning || "";
+      discard.hidden = !s.entries.length || !s.discard;
+      discard.disabled = s.saving || s.scanning;
+      if (manual) manual.hidden = !!s.entries.length;
+      close.disabled = s.saving;
       save.disabled = !valid || s.saving || s.scanning;
     }
     render();
     dialog.showModal();
+    Promise.resolve(s.ready).finally(() => {
+      loading = false;
+      if (dialog.open) {
+        render();
+        if (s.hasDraft) resume.focus();
+      }
+    });
     refresh();
     return s;
   }

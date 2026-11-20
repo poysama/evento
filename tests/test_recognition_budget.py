@@ -44,12 +44,15 @@ class FakeS3:
 
 
 class BudgetTests(unittest.TestCase):
-    def test_usage_reads_legacy_exhausted_and_new_month_without_writing(self):
+    def test_usage_reads_previous_limit_and_new_month_without_writing(self):
         s3 = FakeS3()
         s3.value.update(plan=budget.LEGACY_PLAN, months={"2026-10": 40})
         before = copy.deepcopy(s3.value)
-        self.assertEqual(budget.usage_s3(s3, "test", OCTOBER)["remaining"], 0)
-        self.assertEqual(budget.usage_s3(s3, "test", NOVEMBER)["used"], 0)
+        self.assertEqual(budget.usage_s3(s3, "test", OCTOBER), {
+            "month": "2026-10", "used": 40, "remaining": 40, "limit": 80,
+            "monthlyLimitMilliUsd": 2000, "reservationMilliUsd": 25,
+        })
+        self.assertEqual(budget.usage_s3(s3, "test", NOVEMBER)["remaining"], 80)
         self.assertEqual((s3.puts, s3.value), (0, before))
         s3.value["months"] = {"bad": 0}
         with self.assertRaises(budget.BudgetError) as error:
@@ -64,7 +67,7 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(upper_bound, Decimal("0.0032976"))
         reservation = Decimal(budget.RESERVATION_MILLI_USD) / 1000
         self.assertLessEqual(upper_bound, reservation)
-        self.assertLessEqual(reservation * budget.MAX_ATTEMPTS, Decimal("1"))
+        self.assertLessEqual(reservation * budget.MAX_ATTEMPTS, Decimal("2"))
 
     def test_fixed_request_input_allowance(self):
         import recognition
@@ -78,23 +81,23 @@ class BudgetTests(unittest.TestCase):
 
     def test_legacy_plan_migrates_without_resetting_months(self):
         legacy = {"schema": 1, "plan": budget.LEGACY_PLAN,
-                  "months": {"2026-09": 17, "2026-10": 39}}
+                  "months": {"2026-09": 17, "2026-10": 79}}
         before = copy.deepcopy(legacy)
         migrated = budget._advance(legacy, OCTOBER)
         self.assertEqual(legacy, before)
         self.assertEqual(migrated["plan"], budget.PLAN)
-        self.assertEqual(migrated["months"], {"2026-09": 17, "2026-10": 40})
+        self.assertEqual(migrated["months"], {"2026-09": 17, "2026-10": 80})
         with self.assertRaises(budget.BudgetError):
             budget._advance(migrated, OCTOBER)
         exhausted = copy.deepcopy(legacy)
-        exhausted["months"]["2026-10"] = 40
+        exhausted["months"]["2026-10"] = 80
         with self.assertRaises(budget.BudgetError):
             budget._advance(exhausted, OCTOBER)
 
     def test_legacy_s3_migration_is_conditional_and_concurrent(self):
         s3 = FakeS3()
         s3.value = {"schema": 1, "plan": budget.LEGACY_PLAN,
-                    "months": {"2026-09": 17, "2026-10": 38}}
+                    "months": {"2026-09": 17, "2026-10": 78}}
         def attempt(_):
             try:
                 budget.reserve_s3(s3, "bucket", OCTOBER)
@@ -105,7 +108,7 @@ class BudgetTests(unittest.TestCase):
             results = list(pool.map(attempt, range(20)))
         self.assertEqual(sum(results), 2)
         self.assertEqual(s3.value["plan"], budget.PLAN)
-        self.assertEqual(s3.value["months"], {"2026-09": 17, "2026-10": 40})
+        self.assertEqual(s3.value["months"], {"2026-09": 17, "2026-10": 80})
         self.assertEqual(s3.puts, 2)
 
     def test_legacy_local_migration_keeps_usage(self):
@@ -120,15 +123,15 @@ class BudgetTests(unittest.TestCase):
 
     def test_limit_math_and_month_rollover(self):
         ledger = budget.initial_ledger()
-        self.assertEqual(budget.MAX_ATTEMPTS, 40)
-        for _ in range(40):
+        self.assertEqual(budget.MAX_ATTEMPTS, 80)
+        for _ in range(80):
             ledger = budget._advance(ledger, OCTOBER)
         with self.assertRaises(budget.BudgetError) as ctx:
             budget._advance(ledger, OCTOBER)
         self.assertEqual(ctx.exception.status, 429)
         next_month = budget._advance(ledger, NOVEMBER)
-        self.assertEqual(next_month["months"], {"2026-10": 40, "2026-11": 1})
-        self.assertEqual(ledger["months"], {"2026-10": 40})
+        self.assertEqual(next_month["months"], {"2026-10": 80, "2026-11": 1})
+        self.assertEqual(ledger["months"], {"2026-10": 80})
 
     def test_corrupt_ledger_fails_closed(self):
         for value in [
@@ -136,6 +139,7 @@ class BudgetTests(unittest.TestCase):
             {},
             {"schema": 1, "plan": "different-price", "months": {}},
             {"schema": 1, "plan": budget.PLAN, "months": {"2026-10": -1}},
+            {"schema": 1, "plan": budget.PLAN, "months": {"2026-10": 81}},
             {"schema": 1, "plan": budget.PLAN, "months": {"2026-10": True}},
         ]:
             with self.subTest(value=value), self.assertRaises(ValueError):
@@ -150,13 +154,13 @@ class BudgetTests(unittest.TestCase):
             budget.initialize_local(path)
             with self.assertRaises(FileExistsError):
                 budget.initialize_local(path)
-            for _ in range(40):
+            for _ in range(80):
                 budget.reserve_local(path, OCTOBER)
             with self.assertRaises(budget.BudgetError) as ctx:
                 budget.reserve_local(path, OCTOBER)
             self.assertEqual(ctx.exception.status, 429)
             self.assertEqual(
-                json.loads(Path(path).read_text())["months"]["2026-10"], 40
+                json.loads(Path(path).read_text())["months"]["2026-10"], 80
             )
             Path(path).write_text("corrupt")
             with self.assertRaises(budget.BudgetError) as ctx:
@@ -177,10 +181,10 @@ class BudgetTests(unittest.TestCase):
                     return False
 
             with ThreadPoolExecutor(max_workers=12) as pool:
-                results = list(pool.map(attempt, range(70)))
-            self.assertEqual(sum(results), 40)
+                results = list(pool.map(attempt, range(100)))
+            self.assertEqual(sum(results), 80)
             self.assertEqual(
-                json.loads(Path(path).read_text())["months"]["2026-10"], 40
+                json.loads(Path(path).read_text())["months"]["2026-10"], 80
             )
 
     def test_s3_concurrency_and_no_reset(self):
@@ -195,16 +199,16 @@ class BudgetTests(unittest.TestCase):
 
         with ThreadPoolExecutor(max_workers=12) as pool:
             results = list(pool.map(attempt, range(90)))
-        self.assertLessEqual(sum(results), 40)
+        self.assertLessEqual(sum(results), 80)
         self.assertEqual(sum(results), s3.value["months"]["2026-10"])
         self.assertEqual(s3.puts, sum(results))
-        while s3.value["months"]["2026-10"] < 40:
+        while s3.value["months"]["2026-10"] < 80:
             budget.reserve_s3(s3, "bucket", OCTOBER)
         with self.assertRaises(budget.BudgetError) as ctx:
             budget.reserve_s3(s3, "bucket", OCTOBER)
         self.assertEqual(ctx.exception.status, 429)
         budget.reserve_s3(s3, "bucket", NOVEMBER)
-        self.assertEqual(s3.value["months"], {"2026-10": 40, "2026-11": 1})
+        self.assertEqual(s3.value["months"], {"2026-10": 80, "2026-11": 1})
 
     def test_s3_read_write_and_contention_fail_closed(self):
         s3 = FakeS3()
